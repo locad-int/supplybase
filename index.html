@@ -678,7 +678,7 @@
       </div>
       <div class="form-group">
         <label>Date &amp; Time</label>
-        <input type="datetime-local" id="adj-date">
+        <div id="adj-date-display" style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:13px;color:var(--muted)"></div>
       </div>
       <div class="form-group full">
         <label>Notes</label>
@@ -850,6 +850,7 @@ let currentUser = null; // { username, role }
 let editItemId = null;
 let editReorderId = null;
 let adjustItemId = null;
+let adjustTimestamp = null;
 let sortField = 'seq';
 let sortDir = 1;
 
@@ -1639,7 +1640,8 @@ function openAdjust(id) {
   document.getElementById('adj-reason').value = '';
   document.getElementById('adj-reason-group').style.display = 'none';
   document.getElementById('adj-by').value = '';
-  document.getElementById('adj-date').value = toLocalDatetimeInput(new Date());
+  adjustTimestamp = new Date();
+  document.getElementById('adj-date-display').textContent = adjustTimestamp.toLocaleString();
   document.getElementById('adj-notes').value = '';
   document.getElementById('adj-summary').style.display = 'none';
   setAdjMode('physical');
@@ -1817,7 +1819,7 @@ function applyAdjust() {
     sysQty: sysQty,
     varianceReason: reasonSel,
     by: document.getElementById('adj-by').value.trim() || 'Manual',
-    date: new Date(document.getElementById('adj-date').value).toISOString(),
+    date: (adjustTimestamp || new Date()).toISOString(),
     notes: notes,
     ref: ''
   });
