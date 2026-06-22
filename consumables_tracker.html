@@ -1,0 +1,2942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Locad SupplyBase</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #060A06;
+    --surface: #0f160f;
+    --surface2: #162016;
+    --border: #1e2e1e;
+    --accent: #4dff6e;
+    --accent-dim: #1a3d22;
+    --accent2: #29cc4a;
+    --danger: #ff4d4d;
+    --warn: #f5a623;
+    --ok: #4dff6e;
+    --text: #e8f0e8;
+    --muted: #5a7a5a;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  button { cursor: pointer; }
+  body { background: var(--bg); color: var(--text); font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+  h1 { font-size: 1.4rem; font-weight: 700; }
+  h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
+
+  /* Layout */
+  header { background: #060A06; border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; box-shadow: 0 1px 0 var(--border); }
+  header .logo { display: flex; align-items: center; gap: 8px; }
+  header .logo span { font-size: 1.4rem; }
+  .header-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+
+  /* Summary cards */
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; border-left: 3px solid var(--border); transition: background .15s, border-color .15s; }
+  .card[onclick]:hover { background: var(--surface-alt, #1a221a); border-color: rgba(255,255,255,0.15); }
+  .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .card .value { font-size: 1.6rem; font-weight: 700; }
+  .card.danger { border-left-color: var(--danger); }
+  .card.danger .value { color: var(--danger); }
+  .card.warn { border-left-color: var(--warn); }
+  .card.warn .value { color: var(--warn); }
+  .card.ok { border-left-color: var(--accent); }
+  .card.ok .value { color: var(--accent); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+  .tab { padding: 8px 16px; cursor: pointer; border-radius: 6px 6px 0 0; color: var(--muted); border: 1px solid transparent; border-bottom: none; transition: .15s; font-weight: 500; }
+  .tab:hover { color: var(--text); background: var(--surface); }
+  .tab.active { color: var(--accent); background: var(--surface); border-color: var(--border); border-bottom-color: var(--surface); border-top: 2px solid var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { background: var(--surface2); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none; }
+  thead th:hover { color: var(--text); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--surface2); }
+  td { padding: 10px 14px; vertical-align: middle; }
+  .stock-bar-wrap { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+  .stock-bar { flex: 1; height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+  .stock-bar-fill { height: 100%; border-radius: 99px; transition: width .3s; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+  .badge-ok { background: rgba(77,255,110,0.12); color: var(--ok); }
+  .badge-warn { background: #78350f33; color: var(--warn); }
+  .badge-danger { background: #7f1d1d33; color: var(--danger); }
+  .badge-info { background: #1e3a8a33; color: #93c5fd; }
+  .actions-cell { display: flex; gap: 6px; }
+
+  /* Buttons */
+  .btn { padding: 7px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: .15s; display: inline-flex; align-items: center; gap: 5px; }
+  .btn-primary { background: var(--accent); color: #060A06; font-weight: 600; }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--surface); }
+  .btn-danger { background: #7f1d1d44; color: var(--danger); border: 1px solid #7f1d1d66; }
+  .btn-danger:hover { background: #7f1d1d77; }
+  .btn-sm { padding: 4px 9px; font-size: 12px; }
+  .btn-icon { padding: 5px 7px; background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-icon:hover { color: var(--text); background: var(--surface2); }
+
+  /* Modal */
+  .modal-bg { display: none; position: fixed; inset: 0; background: #00000088; z-index: 100; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+  .modal h2 { margin-bottom: 18px; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+  /* Forms */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 12px; color: var(--muted); font-weight: 500; }
+  input, select, textarea { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 7px; padding: 8px 10px; font-size: 13px; width: 100%; outline: none; transition: border .15s; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(77,255,110,0.12); }
+  #lf-item-search:focus { border-radius: 7px 7px 0 0; }
+  input[type="date"] { cursor: pointer; }
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: brightness(0) invert(1); cursor: pointer; padding: 2px; opacity: 0.75; }
+  input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+  select option { background: var(--surface); }
+  textarea { resize: vertical; min-height: 60px; }
+
+  /* Filters */
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  .search-wrap { position: relative; flex: 1; min-width: 180px; max-width: 300px; }
+  .search-wrap input { padding-left: 32px; }
+  .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+
+  /* Alert banner */
+  .alert-banner { background: rgba(255,77,77,0.08); border: 1px solid rgba(255,77,77,0.3); border-radius: var(--radius); padding: 10px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+  .alert-banner.hidden { display: none; }
+  .alert-icon { color: var(--danger); font-size: 1.1rem; }
+
+  /* Reorder panel */
+  .reorder-status { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 48px 24px; color: var(--muted); }
+  .empty .icon { font-size: 3rem; margin-bottom: 10px; }
+
+  /* Log entry */
+  .status-chip { background: transparent; border: 1px solid; border-radius: 99px; padding: 4px 11px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background .15s, opacity .15s; opacity: 0.5; }
+  .status-chip.active { opacity: 1; background: rgba(255,255,255,0.08); }
+  .rl-wrap .rl-x { opacity: 0; transition: opacity .15s; }
+  .rl-wrap:hover .rl-x { opacity: 1; }
+  .log-entry { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; transition: background .12s; }
+  .log-entry:hover { background: var(--surface-alt, #1a221a); }
+  .log-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .log-qty { font-size: 1.1rem; font-weight: 700; }
+
+  /* Tooltip */
+  [title]:not(button) { cursor: help; }
+
+  .sort-arrow { font-size: 10px; margin-left: 3px; opacity: 0.5; }
+  .sort-arrow.active { opacity: 1; color: var(--accent); font-weight:700; }
+
+  @media (max-width: 600px) {
+    .form-grid { grid-template-columns: 1fr; }
+    main { padding: 14px 12px; }
+    header { padding: 12px 14px; }
+    .summary { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <img src="https://www.golocad.com/images/LOCAD-LOGO-WHITE.svg" alt="Locad" style="height:22px;margin-right:4px">
+    <span style="color:var(--muted);font-size:1rem;font-weight:400;margin:0 8px">|</span>
+    <h1 style="font-size:1rem;font-weight:600;letter-spacing:.02em;color:var(--text)">SupplyBase</h1>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span id="role-badge" style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;background:rgba(77,255,110,0.12);color:var(--accent);letter-spacing:.05em;text-transform:uppercase"></span>
+  <div class="header-actions" style="margin-left:0">
+    <button id="btn-add-item" class="btn btn-primary" onclick="openItemModal()">+ Add Item</button>
+    <button id="btn-refresh" class="btn btn-secondary" onclick="refreshData()" title="Refresh data from Google Sheets">↻ Refresh</button>
+    <button id="btn-reset" class="btn btn-secondary" onclick="confirmReset()" style="color:var(--danger);border-color:rgba(255,77,77,0.3)">↺ Reset</button>
+    <button id="btn-settings" class="btn btn-secondary" onclick="openSettings()">⚙ Settings</button>
+    <button id="btn-contact-admin" class="btn btn-secondary" onclick="openContactAdmin()">📞 Contact Admin</button>
+    <button id="btn-change-pass" class="btn btn-secondary" onclick="openChangePassword()">🔑 Change Password</button>
+    <button class="btn btn-secondary" onclick="logout()">Sign out</button>
+  </div>
+  </div>
+</header>
+
+<main>
+  <!-- Summary Cards -->
+  <div class="summary">
+    <div class="card" onclick="filterInventory('')" style="cursor:pointer" title="Show all items">
+      <div class="label">Total Items</div>
+      <div class="value" id="s-total">0</div>
+    </div>
+    <div class="card danger" onclick="filterInventory('danger')" style="cursor:pointer" title="Show out-of-stock items">
+      <div class="label">⚠ Out of Stock</div>
+      <div class="value" id="s-out">0</div>
+    </div>
+    <div class="card warn" onclick="filterInventory('warn')" style="cursor:pointer" title="Show low-stock items">
+      <div class="label">⚡ Low Stock</div>
+      <div class="value" id="s-low">0</div>
+    </div>
+    <div class="card ok" onclick="filterInventory('ok')" style="cursor:pointer" title="Show healthy items">
+      <div class="label">✓ Healthy</div>
+      <div class="value" id="s-ok">0</div>
+    </div>
+    <div class="card" onclick="switchTab('reorder')" style="cursor:pointer" title="Go to Reorder tab">
+      <div class="label">Reorders Pending</div>
+      <div class="value" id="s-reorder">0</div>
+    </div>
+    <div class="card" onclick="switchTab('usage')" style="cursor:pointer" title="Go to Usage Log tab">
+      <div class="label">Log Entries</div>
+      <div class="value" id="s-logs">0</div>
+    </div>
+  </div>
+
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('inventory')">📋 Inventory</div>
+    <div class="tab" onclick="switchTab('usage')">📝 Usage Log</div>
+    <div class="tab" onclick="switchTab('reorder')">🔄 Reorder</div>
+    <div class="tab" onclick="switchTab('report')">💰 Cost Report</div>
+  </div>
+
+  <!-- INVENTORY TAB -->
+  <div class="tab-panel active" id="tab-inventory">
+    <div class="filters">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="inv-search" placeholder="Search items..." oninput="renderInventory()">
+      </div>
+      <div id="inv-status-chips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button class="status-chip" data-val="danger" onclick="toggleStatusChip('danger')" style="border-color:var(--danger);color:var(--danger)">⚠ Out of Stock</button>
+        <button class="status-chip" data-val="warn"   onclick="toggleStatusChip('warn')"   style="border-color:var(--warn);color:var(--warn)">⚡ Low Stock</button>
+        <button class="status-chip" data-val="ok"     onclick="toggleStatusChip('ok')"     style="border-color:var(--ok);color:var(--ok)">✓ Healthy</button>
+      </div>
+      <select id="inv-filter-cat" onchange="renderInventory()" style="max-width:220px;width:auto">
+        <option value="">All Categories</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortBy('seq')" title="Master List order"># <span class="sort-arrow active" id="sort-seq">↑</span></th><th onclick="sortBy('name')">Item <span class="sort-arrow" id="sort-name">↕</span></th>
+            <th onclick="sortBy('category')">Category <span class="sort-arrow" id="sort-category">↕</span></th>
+            <th onclick="sortBy('qty')">Stock <span class="sort-arrow" id="sort-qty">↕</span></th>
+            <th>Level</th>
+            <th onclick="sortBy('unit')">Unit <span class="sort-arrow" id="sort-unit">↕</span></th>
+            <th onclick="sortBy('minQty')">Min Qty <span class="sort-arrow" id="sort-minQty">↕</span></th>
+            <th>Status</th>
+            <th>Location</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="inv-tbody"></tbody>
+      </table>
+    </div>
+    <div class="empty hidden" id="inv-empty"><div class="icon">📦</div><p>No items found. Add your first item!</p></div>
+  </div>
+
+  <!-- USAGE LOG TAB -->
+  <div class="tab-panel" id="tab-usage">
+    <div class="filters">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="log-search" placeholder="Search logs..." oninput="renderLogs()">
+      </div>
+      <select id="log-filter-item" onchange="renderLogs()">
+        <option value="">All Items</option>
+      </select>
+      <select id="log-filter-type" onchange="renderLogs()">
+        <option value="">All Types</option>
+        <option value="use">Use</option>
+        <option value="restock">Restock</option>
+        <option value="adjust">Adjust</option>
+        <option value="damage">Damage</option>
+      </select>
+      <button id="btn-log-usage" class="btn btn-primary" onclick="openLogModal()">+ Log Usage</button>
+    </div>
+    <div id="log-list"></div>
+    <div class="empty hidden" id="log-empty"><div class="icon">📝</div><p>No log entries yet.</p></div>
+  </div>
+
+  <!-- REORDER TAB -->
+  <div class="tab-panel" id="tab-reorder">
+    <div class="filters">
+      <select id="reorder-filter" onchange="renderReorder()">
+        <option value="">All Items</option>
+        <option value="needed">Needs Reorder</option>
+        <option value="ordered">Ordered</option>
+        <option value="received">Received</option>
+      </select>
+      <button id="btn-create-reorder" class="btn btn-primary" onclick="openReorderModal()">+ Create Reorder</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Supplier</th>
+            <th>Qty to Order</th>
+            <th>Cost/Unit</th>
+            <th>Total Cost</th>
+            <th>Timeline</th>
+            <th>Status</th>
+            <th>Notes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="reorder-tbody"></tbody>
+      </table>
+    </div>
+    <div class="empty hidden" id="reorder-empty"><div class="icon">🔄</div><p>No reorder records yet.</p></div>
+  </div>
+</main>
+
+<!-- ADD/EDIT ITEM MODAL -->
+<div class="modal-bg" id="item-modal">
+  <div class="modal">
+    <h2 id="item-modal-title">Add Item</h2>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Item Name *</label>
+        <input type="text" id="f-name" placeholder="e.g. Stretch Wrap Film">
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <input type="text" id="f-category" list="cat-list" placeholder="e.g. Packaging">
+        <datalist id="cat-list"></datalist>
+      </div>
+      <div class="form-group">
+        <label>Location / Zone</label>
+        <input type="text" id="f-location" placeholder="e.g. Rack A3">
+      </div>
+      <div class="form-group">
+        <label>Current Qty *</label>
+        <input type="number" id="f-qty" min="0" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Unit</label>
+        <input type="text" id="f-unit" placeholder="rolls, boxes, pcs…">
+      </div>
+      <div class="form-group">
+        <label>Min Qty (low stock alert)</label>
+        <input type="number" id="f-min" min="0" placeholder="10">
+      </div>
+      <div class="form-group">
+        <label>Reorder Qty</label>
+        <input type="number" id="f-reorder-qty" min="0" placeholder="50">
+      </div>
+      <div class="form-group">
+        <label>Cost per Unit (₱)</label>
+        <input type="number" id="f-cost" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label>Supplier</label>
+        <input type="text" id="f-supplier" placeholder="Supplier name">
+      </div>
+      <div class="form-group">
+        <label>SKU / Part #</label>
+        <input type="text" id="f-sku" placeholder="Optional">
+      </div>
+      <div class="form-group full">
+        <label>Notes</label>
+        <textarea id="f-notes" placeholder="Any additional info…"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('item-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOG USAGE MODAL -->
+<div class="modal-bg" id="log-modal">
+  <div class="modal">
+    <h2>Log Entry</h2>
+    <div class="form-grid">
+      <div class="form-group full" style="position:relative">
+        <label>Item *</label>
+        <input type="text" id="lf-item-search" placeholder="Type to search item…" autocomplete="off" oninput="filterItemDropdown()" onfocus="filterItemDropdown()" onblur="setTimeout(()=>closeItemDropdown(),180)">
+        <input type="hidden" id="lf-item">
+        <div id="lf-item-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--surface2);border:1px solid var(--border);border-radius:0 0 7px 7px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.5)"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Type *</label>
+        <select id="lf-type" onchange="updateLogFormLabels()">
+          <option value="use">Use (deduct)</option>
+          <option value="restock">Restock (add)</option>
+          <option value="adjust">Manual Adjust</option>
+          <option value="damage">Damage / Loss</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Quantity *</label>
+        <input type="number" id="lf-qty" min="0" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Performed By</label>
+        <input type="text" id="lf-by" placeholder="Name or team">
+      </div>
+      <div class="form-group">
+        <label>Date &amp; Time</label>
+        <div id="lf-date-display" style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:13px;color:var(--muted)"></div>
+      </div>
+      <div class="form-group">
+        <label>Reference / PO #</label>
+        <input type="text" id="lf-ref" placeholder="Optional">
+      </div>
+      <div class="form-group full">
+        <label id="lf-notes-label">Notes</label>
+        <textarea id="lf-notes" placeholder="Reason, project, etc."></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('log-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLog()">Save Log</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOG DETAIL MODAL -->
+<div class="modal-bg" id="log-detail-modal">
+  <div class="modal" style="max-width:460px">
+    <h2 id="ld-title">Log Detail</h2>
+    <div id="ld-body" style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="closeModal('log-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ITEM DETAIL MODAL -->
+<div class="modal-bg" id="item-detail-modal">
+  <div class="modal" style="max-width:500px">
+    <h2 id="idet-title">Item Detail</h2>
+    <div id="idet-body" style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('item-detail-modal')">Close</button>
+      <button class="btn btn-primary" id="idet-edit-btn" style="display:none" onclick="openItemModalFromDetail()">✏️ Edit</button>
+    </div>
+  </div>
+</div>
+
+<!-- REORDER MODAL -->
+<div class="modal-bg" id="reorder-modal">
+  <div class="modal">
+    <h2 id="reorder-modal-title">Create Reorder</h2>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Item *</label>
+        <select id="rf-item" onchange="prefillReorder()"></select>
+      </div>
+      <div class="form-group">
+        <label>Supplier</label>
+        <input type="text" id="rf-supplier" placeholder="Supplier name">
+      </div>
+      <div class="form-group">
+        <label>Qty to Order *</label>
+        <input type="number" id="rf-qty" min="1" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Cost per Unit (₱)</label>
+        <input type="number" id="rf-cost" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label>Order Date</label>
+        <input type="date" id="rf-order-date">
+      </div>
+      <div class="form-group">
+        <label>Expected Delivery</label>
+        <input type="date" id="rf-delivery-date">
+      </div>
+      <div class="form-group full">
+        <label>Status</label>
+        <select id="rf-status">
+          <option value="needed">Needed</option>
+          <option value="ordered">Ordered</option>
+          <option value="received">Received</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Notes</label>
+        <textarea id="rf-notes" placeholder="PO number, contact, etc."></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('reorder-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveReorder()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- VARIANCE ADJUSTMENT MODAL -->
+<div class="modal-bg" id="adjust-modal">
+  <div class="modal" style="max-width:480px">
+    <h2>Stock Adjustment</h2>
+    <p style="color:var(--muted);margin-bottom:16px;font-size:13px" id="adjust-item-name"></p>
+
+    <!-- System qty vs variance cards -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">System qty</div>
+        <div style="font-size:1.6rem;font-weight:700" id="adj-sys-display">—</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Variance</div>
+        <div style="font-size:1.6rem;font-weight:700" id="adj-variance-display" style="color:var(--muted)">—</div>
+      </div>
+    </div>
+
+    <!-- Mode toggle -->
+    <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      <button id="adj-mode-physical" onclick="setAdjMode('physical')" style="flex:1;padding:7px 10px;background:var(--accent);color:#060A06;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:.15s">Physical Count</button>
+      <button id="adj-mode-variance" onclick="setAdjMode('variance')" style="flex:1;padding:7px 10px;background:transparent;color:var(--muted);border:none;cursor:pointer;font-size:12px;font-weight:500;transition:.15s">Enter Variance</button>
+    </div>
+
+    <div class="form-grid">
+      <div class="form-group full" id="adj-physical-group">
+        <label>Physical count (actual qty on hand) *</label>
+        <input type="number" id="adj-qty" min="0" placeholder="Enter counted quantity" oninput="calcAdjVariance()">
+      </div>
+      <div class="form-group full" id="adj-variance-group" style="display:none">
+        <label>Variance amount * <span style="color:var(--muted);font-weight:400;font-size:11px">use negative for shortage, positive for overage</span></label>
+        <input type="number" id="adj-variance-input" placeholder="e.g. -8 or +5" oninput="calcAdjFromVariance()">
+      </div>
+      <div class="form-group full" id="adj-reason-group" style="display:none">
+        <label>Variance reason <span style="color:var(--danger)">*</span></label>
+        <select id="adj-reason">
+          <option value="">— select a reason —</option>
+          <option value="Damaged / unusable">Damaged / unusable</option>
+          <option value="Lost / missing">Lost / missing</option>
+          <option value="Previous miscount">Previous miscount</option>
+          <option value="Unrecorded usage">Unrecorded usage</option>
+          <option value="Found stock (overage)">Found stock (overage)</option>
+          <option value="Data entry error">Data entry error</option>
+          <option value="Theft / pilferage">Theft / pilferage</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Counted by</label>
+        <input type="text" id="adj-by" placeholder="Name">
+      </div>
+      <div class="form-group">
+        <label>Date &amp; Time</label>
+        <input type="datetime-local" id="adj-date">
+      </div>
+      <div class="form-group full">
+        <label>Notes</label>
+        <textarea id="adj-notes" placeholder="Additional context…" style="min-height:52px"></textarea>
+      </div>
+    </div>
+
+    <!-- Summary box -->
+    <div id="adj-summary" style="display:none;border-radius:var(--radius);padding:10px 14px;margin-top:12px;font-size:13px"></div>
+
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-secondary" onclick="closeModal('adjust-modal')">Cancel</button>
+      <button class="btn btn-primary" id="adj-submit-btn" onclick="applyAdjust()">Apply adjustment</button>
+    </div>
+  </div>
+</div>
+
+  <!-- COST REPORT TAB -->
+  <div class="tab-panel" id="tab-report">
+    <div class="filters" style="margin-bottom:16px;flex-wrap:wrap">
+      <label style="color:var(--muted);font-size:12px;font-weight:500;align-self:center;white-space:nowrap">From</label>
+      <input type="date" id="rpt-from" style="width:150px;flex:0 0 auto" onchange="renderReport();renderVariance()">
+      <label style="color:var(--muted);font-size:12px;font-weight:500;align-self:center;white-space:nowrap">To</label>
+      <input type="date" id="rpt-to" style="width:150px;flex:0 0 auto" onchange="renderReport();renderVariance()">
+      <select id="rpt-type" style="flex:0 0 auto;width:auto" onchange="renderReport()">
+        <option value="use,damage">Consumption (Use + Damage)</option>
+        <option value="use">Use only</option>
+        <option value="damage">Damage / Loss only</option>
+        <option value="restock">Restock only</option>
+      </select>
+      <select id="rpt-cat" style="flex:0 0 auto;width:auto" onchange="renderReport()">
+        <option value="">All Categories</option>
+      </select>
+      <button class="btn btn-secondary" onclick="exportReportCSV()">⬇ Export Summary CSV</button>
+      <button class="btn btn-secondary" onclick="exportDetailedCSV()">⬇ Export Detailed Log</button>
+    </div>
+
+    <!-- Totals row -->
+    <div class="summary" style="margin-bottom:18px" id="rpt-summary">
+      <div class="card">
+        <div class="label">Total Cost Consumed</div>
+        <div class="value" id="rpt-total-cost" style="color:var(--danger)">₱0.00</div>
+      </div>
+      <div class="card">
+        <div class="label">Total Units Consumed</div>
+        <div class="value" id="rpt-total-qty">0</div>
+      </div>
+      <div class="card">
+        <div class="label">Unique Items</div>
+        <div class="value" id="rpt-unique">0</div>
+      </div>
+      <div class="card">
+        <div class="label">Log Entries</div>
+        <div class="value" id="rpt-entries">0</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortReport('name')">Item <span class="sort-arrow" id="rsort-name">↕</span></th>
+            <th onclick="sortReport('category')">Category <span class="sort-arrow" id="rsort-category">↕</span></th>
+            <th onclick="sortReport('unit')">Unit</th>
+            <th onclick="sortReport('costPerUnit')">Cost / Unit <span class="sort-arrow" id="rsort-costPerUnit">↕</span></th>
+            <th onclick="sortReport('totalQty')">Qty Consumed <span class="sort-arrow" id="rsort-totalQty">↕</span></th>
+            <th onclick="sortReport('totalCost')">Total Cost <span class="sort-arrow" id="rsort-totalCost">↕</span></th>
+            <th onclick="sortReport('entries')">Log Entries <span class="sort-arrow" id="rsort-entries">↕</span></th>
+            <th>% of Total Cost</th>
+          </tr>
+        </thead>
+        <tbody id="rpt-tbody"></tbody>
+      </table>
+    </div>
+    <div class="empty hidden" id="rpt-empty"><div class="icon">💰</div><p>No consumption data for this period.</p></div>
+
+    <!-- VARIANCE SECTION -->
+    <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <h3 style="margin:0;font-size:1rem;color:var(--text)">📊 Variance Adjustments</h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="var-type" onchange="renderVariance()" style="width:auto;flex:0 0 auto">
+            <option value="">All Variances</option>
+            <option value="negative">Negative (Shortage)</option>
+            <option value="positive">Positive (Excess)</option>
+          </select>
+          <button class="btn btn-secondary" onclick="exportVarianceCSV()">⬇ Export CSV</button>
+        </div>
+      </div>
+
+      <div class="summary" style="margin-bottom:18px">
+        <div class="card"><div class="label">Total Adjustments</div><div class="value" id="var-total">0</div></div>
+        <div class="card danger"><div class="label">⬇ Shortage (count)</div><div class="value" id="var-neg">0</div></div>
+        <div class="card danger"><div class="label">⬇ Cost of Shortage</div><div class="value" id="var-neg-cost" style="font-size:1.2rem">₱0</div></div>
+        <div class="card ok"><div class="label">⬆ Excess (count)</div><div class="value" id="var-pos">0</div></div>
+        <div class="card ok"><div class="label">⬆ Cost of Excess</div><div class="value" id="var-pos-cost" style="font-size:1.2rem">₱0</div></div>
+        <div class="card"><div class="label">Net Variance</div><div class="value" id="var-net">0</div></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date & Time</th>
+              <th>Item</th>
+              <th>Category</th>
+              <th>Expected</th>
+              <th>Actual</th>
+              <th>Variance</th>
+              <th>Cost Impact</th>
+              <th>Reason</th>
+              <th>Performed By</th>
+            </tr>
+          </thead>
+          <tbody id="var-tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="var-empty"><div class="icon">📊</div><p>No variance adjustments for this period.</p></div>
+    </div>
+  </div>
+
+<!-- IMPORT INPUT -->
+<input type="file" id="file-import" accept=".json" style="display:none" onchange="handleImport(event)">
+
+<script>
+// ─── DATA STORE ────────────────────────────────────────────────────────────────
+let db = { items: [], logs: [], reorders: [], accounts: [] };
+let currentUser = null; // { username, role }
+let editItemId = null;
+let editReorderId = null;
+let adjustItemId = null;
+let sortField = 'seq';
+let sortDir = 1;
+
+const SUPABASE_URL_KEY  = 'supplybase_supabase_url';
+const SUPABASE_ANON_KEY = 'supplybase_supabase_anon_key';
+const SESSION_ROLE_KEY  = 'consumables_tracker_session_role';
+const SESSION_USER_KEY  = 'consumables_tracker_session_user';
+let sb = null;
+
+function initSupabase() {
+  var url = localStorage.getItem(SUPABASE_URL_KEY);
+  var key = localStorage.getItem(SUPABASE_ANON_KEY);
+  if (url && key) {
+    sb = window.supabase.createClient(url, key);
+    return true;
+  }
+  return false;
+}
+
+// Format numbers with thousands commas
+function fmt(n) {
+  var num = parseFloat(n);
+  if (isNaN(num)) return n;
+  return num % 1 === 0 ? num.toLocaleString('en-US') : num.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function fmtInt(n) { return parseInt(n).toLocaleString('en-US'); }
+function fmtPHP(n) { return '₱' + fmt(n); }
+
+async function refreshData() {
+  var btn = document.getElementById('btn-refresh');
+  if (btn) { btn.textContent = '↻ Refreshing…'; btn.disabled = true; }
+  if (!sb) { if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; } return; }
+  try {
+    var [r1, r2, r3, r4] = await Promise.all([
+      sb.from('items').select('*').order('seq'),
+      sb.from('logs').select('*'),
+      sb.from('reorders').select('*'),
+      sb.from('accounts').select('*'),
+    ]);
+    if (r1.data) db.items    = r1.data;
+    if (r2.data) db.logs     = r2.data;
+    if (r3.data) db.reorders = r3.data;
+    if (r4.data) db.accounts = r4.data;
+    updateSummary();
+    renderInventory(); renderLogs(); renderReorder();
+  } catch(e) { console.error('Refresh failed:', e); }
+  if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; }
+}
+
+var autoRefreshTimer = null;
+function startAutoRefresh() {
+  stopAutoRefresh();
+  autoRefreshTimer = setInterval(function() {
+    if (currentRole) refreshData();
+  }, 5 * 60 * 1000); // every 5 minutes
+}
+function stopAutoRefresh() {
+  if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+}
+
+var _saveTimer = null;
+function save() {
+  updateSummary();
+  if (!sb) return;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(_sbUpsertAll, 600);
+}
+async function _sbUpsertAll() {
+  try {
+    var ops = [];
+    if (db.items.length)    ops.push(sb.from('items').upsert(db.items));
+    if (db.logs.length)     ops.push(sb.from('logs').upsert(db.logs));
+    if (db.reorders.length) ops.push(sb.from('reorders').upsert(db.reorders));
+    if (db.accounts.length) ops.push(sb.from('accounts').upsert(db.accounts));
+    if (ops.length) await Promise.all(ops);
+  } catch(e) { console.error('Supabase sync error:', e); }
+}
+// Targeted delete helpers
+async function _sbDeleteItem(id) {
+  if (!sb) return;
+  await sb.from('items').delete().eq('id', id);
+  await sb.from('logs').delete().eq('itemId', id);
+  await sb.from('reorders').delete().eq('itemId', id);
+}
+async function _sbDeleteReorder(id) { if (sb) await sb.from('reorders').delete().eq('id', id); }
+async function _sbDeleteAccount(id) { if (sb) await sb.from('accounts').delete().eq('id', id); }
+async function _sbClearLogsAndReorders() {
+  if (!sb) return;
+  await sb.from('logs').delete().not('id', 'is', null);
+  await sb.from('reorders').delete().not('id', 'is', null);
+}
+async function _sbFullReplace() {
+  if (!sb) return;
+  await sb.from('accounts').delete().not('id', 'is', null);
+  await sb.from('reorders').delete().not('id', 'is', null);
+  await sb.from('logs').delete().not('id', 'is', null);
+  await sb.from('items').delete().not('id', 'is', null);
+  var ops = [];
+  if (db.items.length)    ops.push(sb.from('items').insert(db.items));
+  if (db.logs.length)     ops.push(sb.from('logs').insert(db.logs));
+  if (db.reorders.length) ops.push(sb.from('reorders').insert(db.reorders));
+  if (db.accounts.length) ops.push(sb.from('accounts').insert(db.accounts));
+  if (ops.length) await Promise.all(ops);
+}
+
+function showSetupOverlay(msg) {
+  document.getElementById('supa-setup-overlay').style.display = 'flex';
+  document.getElementById('login-overlay').style.display = 'none';
+  if (msg) document.getElementById('supa-setup-error').textContent = msg;
+}
+
+async function connectSupabase() {
+  var url = document.getElementById('supa-url-input').value.trim().replace(/\/$/, '');
+  var key = document.getElementById('supa-key-input').value.trim();
+  var errEl = document.getElementById('supa-setup-error');
+  if (!url || !url.startsWith('https://')) { errEl.textContent = 'Enter a valid Supabase project URL (starts with https://).'; return; }
+  if (!key || key.length < 20) { errEl.textContent = 'Enter your Supabase anon/public key.'; return; }
+  errEl.textContent = 'Connecting…';
+  localStorage.setItem(SUPABASE_URL_KEY, url);
+  localStorage.setItem(SUPABASE_ANON_KEY, key);
+  sb = window.supabase.createClient(url, key);
+  await load();
+}
+
+async function load() {
+  if (!sb) { if (!initSupabase()) { showSetupOverlay(''); return; } }
+  document.getElementById('supa-setup-error').textContent = 'Loading data…';
+  try {
+    var [r1, r2, r3, r4] = await Promise.all([
+      sb.from('items').select('*').order('seq'),
+      sb.from('logs').select('*'),
+      sb.from('reorders').select('*'),
+      sb.from('accounts').select('*'),
+    ]);
+    if (r1.error) throw new Error(r1.error.message);
+    db.items    = r1.data || [];
+    db.logs     = r2.data || [];
+    db.reorders = r3.data || [];
+    db.accounts = r4.data || [];
+    // First time — seed from Master List
+    if (db.items.length === 0) {
+      db.items = JSON.parse(JSON.stringify(SEED_ITEMS));
+      await sb.from('items').insert(db.items);
+    }
+    document.getElementById('supa-setup-overlay').style.display = 'none';
+    // Restore saved session
+    var savedUser = localStorage.getItem(SESSION_USER_KEY);
+    var savedRole = localStorage.getItem(SESSION_ROLE_KEY);
+    if (savedUser) {
+      try {
+        currentUser = JSON.parse(savedUser);
+        if (currentUser.role === 'admin') { currentUser.role = 'superuser'; localStorage.setItem(SESSION_USER_KEY, JSON.stringify(currentUser)); }
+        currentRole = currentUser.role;
+        applyRoleUI();
+        renderInventory(); renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
+      } catch(e) { renderRecentLogins(); document.getElementById('login-overlay').style.display = 'flex'; }
+    } else if (savedRole) {
+      currentRole = savedRole;
+      currentUser = { username: savedRole, role: savedRole };
+      applyRoleUI();
+      renderInventory(); renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
+    } else {
+      renderRecentLogins();
+      document.getElementById('login-overlay').style.display = 'flex';
+    }
+  } catch(e) {
+    showSetupOverlay('Connection failed: ' + e.message + '. Check your URL and anon key.');
+  }
+}
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+
+// ─── TABS ───────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', ['inventory','usage','reorder','report'][i] === name);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'inventory') renderInventory();
+  if (name === 'usage') renderLogs();
+  if (name === 'reorder') renderReorder();
+  if (name === 'report') { renderReport(); renderVariance(); }
+}
+
+function toggleStatusChip(val) {
+  const chip = document.querySelector(`.status-chip[data-val="${val}"]`);
+  chip.classList.toggle('active');
+  renderInventory();
+}
+
+function getActiveStatusFilters() {
+  return Array.from(document.querySelectorAll('.status-chip.active')).map(c => c.dataset.val);
+}
+
+function filterInventory(status) {
+  switchTab('inventory');
+  // Clear all chips first, then activate the requested one
+  document.querySelectorAll('.status-chip').forEach(c => c.classList.remove('active'));
+  if (status) {
+    const chip = document.querySelector(`.status-chip[data-val="${status}"]`);
+    if (chip) chip.classList.add('active');
+  }
+  document.getElementById('inv-search').value = '';
+  renderInventory();
+}
+
+// ─── SUMMARY ────────────────────────────────────────────────────────────────────
+function stockStatus(item) {
+  if (item.qty <= 0) return 'danger';
+  if (item.qty <= item.minQty) return 'warn';
+  return 'ok';
+}
+function updateSummary() {
+  const total = db.items.length;
+  const out = db.items.filter(i => i.qty <= 0).length;
+  const low = db.items.filter(i => i.qty > 0 && i.qty <= i.minQty).length;
+  const ok = db.items.filter(i => i.qty > i.minQty).length;
+  const reorders = db.reorders.filter(r => r.status !== 'received').length;
+  document.getElementById('s-total').textContent = fmtInt(total);
+  document.getElementById('s-out').textContent = fmtInt(out);
+  document.getElementById('s-low').textContent = fmtInt(low);
+  document.getElementById('s-ok').textContent = fmtInt(ok);
+  document.getElementById('s-reorder').textContent = fmtInt(reorders);
+  document.getElementById('s-logs').textContent = fmtInt(db.logs.length);
+
+}
+
+// ─── INVENTORY ──────────────────────────────────────────────────────────────────
+function renderInventory() {
+  const q = document.getElementById('inv-search').value.toLowerCase();
+  const activeStatuses = getActiveStatusFilters();
+  const fc = document.getElementById('inv-filter-cat').value;
+  let items = db.items.filter(i => {
+    if (q && !i.name.toLowerCase().includes(q) && !i.category?.toLowerCase().includes(q) && !i.sku?.toLowerCase().includes(q)) return false;
+    if (activeStatuses.length && !activeStatuses.includes(stockStatus(i))) return false;
+    if (fc && i.category !== fc) return false;
+    return true;
+  });
+  items.sort((a, b) => {
+    let av = a[sortField] ?? '';
+    let bv = b[sortField] ?? '';
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    return av < bv ? -sortDir : av > bv ? sortDir : 0;
+  });
+
+  const tbody = document.getElementById('inv-tbody');
+  const empty = document.getElementById('inv-empty');
+  tbody.innerHTML = '';
+  if (items.length === 0) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  items.forEach(item => {
+    const status = stockStatus(item);
+    const max = Math.max(item.qty, item.minQty * 2, 1);
+    const pct = Math.min(100, Math.round((item.qty / max) * 100));
+    const barColor = status === 'danger' ? 'var(--danger)' : status === 'warn' ? 'var(--warn)' : 'var(--ok)';
+    const badgeClass = status === 'danger' ? 'badge-danger' : status === 'warn' ? 'badge-warn' : 'badge-ok';
+    const badgeLabel = status === 'danger' ? '⛔ Out' : status === 'warn' ? '⚡ Low' : '✓ OK';
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.title = 'Click to view details';
+    tr.onclick = function() { openItemDetail(item.id); };
+    var actionsHtml = '<div class="actions-cell">';
+    if (can('log')) actionsHtml += '<button class="btn btn-icon btn-sm" title="Log usage" onclick="event.stopPropagation();openLogForItem(\'' + item.id + '\')">📝</button>';
+    if (can('adjust')) actionsHtml += '<button class="btn btn-icon btn-sm" title="Stock adjustment" onclick="event.stopPropagation();openAdjust(\'' + item.id + '\')">⚖</button>';
+    if (currentRole === 'superuser') actionsHtml += '<button class="btn btn-icon btn-sm" title="Edit item" onclick="event.stopPropagation();openItemModal(\'' + item.id + '\')">✏️</button>';
+    if (currentRole === 'superuser') actionsHtml += '<button class="btn btn-icon btn-sm btn-danger" title="Delete" onclick="event.stopPropagation();deleteItem(\'' + item.id + '\')">🗑</button>';
+    actionsHtml += '</div>';
+    tr.innerHTML = `
+      <td style="color:var(--muted);font-size:12px;text-align:center">${item.seq||''}</td>
+      <td><strong>${esc(item.name)}</strong>${item.sku ? '<br><span style="color:var(--muted);font-size:11px">'+esc(item.sku)+'</span>' : ''}</td>
+      <td>${item.category ? '<span class="badge badge-info">'+esc(item.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
+      <td style="font-weight:700;font-size:1.05rem">${fmtInt(item.qty)} <span style="color:var(--muted);font-size:12px">${esc(item.unit||'')}</span></td>
+      <td>
+        <div class="stock-bar-wrap">
+          <div class="stock-bar"><div class="stock-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+          <span style="font-size:11px;color:var(--muted)">${pct}%</span>
+        </div>
+      </td>
+      <td>${esc(item.unit||'—')}</td>
+      <td>${fmtInt(item.minQty||0)}</td>
+      <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+      <td>${esc(item.location||'—')}</td>
+      <td>${actionsHtml}</td>`;
+    tbody.appendChild(tr);
+  });
+  updateCatFilter();
+}
+
+function sortBy(field) {
+  if (sortField === field) sortDir *= -1; else { sortField = field; sortDir = 1; }
+  document.querySelectorAll('.sort-arrow').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById('sort-' + field);
+  if (el) { el.classList.add('active'); el.textContent = sortDir === 1 ? '↑' : '↓'; }
+  renderInventory();
+}
+
+function updateCatFilter() {
+  const cats = [...new Set(db.items.map(i => i.category).filter(Boolean))].sort();
+  const sel = document.getElementById('inv-filter-cat');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)}</option>`).join('');
+  const catDL = document.getElementById('cat-list');
+  if (catDL) catDL.innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
+}
+
+// ─── ITEM MODAL ─────────────────────────────────────────────────────────────────
+function openItemModal(id) {
+  editItemId = id || null;
+  const item = id ? db.items.find(i => i.id === id) : null;
+  document.getElementById('item-modal-title').textContent = item ? 'Edit Item' : 'Add Item';
+  document.getElementById('f-name').value = item?.name || '';
+  document.getElementById('f-category').value = item?.category || '';
+  document.getElementById('f-location').value = item?.location || '';
+  document.getElementById('f-qty').value = item?.qty ?? '';
+  document.getElementById('f-unit').value = item?.unit || '';
+  document.getElementById('f-min').value = item?.minQty ?? '';
+  document.getElementById('f-reorder-qty').value = item?.reorderQty ?? '';
+  document.getElementById('f-cost').value = item?.cost ?? '';
+  document.getElementById('f-supplier').value = item?.supplier || '';
+  document.getElementById('f-sku').value = item?.sku || '';
+  document.getElementById('f-notes').value = item?.notes || '';
+  updateCatFilter();
+  openModal('item-modal');
+}
+
+function saveItem() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { alert('Item name is required.'); return; }
+  const qty = parseFloat(document.getElementById('f-qty').value) || 0;
+  const data = {
+    name,
+    category: document.getElementById('f-category').value.trim(),
+    location: document.getElementById('f-location').value.trim(),
+    qty,
+    unit: document.getElementById('f-unit').value.trim(),
+    minQty: parseFloat(document.getElementById('f-min').value) || 0,
+    reorderQty: parseFloat(document.getElementById('f-reorder-qty').value) || 0,
+    cost: parseFloat(document.getElementById('f-cost').value) || 0,
+    supplier: document.getElementById('f-supplier').value.trim(),
+    sku: document.getElementById('f-sku').value.trim(),
+    notes: document.getElementById('f-notes').value.trim(),
+    updatedAt: new Date().toISOString(),
+  };
+  if (editItemId) {
+    const idx = db.items.findIndex(i => i.id === editItemId);
+    const old = db.items[idx];
+    db.items[idx] = { ...old, ...data };
+    if (old.qty !== qty) {
+      db.logs.push({ id: uid(), itemId: editItemId, type: 'adjust', qty: qty - old.qty, absQty: qty, by: 'Edit', date: new Date().toISOString(), notes: 'Item edited', ref: '' });
+    }
+  } else {
+    data.id = uid();
+    data.seq = db.items.length ? Math.max(...db.items.map(i=>i.seq||0)) + 1 : 1;
+    data.createdAt = new Date().toISOString();
+    db.items.push(data);
+    db.logs.push({ id: uid(), itemId: data.id, type: 'restock', qty, absQty: qty, by: 'Initial', date: new Date().toISOString(), notes: 'Item created', ref: '' });
+  }
+  save();
+  closeModal('item-modal');
+  renderInventory();
+}
+
+function deleteItem(id) {
+  if (!confirm('Delete this item and all its logs/reorders?')) return;
+  db.items = db.items.filter(i => i.id !== id);
+  db.logs = db.logs.filter(l => l.itemId !== id);
+  db.reorders = db.reorders.filter(r => r.itemId !== id);
+  updateSummary();
+  _sbDeleteItem(id);
+  renderInventory();
+}
+
+// ─── LOG ────────────────────────────────────────────────────────────────────────
+function renderLogs() {
+  const q = document.getElementById('log-search').value.toLowerCase();
+  const fi = document.getElementById('log-filter-item').value;
+  const ft = document.getElementById('log-filter-type').value;
+  let logs = db.logs.filter(l => {
+    const item = db.items.find(i => i.id === l.itemId);
+    if (fi && l.itemId !== fi) return false;
+    if (ft && l.type !== ft) return false;
+    if (q) {
+      const itemName = item?.name?.toLowerCase() || '';
+      if (!itemName.includes(q) && !l.by?.toLowerCase().includes(q) && !l.notes?.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const list = document.getElementById('log-list');
+  const empty = document.getElementById('log-empty');
+  list.innerHTML = '';
+  if (logs.length === 0) { empty.classList.remove('hidden'); }
+  else { empty.classList.add('hidden'); }
+  if (currentRole) { show('btn-log-usage', can('log')); }
+
+  const typeIcons = { use: '📤', restock: '📥', adjust: '⚖', damage: '💥' };
+  const typeColors = { use: 'var(--warn)', restock: 'var(--ok)', adjust: '#93c5fd', damage: 'var(--danger)' };
+
+  logs.forEach(log => {
+    const item = db.items.find(i => i.id === log.itemId);
+    const qtySign = log.type === 'use' || log.type === 'damage' ? '-' : log.qty >= 0 ? '+' : '';
+    const div = document.createElement('div');
+    div.className = 'log-entry';
+    div.style.cursor = 'pointer';
+    div.title = 'Click to view details';
+    div.onclick = () => openLogDetail(log.id);
+    var vBadge = '';
+    if (log.type === 'adjust' && log.variance != null) {
+      var vBg = log.variance < 0 ? 'rgba(255,77,77,0.15)' : log.variance > 0 ? 'rgba(77,255,110,0.12)' : 'rgba(255,255,255,0.06)';
+      var vColor = log.variance < 0 ? 'var(--danger)' : log.variance > 0 ? 'var(--ok)' : 'var(--muted)';
+      var vSign = log.variance >= 0 ? '+' : '';
+      vBadge = '<span style="font-size:11px;font-weight:600;margin-left:6px;padding:2px 7px;border-radius:99px;background:' + vBg + ';color:' + vColor + ';">' + vSign + log.variance + '</span>';
+    }
+    var vReason = log.varianceReason ? '<span style="font-size:11px;color:var(--muted);margin-left:4px">· ' + esc(log.varianceReason) + '</span>' : '';
+    var badgeClass = log.type==='use'?'badge-warn':log.type==='restock'?'badge-ok':log.type==='damage'?'badge-danger':'badge-info';
+    div.innerHTML = '<span style="font-size:1.4rem;padding-top:2px">' + (typeIcons[log.type]||'📋') + '</span>'
+      + '<div>'
+      + '<strong>' + esc(item ? item.name : 'Deleted Item') + '</strong>' + vBadge + vReason
+
+      + '<div class="log-meta">' + new Date(log.date).toLocaleString() + ' · By: ' + esc(log.by||'—') + (log.ref ? ' · Ref: ' + esc(log.ref) : '') + '</div>'
+      + (log.notes ? '<div style="color:var(--muted);font-size:12px;margin-top:3px">' + esc(log.notes) + '</div>' : '')
+      + '</div>'
+      + '<div style="text-align:right">'
+      + '<div class="log-qty" style="color:' + typeColors[log.type] + '">' + qtySign + fmtInt(Math.abs(log.qty)) + ' ' + esc(item ? (item.unit||'') : '') + '</div>'
+      + '<div style="color:var(--muted);font-size:11px;margin-top:2px">' + (log.absQty != null ? 'Stock: ' + log.absQty : '') + '</div>'
+      + '<div style="margin-top:4px"><span class="badge ' + badgeClass + '">' + log.type + '</span></div>'
+      + '</div>';
+    list.appendChild(div);
+  });
+
+  // Update item filter
+  const sel = document.getElementById('log-filter-item');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All Items</option>' + db.items.map(i => `<option value="${i.id}"${i.id===cur?' selected':''}>${esc(i.name)}</option>`).join('');
+}
+
+function openLogDetail(logId) {
+  const log = db.logs.find(l => l.id === logId);
+  if (!log) return;
+  const item = db.items.find(i => i.id === log.itemId);
+  const typeLabels = { use: 'Use (deduct)', restock: 'Restock (add)', adjust: 'Manual Adjust', damage: 'Damage / Loss' };
+  const typeColors = { use: 'var(--warn)', restock: 'var(--ok)', adjust: '#93c5fd', damage: 'var(--danger)' };
+  const qtySign = log.type === 'use' || log.type === 'damage' ? '-' : '+';
+  const color = typeColors[log.type] || 'var(--text)';
+
+  function row(label, value, valueStyle) {
+    if (!value && value !== 0) return '';
+    return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--muted);font-size:12px;min-width:120px">${label}</span>
+      <span style="font-size:13px;text-align:right;${valueStyle||''}">${value}</span>
+    </div>`;
+  }
+
+  const title = document.getElementById('ld-title');
+  title.textContent = item ? item.name : 'Deleted Item';
+
+  document.getElementById('ld-body').innerHTML =
+    row('Type', `<span style="color:${color};font-weight:600">${typeLabels[log.type]||log.type}</span>`)
+    + row('Date & Time', new Date(log.date).toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }))
+    + row('Quantity', `<span style="color:${color};font-weight:700">${qtySign}${fmtInt(Math.abs(log.qty))} ${esc(item ? (item.unit||'') : '')}</span>`)
+    + (log.absQty != null ? row('Stock after', fmtInt(log.absQty) + ' ' + esc(item ? (item.unit||'') : '')) : '')
+    + row('Performed by', esc(log.by || '—'))
+    + row('Reference / PO #', log.ref ? esc(log.ref) : '')
+    + (log.type === 'adjust' && log.variance != null ? row('Variance', (log.variance >= 0 ? '+' : '') + fmtInt(log.variance)) : '')
+    + (log.varianceReason ? row('Variance reason', esc(log.varianceReason)) : '')
+    + row('Notes', log.notes ? esc(log.notes) : '');
+
+  openModal('log-detail-modal');
+}
+
+var _itemDetailId = null;
+function openItemDetail(itemId) {
+  const item = db.items.find(i => i.id === itemId);
+  if (!item) return;
+  _itemDetailId = itemId;
+
+  const status = stockStatus(item);
+  const badgeClass = status === 'danger' ? 'badge-danger' : status === 'warn' ? 'badge-warn' : 'badge-ok';
+  const badgeLabel = status === 'danger' ? '⛔ Out of Stock' : status === 'warn' ? '⚡ Low Stock' : '✓ Healthy';
+
+  function row(label, value) {
+    if (value === null || value === undefined || value === '') return '';
+    return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="color:var(--muted);font-size:12px;min-width:130px">${label}</span>
+      <span style="font-size:13px;text-align:right">${value}</span>
+    </div>`;
+  }
+
+  document.getElementById('idet-title').textContent = esc(item.name);
+
+  // Last log date for this item
+  const itemLogs = db.logs.filter(l => l.itemId === itemId).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const lastLog = itemLogs[0];
+  const lastUpdated = lastLog ? new Date(lastLog.date).toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }) : '—';
+
+  document.getElementById('idet-body').innerHTML =
+    row('SKU', item.sku ? esc(item.sku) : '')
+    + row('Category', item.category ? `<span class="badge badge-info">${esc(item.category)}</span>` : '—')
+    + row('Status', `<span class="badge ${badgeClass}">${badgeLabel}</span>`)
+    + row('Current Stock', `<strong style="font-size:1.05rem">${fmtInt(item.qty)}</strong> <span style="color:var(--muted)">${esc(item.unit||'')}</span>`)
+    + row('Min Qty', fmtInt(item.minQty||0) + ' ' + esc(item.unit||''))
+    + row('Unit', esc(item.unit||'—'))
+    + row('Unit Cost', item.cost ? fmtPHP(item.cost) : '')
+    + row('Supplier', item.supplier ? esc(item.supplier) : '')
+    + row('Location', item.location ? esc(item.location) : '')
+    + row('Notes', item.notes ? esc(item.notes) : '')
+    + row('Last Activity', lastUpdated);
+
+  document.getElementById('idet-edit-btn').style.display = currentRole === 'superuser' ? '' : 'none';
+  openModal('item-detail-modal');
+}
+
+function openItemModalFromDetail() {
+  closeModal('item-detail-modal');
+  if (_itemDetailId) openItemModal(_itemDetailId);
+}
+
+function openLogModal() {
+  populateItemSelects();
+  document.getElementById('lf-item').value = '';
+
+  document.getElementById('lf-type').value = 'use';
+  updateLogFormLabels();
+  document.getElementById('lf-qty').value = '';
+  document.getElementById('lf-by').value = '';
+  document.getElementById('lf-date-display').textContent = new Date().toLocaleString();
+  document.getElementById('lf-ref').value = '';
+  document.getElementById('lf-notes').value = '';
+  openModal('log-modal');
+}
+
+function updateLogFormLabels() {
+  const type = document.getElementById('lf-type').value;
+  const label = document.getElementById('lf-notes-label');
+  const qtyLabel = document.querySelector('label[for="lf-qty"], .form-group:has(#lf-qty) label');
+  if (label) label.textContent = type === 'adjust' ? 'Variance Reason' : 'Notes';
+  const notesEl = document.getElementById('lf-notes');
+  if (notesEl) notesEl.placeholder = type === 'adjust' ? 'Why is the count different? (e.g. physical count, damage found…)' : 'Reason, project, etc.';
+}
+
+function openLogForItem(itemId) {
+  openLogModal();
+  const itm = db.items.find(i => i.id === itemId);
+  document.getElementById('lf-item').value = itemId;
+  document.getElementById('lf-item-search').value = itm ? itm.name : '';
+  switchTab('usage');
+}
+
+function saveLog() {
+  const itemId = document.getElementById('lf-item').value;
+  const type = document.getElementById('lf-type').value;
+  const qty = parseFloat(document.getElementById('lf-qty').value);
+  if (!itemId) { alert('Select an item.'); return; }
+  if (isNaN(qty) || qty <= 0) { alert('Enter a valid quantity.'); return; }
+  const item = db.items.find(i => i.id === itemId);
+  if (!item) return;
+  const originalQty = item.qty;
+  let delta = qty;
+  if (type === 'use' || type === 'damage') delta = -qty;
+  if (type === 'adjust') delta = qty - item.qty; // treat qty as absolute
+  const newQty = Math.max(0, item.qty + delta);
+  item.qty = newQty;
+  item.updatedAt = new Date().toISOString();
+  const logDate = new Date().toISOString();
+  const logEntry = {
+    id: uid(), itemId, type,
+    qty: type === 'adjust' ? newQty - originalQty : qty,
+    absQty: newQty,
+    by: document.getElementById('lf-by').value.trim(),
+    date: logDate,
+    ref: document.getElementById('lf-ref').value.trim(),
+    notes: document.getElementById('lf-notes').value.trim(),
+  };
+  if (type === 'adjust') {
+    logEntry.variance = newQty - originalQty;
+    logEntry.varianceReason = document.getElementById('lf-notes').value.trim();
+  }
+  db.logs.push(logEntry);
+  // Auto-update open reorders when a restock is logged for the same item
+  if (type === 'restock') {
+    db.reorders.forEach(r => {
+      if (r.itemId === itemId && r.status !== 'received') {
+        // Sum all restock logs for this item since the reorder was created
+        const since = r.createdAt || '1970-01-01';
+        const totalRestocked = db.logs
+          .filter(l => l.itemId === itemId && l.type === 'restock' && l.date >= since)
+          .reduce((s, l) => s + (l.qty || 0), 0);
+
+        if (totalRestocked >= r.qty) {
+          // Cumulative delivery complete — mark received
+          r.status = 'received';
+          if (!r.receivedAt) r.receivedAt = logDate;
+          r.notes = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
+        } else {
+          // Still partial — update the note with latest cumulative total
+          const partialNote = `⚠️ Partial delivery: ${fmtInt(totalRestocked)} of ${fmtInt(r.qty)} received (last: ${new Date(logDate).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })})`;
+          const existing = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
+          r.notes = partialNote + (existing ? '\n' + existing : '');
+        }
+      }
+    });
+  }
+  save();
+  closeModal('log-modal');
+  renderLogs();
+  renderInventory();
+  if (type === 'restock') renderReorder();
+}
+
+// ─── REORDER ────────────────────────────────────────────────────────────────────
+function renderReorder() {
+  // Backfill receivedAt for records marked received before timeline tracking
+  db.reorders.forEach(r => {
+    if (!r.receivedAt && r.status === 'received') r.receivedAt = r.updatedAt || null;
+  });
+  const f = document.getElementById('reorder-filter').value;
+  let reorders = db.reorders.filter(r => !f || r.status === f || (f==='needed' && r.status==='needed'));
+  reorders.sort((a, b) => new Date(b.orderDate||0) - new Date(a.orderDate||0));
+
+  const tbody = document.getElementById('reorder-tbody');
+  const empty = document.getElementById('reorder-empty');
+  tbody.innerHTML = '';
+  if (reorders.length === 0) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  reorders.forEach(r => {
+    const item = db.items.find(i => i.id === r.itemId);
+    const total = (r.qty * r.cost);
+    const statusColor = r.status === 'received' ? 'ok' : r.status === 'ordered' ? 'warn' : 'danger';
+    var rAct = '<div class="actions-cell">';
+    if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm" onclick="openReorderModal(\'' + r.id + '\')">✏️</button>';
+    if (r.status !== 'received' && can('mark_received')) rAct += '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Mark received" onclick="markReceived(\'' + r.id + '\')">✅</button>';
+    if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteReorder(\'' + r.id + '\')">🗑</button>';
+    rAct += '</div>';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${esc(item ? item.name : 'Deleted Item')}</strong></td>
+      <td>${esc(r.supplier||'—')}</td>
+      <td>${fmtInt(r.qty)} ${esc(item ? (item.unit||'') : '')}</td>
+      <td>${r.cost ? fmtPHP(r.cost) : '—'}</td>
+      <td>${r.cost && r.qty ? fmtPHP(total) : '—'}</td>
+      <td style="min-width:160px">${reorderTimeline(r)}</td>
+      <td><span class="badge badge-${statusColor}">${r.status}</span></td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.notes||'—')}</td>
+      <td>${rAct}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function reorderTimeline(r) {
+  function tsFmt(ts) {
+    if (!ts) return null;
+    const d = new Date(ts);
+    return d.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  }
+  const steps = [
+    { label: 'Ordered',  ts: r.orderedAt,  color: '#facc15' },
+    { label: 'Received', ts: r.receivedAt, color: 'var(--ok)' },
+  ];
+  return steps.map(s => {
+    const active = !!s.ts;
+    return `<div style="display:flex;align-items:baseline;gap:5px;font-size:11px;margin-bottom:2px;opacity:${active?1:0.38}">
+      <span style="width:7px;height:7px;border-radius:50%;background:${active?s.color:'var(--border)'};display:inline-block;flex-shrink:0;margin-top:1px"></span>
+      <span style="color:var(--muted);font-weight:500">${s.label}:</span>
+      <span>${active ? tsFmt(s.ts) : '—'}</span>
+    </div>`;
+  }).join('');
+}
+
+function openReorderModal(id) {
+  editReorderId = id || null;
+  populateItemSelects();
+  const r = id ? db.reorders.find(x => x.id === id) : null;
+  document.getElementById('reorder-modal-title').textContent = r ? 'Edit Reorder' : 'Create Reorder';
+  document.getElementById('rf-item').value = r?.itemId || '';
+  document.getElementById('rf-supplier').value = r?.supplier || '';
+  document.getElementById('rf-qty').value = r?.qty || '';
+  document.getElementById('rf-cost').value = r?.cost || '';
+  document.getElementById('rf-order-date').value = r?.orderDate ? r.orderDate.slice(0,10) : new Date().toISOString().slice(0,10);
+  document.getElementById('rf-delivery-date').value = r?.deliveryDate || '';
+  document.getElementById('rf-status').value = r?.status || 'needed';
+  document.getElementById('rf-notes').value = r?.notes || '';
+  if (!r) prefillReorder();
+  openModal('reorder-modal');
+}
+
+function prefillReorder() {
+  const itemId = document.getElementById('rf-item').value;
+  const item = db.items.find(i => i.id === itemId);
+  if (!item) return;
+  if (item.supplier) document.getElementById('rf-supplier').value = item.supplier;
+  if (item.reorderQty) document.getElementById('rf-qty').value = item.reorderQty;
+  if (item.cost) document.getElementById('rf-cost').value = item.cost;
+}
+
+function saveReorder() {
+  const itemId = document.getElementById('rf-item').value;
+  const qty = parseFloat(document.getElementById('rf-qty').value);
+  if (!itemId) { alert('Select an item.'); return; }
+  if (!qty || qty <= 0) { alert('Enter a valid quantity.'); return; }
+  const data = {
+    itemId,
+    supplier: document.getElementById('rf-supplier').value.trim(),
+    qty,
+    cost: parseFloat(document.getElementById('rf-cost').value) || 0,
+    orderDate: document.getElementById('rf-order-date').value,
+    deliveryDate: document.getElementById('rf-delivery-date').value,
+    status: document.getElementById('rf-status').value,
+    notes: document.getElementById('rf-notes').value.trim(),
+    updatedAt: new Date().toISOString(),
+  };
+  const now = new Date().toISOString();
+  if (editReorderId) {
+    const idx = db.reorders.findIndex(r => r.id === editReorderId);
+    const prev = db.reorders[idx];
+    // Stamp timestamp only when status first reaches each stage
+    if (data.status === 'ordered'  && !prev.orderedAt)  data.orderedAt  = now;
+    if (data.status === 'received' && !prev.receivedAt) data.receivedAt = now;
+    db.reorders[idx] = { ...prev, ...data };
+  } else {
+    data.id = uid();
+    data.createdAt = now;
+    if (data.status === 'ordered')  data.orderedAt  = now;
+    if (data.status === 'received') data.receivedAt = now;
+    db.reorders.push(data);
+  }
+  save();
+  closeModal('reorder-modal');
+  renderReorder();
+}
+
+function markReceived(id) {
+  const r = db.reorders.find(x => x.id === id);
+  if (!r) return;
+  const item = db.items.find(i => i.id === r.itemId);
+  if (!item) return;
+  const now = new Date().toISOString();
+  r.status = 'received';
+  if (!r.receivedAt) r.receivedAt = now;
+  const newQty = item.qty + r.qty;
+  db.logs.push({ id: uid(), itemId: r.itemId, type: 'restock', qty: r.qty, absQty: newQty, by: 'Reorder', date: new Date().toISOString(), notes: `Reorder received from ${r.supplier||'supplier'}`, ref: '' });
+  item.qty = newQty;
+  item.updatedAt = new Date().toISOString();
+  save();
+  renderReorder();
+  renderInventory();
+}
+
+function deleteReorder(id) {
+  if (!confirm('Delete this reorder record?')) return;
+  db.reorders = db.reorders.filter(r => r.id !== id);
+  updateSummary();
+  _sbDeleteReorder(id);
+  renderReorder();
+}
+
+// ─── VARIANCE ADJUSTMENT ─────────────────────────────────────────────────────────
+function openAdjust(id) {
+  adjustItemId = id;
+  const item = db.items.find(i => i.id === id);
+  document.getElementById('adjust-item-name').textContent = item.name + (item.sku ? ' (' + item.sku + ')' : '') + ' · ' + (item.unit||'unit');
+  document.getElementById('adj-sys-display').textContent = fmtInt(item.qty) + ' ' + (item.unit||'');
+  document.getElementById('adj-sys-display').style.color = 'var(--text)';
+  document.getElementById('adj-variance-display').textContent = '—';
+  document.getElementById('adj-variance-display').style.color = 'var(--muted)';
+  document.getElementById('adj-qty').value = '';
+  document.getElementById('adj-reason').value = '';
+  document.getElementById('adj-reason-group').style.display = 'none';
+  document.getElementById('adj-by').value = '';
+  document.getElementById('adj-date').value = toLocalDatetimeInput(new Date());
+  document.getElementById('adj-notes').value = '';
+  document.getElementById('adj-summary').style.display = 'none';
+  setAdjMode('physical');
+  openModal('adjust-modal');
+}
+
+function setAdjMode(mode) {
+  const physGrp = document.getElementById('adj-physical-group');
+  const varGrp = document.getElementById('adj-variance-group');
+  const btnPhys = document.getElementById('adj-mode-physical');
+  const btnVar = document.getElementById('adj-mode-variance');
+  const item = db.items.find(i => i.id === adjustItemId);
+
+  if (mode === 'physical') {
+    physGrp.style.display = 'block';
+    varGrp.style.display = 'none';
+    btnPhys.style.background = 'var(--accent)';
+    btnPhys.style.color = '#060A06';
+    btnVar.style.background = 'transparent';
+    btnVar.style.color = 'var(--muted)';
+    // Reset
+    document.getElementById('adj-qty').value = '';
+  } else {
+    physGrp.style.display = 'none';
+    varGrp.style.display = 'block';
+    btnVar.style.background = 'var(--accent)';
+    btnVar.style.color = '#060A06';
+    btnPhys.style.background = 'transparent';
+    btnPhys.style.color = 'var(--muted)';
+    document.getElementById('adj-variance-input').value = '';
+  }
+  // Reset summary
+  const varEl = document.getElementById('adj-variance-display');
+  varEl.textContent = '—';
+  varEl.style.color = 'var(--muted)';
+  document.getElementById('adj-reason-group').style.display = 'none';
+  document.getElementById('adj-summary').style.display = 'none';
+}
+
+function calcAdjFromVariance() {
+  const item = db.items.find(i => i.id === adjustItemId);
+  if (!item) return;
+  const varVal = document.getElementById('adj-variance-input').value;
+  const diff = parseFloat(varVal);
+  const varEl = document.getElementById('adj-variance-display');
+  const reasonGroup = document.getElementById('adj-reason-group');
+  const summary = document.getElementById('adj-summary');
+  const unit = item.unit || '';
+
+  if (varVal === '' || isNaN(diff)) {
+    varEl.textContent = '—'; varEl.style.color = 'var(--muted)';
+    reasonGroup.style.display = 'none'; summary.style.display = 'none';
+    return;
+  }
+
+  const newQty = Math.max(0, item.qty + diff);
+
+  if (diff < 0) {
+    varEl.textContent = fmtInt(diff) + ' ' + unit;
+    varEl.style.color = 'var(--danger)';
+    reasonGroup.style.display = 'block';
+    summary.style.display = 'block';
+    summary.style.background = 'rgba(255,77,77,0.08)';
+    summary.style.border = '1px solid rgba(255,77,77,0.3)';
+    summary.style.color = 'var(--danger)';
+    summary.innerHTML = '<strong>Shortage of ' + fmtInt(Math.abs(diff)) + ' ' + unit + '</strong> · system: ' + fmtInt(item.qty) + ' → new balance: ' + fmtInt(newQty);
+  } else if (diff > 0) {
+    varEl.textContent = '+' + fmtInt(diff) + ' ' + unit;
+    varEl.style.color = 'var(--ok)';
+    reasonGroup.style.display = 'block';
+    summary.style.display = 'block';
+    summary.style.background = 'rgba(77,255,110,0.08)';
+    summary.style.border = '1px solid rgba(77,255,110,0.25)';
+    summary.style.color = 'var(--ok)';
+    summary.innerHTML = '<strong>Overage of +' + fmtInt(diff) + ' ' + unit + '</strong> · system: ' + fmtInt(item.qty) + ' → new balance: ' + fmtInt(newQty);
+  } else {
+    varEl.textContent = '0 — no variance'; varEl.style.color = 'var(--muted)';
+    reasonGroup.style.display = 'none';
+    summary.style.display = 'block';
+    summary.style.background = 'rgba(77,255,110,0.06)';
+    summary.style.border = '1px solid rgba(77,255,110,0.15)';
+    summary.style.color = 'var(--muted)';
+    summary.innerHTML = 'No change · system and physical count match.';
+  }
+}
+
+function calcAdjVariance() {
+  const item = db.items.find(i => i.id === adjustItemId);
+  if (!item) return;
+  const physVal = document.getElementById('adj-qty').value;
+  const phys = parseFloat(physVal);
+  const varEl = document.getElementById('adj-variance-display');
+  const reasonGroup = document.getElementById('adj-reason-group');
+  const summary = document.getElementById('adj-summary');
+
+  if (physVal === '' || isNaN(phys)) {
+    varEl.textContent = '—';
+    varEl.style.color = 'var(--muted)';
+    reasonGroup.style.display = 'none';
+    summary.style.display = 'none';
+    return;
+  }
+
+  const diff = phys - item.qty;
+  const unit = item.unit || '';
+
+  if (diff < 0) {
+    varEl.textContent = fmtInt(diff) + ' ' + unit;
+    varEl.style.color = 'var(--danger)';
+    reasonGroup.style.display = 'block';
+    summary.style.display = 'block';
+    summary.style.background = 'rgba(255,77,77,0.08)';
+    summary.style.border = '1px solid rgba(255,77,77,0.3)';
+    summary.style.color = 'var(--danger)';
+    summary.innerHTML = '<strong>Shortage of ' + fmtInt(Math.abs(diff)) + ' ' + unit + '</strong> · system: ' + fmtInt(item.qty) + ' → physical: ' + fmtInt(phys) + ' · requires variance reason';
+  } else if (diff > 0) {
+    varEl.textContent = '+' + fmtInt(diff) + ' ' + unit;
+    varEl.style.color = 'var(--ok)';
+    reasonGroup.style.display = 'block';
+    summary.style.display = 'block';
+    summary.style.background = 'rgba(77,255,110,0.08)';
+    summary.style.border = '1px solid rgba(77,255,110,0.25)';
+    summary.style.color = 'var(--ok)';
+    summary.innerHTML = '<strong>Overage of +' + fmtInt(diff) + ' ' + unit + '</strong> · system: ' + fmtInt(item.qty) + ' → physical: ' + fmtInt(phys) + ' · requires variance reason';
+  } else {
+    varEl.textContent = '0 — no variance';
+    varEl.style.color = 'var(--muted)';
+    reasonGroup.style.display = 'none';
+    summary.style.display = 'block';
+    summary.style.background = 'rgba(77,255,110,0.06)';
+    summary.style.border = '1px solid rgba(77,255,110,0.15)';
+    summary.style.color = 'var(--muted)';
+    summary.innerHTML = 'System and physical count match — no adjustment needed.';
+  }
+}
+
+function applyAdjust() {
+  const item = db.items.find(i => i.id === adjustItemId);
+  if (!item) return;
+  const sysQty = item.qty;
+  const reasonSel = document.getElementById('adj-reason').value.trim();
+  const isVarianceMode = document.getElementById('adj-variance-group').style.display !== 'none';
+
+  var phys, diff;
+
+  if (isVarianceMode) {
+    const varVal = document.getElementById('adj-variance-input').value;
+    diff = parseFloat(varVal);
+    if (varVal === '' || isNaN(diff)) { alert('Enter a variance amount (e.g. -8 or +5).'); return; }
+    phys = Math.max(0, sysQty + diff);
+  } else {
+    const physVal = document.getElementById('adj-qty').value;
+    phys = parseFloat(physVal);
+    if (physVal === '' || isNaN(phys) || phys < 0) { alert('Enter a valid physical count.'); return; }
+    diff = phys - sysQty;
+  }
+
+  if (diff !== 0 && !reasonSel) { alert('A variance reason is required when there is a discrepancy.'); return; }
+
+  const notes = [
+    'System qty: ' + sysQty,
+    isVarianceMode ? 'Variance entered: ' + (diff >= 0 ? '+' : '') + diff : 'Physical count: ' + phys,
+    'Variance: ' + (diff >= 0 ? '+' : '') + diff,
+    reasonSel ? 'Reason: ' + reasonSel : '',
+    document.getElementById('adj-notes').value.trim()
+  ].filter(Boolean).join(' | ');
+
+  db.logs.push({
+    id: uid(),
+    itemId: adjustItemId,
+    type: 'adjust',
+    qty: phys,
+    absQty: phys,
+    variance: diff,
+    sysQty: sysQty,
+    varianceReason: reasonSel,
+    by: document.getElementById('adj-by').value.trim() || 'Manual',
+    date: new Date(document.getElementById('adj-date').value).toISOString(),
+    notes: notes,
+    ref: ''
+  });
+
+  item.qty = phys;
+  item.updatedAt = new Date().toISOString();
+  save();
+  closeModal('adjust-modal');
+  renderInventory();
+}
+
+// ─── HELPERS ────────────────────────────────────────────────────────────────────
+function populateItemSelects() {
+  // rf-item is still a plain select
+  const opts = '<option value="">— Select item —</option>' + db.items.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('');
+  document.getElementById('rf-item').innerHTML = opts;
+  // lf-item is now a hidden input backed by a search box — just reset it
+  document.getElementById('lf-item').value = '';
+  document.getElementById('lf-item-search').value = '';
+}
+
+function filterItemDropdown() {
+  const q = document.getElementById('lf-item-search').value.toLowerCase();
+  const dd = document.getElementById('lf-item-dropdown');
+  const matches = db.items.filter(i => i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
+  if (!matches.length) {
+    dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No items found</div>';
+  } else {
+    dd.innerHTML = matches.map(i => {
+      const status = stockStatus(i);
+      const dot = status==='danger'?'var(--danger)':status==='warn'?'var(--warn)':'var(--ok)';
+      return `<div data-id="${i.id}" data-name="${esc(i.name)}" onclick="selectLogItem('${i.id}','${esc(i.name).replace(/'/g,"\\'")}') "
+        style="padding:9px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)"
+        onmouseover="this.style.background='var(--surface-alt,#1a221a)'" onmouseout="this.style.background=''">
+        <span style="width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0"></span>
+        <span style="flex:1">${esc(i.name)}</span>
+        <span style="color:var(--muted);font-size:11px">${fmtInt(i.qty)} ${esc(i.unit||'')}</span>
+      </div>`;
+    }).join('');
+  }
+  dd.style.display = 'block';
+}
+
+function selectLogItem(id, name) {
+  document.getElementById('lf-item').value = id;
+  document.getElementById('lf-item-search').value = name;
+  closeItemDropdown();
+}
+
+function closeItemDropdown() {
+  document.getElementById('lf-item-dropdown').style.display = 'none';
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-bg').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }));
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toLocalDatetimeInput(d) {
+  const off = d.getTimezoneOffset() * 60000;
+  return new Date(d - off).toISOString().slice(0, 16);
+}
+
+// ─── IMPORT / EXPORT ────────────────────────────────────────────────────────────
+function exportData() {
+  const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'consumables_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+}
+
+function exportCSV() {
+  const headers = ['ID','Name','Category','SKU','Location','Qty','Unit','MinQty','ReorderQty','Cost','Supplier','Notes','CreatedAt','UpdatedAt'];
+  const rows = db.items.map(i => headers.map(h => {
+    const k = h === 'ID' ? 'id' : h === 'MinQty' ? 'minQty' : h === 'ReorderQty' ? 'reorderQty' : h === 'CreatedAt' ? 'createdAt' : h === 'UpdatedAt' ? 'updatedAt' : h.toLowerCase();
+    const v = i[k] ?? '';
+    return '"' + String(v).replace(/"/g,'""') + '"';
+  }).join(','));
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'consumables_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+function importData() { document.getElementById('file-import').click(); }
+function handleImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (!data.items || !Array.isArray(data.items)) throw new Error('Invalid format');
+      db = data;
+      updateSummary();
+      _sbFullReplace();
+      renderInventory();
+      renderLogs();
+      renderReorder();
+      alert('Import successful! ' + db.items.length + ' items loaded.');
+    } catch(err) {
+      alert('Import failed: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+// ─── COST REPORT ─────────────────────────────────────────────────────────────────
+let rptSortField = 'totalCost';
+let rptSortDir = -1;
+
+function initReportDates() {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(1); // first of current month
+  document.getElementById('rpt-to').value = to.toISOString().slice(0,10);
+  document.getElementById('rpt-from').value = from.toISOString().slice(0,10);
+}
+
+function renderReport() {
+  const fromVal = document.getElementById('rpt-from').value;
+  const toVal = document.getElementById('rpt-to').value;
+  const types = document.getElementById('rpt-type').value.split(',');
+  const cat = document.getElementById('rpt-cat').value;
+
+  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+  const to = toVal ? new Date(toVal + 'T23:59:59') : null;
+
+  // Update category filter
+  const cats = [...new Set(db.items.map(i => i.category).filter(Boolean))].sort();
+  const catSel = document.getElementById('rpt-cat');
+  const curCat = catSel.value;
+  catSel.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${esc(c)}"${c===curCat?' selected':''}>${esc(c)}</option>`).join('');
+
+  // Filter logs
+  const logs = db.logs.filter(l => {
+    if (!types.includes(l.type)) return false;
+    const d = new Date(l.date);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    const item = db.items.find(i => i.id === l.itemId);
+    if (cat && item?.category !== cat) return false;
+    return true;
+  });
+
+  // Aggregate by item
+  const map = {};
+  logs.forEach(l => {
+    if (!map[l.itemId]) {
+      const item = db.items.find(i => i.id === l.itemId);
+      map[l.itemId] = {
+        itemId: l.itemId,
+        name: item?.name || 'Deleted Item',
+        category: item?.category || '',
+        unit: item?.unit || '',
+        costPerUnit: item?.cost || 0,
+        totalQty: 0,
+        totalCost: 0,
+        entries: 0,
+      };
+    }
+    map[l.itemId].totalQty += l.qty;
+    map[l.itemId].totalCost += l.qty * (map[l.itemId].costPerUnit);
+    map[l.itemId].entries++;
+  });
+
+  let rows = Object.values(map);
+  const grandTotal = rows.reduce((s, r) => s + r.totalCost, 0);
+  const grandQty = rows.reduce((s, r) => s + r.totalQty, 0);
+
+  rows.sort((a, b) => {
+    let av = a[rptSortField] ?? '';
+    let bv = b[rptSortField] ?? '';
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    return av < bv ? -rptSortDir : av > bv ? rptSortDir : 0;
+  });
+
+  // Summary
+  document.getElementById('rpt-total-cost').textContent = fmtPHP(grandTotal);
+  document.getElementById('rpt-total-qty').textContent = fmt(grandQty);
+  document.getElementById('rpt-unique').textContent = rows.length;
+  document.getElementById('rpt-entries').textContent = logs.length;
+
+  const tbody = document.getElementById('rpt-tbody');
+  const empty = document.getElementById('rpt-empty');
+  tbody.innerHTML = '';
+
+  if (rows.length === 0) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  rows.forEach(r => {
+    const pct = grandTotal > 0 ? (r.totalCost / grandTotal * 100).toFixed(1) : 0;
+    const barW = grandTotal > 0 ? Math.round(r.totalCost / grandTotal * 100) : 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${esc(r.name)}</strong></td>
+      <td>${r.category ? '<span class="badge badge-info">'+esc(r.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${esc(r.unit||'—')}</td>
+      <td>${r.costPerUnit ? fmtPHP(r.costPerUnit) : '<span style="color:var(--warn)">not set</span>'}</td>
+      <td style="font-weight:600">${fmt(r.totalQty)}</td>
+      <td style="font-weight:700;color:var(--danger)">${r.costPerUnit ? fmtPHP(r.totalCost) : '—'}</td>
+      <td>${r.entries}</td>
+      <td>
+        <div class="stock-bar-wrap">
+          <div class="stock-bar" style="min-width:80px"><div class="stock-bar-fill" style="width:${barW}%;background:var(--accent)"></div></div>
+          <span style="font-size:11px;color:var(--muted)">${pct}%</span>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  // Grand total row
+  const tfoot = document.createElement('tr');
+  tfoot.style.cssText = 'background:var(--surface2);font-weight:700;border-top:2px solid var(--border)';
+  tfoot.innerHTML = `
+    <td colspan="4" style="text-align:right;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em">TOTAL</td>
+    <td>${fmt(grandQty)}</td>
+    <td style="color:var(--danger);font-size:1.05rem">${fmtPHP(grandTotal)}</td>
+    <td>${fmtInt(logs.length)}</td>
+    <td>100%</td>`;
+  tbody.appendChild(tfoot);
+}
+
+function sortReport(field) {
+  if (rptSortField === field) rptSortDir *= -1; else { rptSortField = field; rptSortDir = -1; }
+  document.querySelectorAll('[id^="rsort-"]').forEach(el => { el.classList.remove('active'); el.textContent = '↕'; });
+  const el = document.getElementById('rsort-' + field);
+  if (el) { el.classList.add('active'); el.textContent = rptSortDir === 1 ? '↑' : '↓'; }
+  renderReport();
+}
+
+function exportReportCSV() {
+  const tbody = document.getElementById('rpt-tbody');
+  const headers = ['Item','Category','Unit','Cost/Unit','Qty Consumed','Total Cost','Log Entries','% of Total'];
+  const rows = [headers.join(',')];
+  tbody.querySelectorAll('tr:not(:last-child)').forEach(tr => {
+    const cells = [...tr.querySelectorAll('td')].map((td, i) => {
+      let t = td.textContent.trim().replace(/\s+/g,' ');
+      return '"' + t.replace(/"/g,'""') + '"';
+    });
+    rows.push(cells.join(','));
+  });
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cost_report_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+function exportDetailedCSV() {
+  const fromVal = document.getElementById('rpt-from').value;
+  const toVal   = document.getElementById('rpt-to').value;
+  const types   = document.getElementById('rpt-type').value.split(',');
+  const cat     = document.getElementById('rpt-cat').value;
+
+  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+  const to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+
+  const TYPE_LABELS = { use: 'Consumption', damage: 'Damage / Loss', restock: 'Restock', adjust: 'Adjustment' };
+
+  const filtered = db.logs.filter(l => {
+    if (!types.includes(l.type)) return false;
+    const d = new Date(l.date);
+    if (from && d < from) return false;
+    if (to   && d > to)   return false;
+    const item = db.items.find(i => i.id === l.itemId);
+    if (cat && item?.category !== cat) return false;
+    return true;
+  });
+
+  const headers = ['Date/Time','Item Name','Category','SKU','Unit','Transaction Type','Quantity','Cost per Unit','Total Cost','Notes','Performed By','Reference'];
+  const rows = [headers.join(',')];
+
+  filtered.forEach(l => {
+    const item = db.items.find(i => i.id === l.itemId);
+    const cost = item?.cost || 0;
+    const total = l.qty * cost;
+    const typeLabel = TYPE_LABELS[l.type] || l.type || '';
+    const dateStr = l.date ? new Date(l.date).toLocaleString('en-PH', { hour12: true }) : '';
+    const row = [
+      dateStr,
+      item?.name || l.itemId || 'Deleted Item',
+      item?.category || '',
+      item?.sku || '',
+      item?.unit || '',
+      typeLabel,
+      l.qty,
+      cost,
+      total.toFixed(2),
+      l.notes || '',
+      l.performedBy || '',
+      l.ref || ''
+    ].map(v => '"' + String(v).replace(/"/g, '""') + '"');
+    rows.push(row.join(','));
+  });
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'detailed_log_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+// ─── VARIANCE REPORT ─────────────────────────────────────────────────────────────
+function renderVariance() {
+  const fromVal = document.getElementById('rpt-from').value;
+  const toVal   = document.getElementById('rpt-to').value;
+  const vType   = document.getElementById('var-type').value;
+
+  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+  const to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+
+  let logs = db.logs.filter(l => {
+    if (l.type !== 'adjust') return false;
+    const d = new Date(l.date);
+    if (from && d < from) return false;
+    if (to   && d > to)   return false;
+    if (vType === 'negative' && (l.variance == null || l.variance >= 0)) return false;
+    if (vType === 'positive' && (l.variance == null || l.variance <= 0)) return false;
+    return true;
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+
+  // Summary counts + costs
+  const neg = logs.filter(l => l.variance < 0).length;
+  const pos = logs.filter(l => l.variance > 0).length;
+  const net = logs.reduce((s, l) => s + (l.variance || 0), 0);
+  const negCost = logs.filter(l => l.variance < 0).reduce((s, l) => {
+    const item = db.items.find(i => i.id === l.itemId);
+    return s + Math.abs(l.variance || 0) * (item?.cost || 0);
+  }, 0);
+  const posCost = logs.filter(l => l.variance > 0).reduce((s, l) => {
+    const item = db.items.find(i => i.id === l.itemId);
+    return s + Math.abs(l.variance || 0) * (item?.cost || 0);
+  }, 0);
+  document.getElementById('var-total').textContent    = fmtInt(logs.length);
+  document.getElementById('var-neg').textContent      = fmtInt(neg);
+  document.getElementById('var-neg-cost').textContent = fmtPHP(negCost);
+  document.getElementById('var-pos').textContent      = fmtInt(pos);
+  document.getElementById('var-pos-cost').textContent = fmtPHP(posCost);
+  document.getElementById('var-net').textContent      = (net >= 0 ? '+' : '') + fmtInt(net);
+  document.getElementById('var-net').style.color      = net < 0 ? 'var(--danger)' : net > 0 ? 'var(--ok)' : 'var(--text)';
+
+  const tbody = document.getElementById('var-tbody');
+  const empty = document.getElementById('var-empty');
+  tbody.innerHTML = '';
+
+  if (logs.length === 0) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  logs.forEach(l => {
+    const item  = db.items.find(i => i.id === l.itemId);
+    const vSign = l.variance >= 0 ? '+' : '';
+    const vColor = l.variance < 0 ? 'var(--danger)' : l.variance > 0 ? 'var(--ok)' : 'var(--muted)';
+    const expected  = l.absQty != null ? l.absQty - (l.variance || 0) : '—';
+    const actual    = l.absQty != null ? l.absQty : '—';
+    const costImpact = Math.abs(l.variance || 0) * (item?.cost || 0);
+    const costColor  = l.variance < 0 ? 'var(--danger)' : l.variance > 0 ? 'var(--ok)' : 'var(--muted)';
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td style="white-space:nowrap">${new Date(l.date).toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true})}</td>`
+      + `<td><strong>${esc(item?.name || 'Deleted Item')}</strong></td>`
+      + `<td>${esc(item?.category || '—')}</td>`
+      + `<td>${expected !== '—' ? fmtInt(expected) + ' ' + esc(item?.unit||'') : '—'}</td>`
+      + `<td>${actual !== '—' ? fmtInt(actual) + ' ' + esc(item?.unit||'') : '—'}</td>`
+      + `<td style="font-weight:700;color:${vColor}">${vSign}${fmtInt(l.variance || 0)}</td>`
+      + `<td style="font-weight:600;color:${costColor}">${fmtPHP(costImpact)}</td>`
+      + `<td style="color:var(--muted)">${esc(l.varianceReason || '—')}</td>`
+      + `<td>${esc(l.by || '—')}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function exportVarianceCSV() {
+  const fromVal = document.getElementById('rpt-from').value;
+  const toVal   = document.getElementById('rpt-to').value;
+  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+  const to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+
+  const logs = db.logs.filter(l => {
+    if (l.type !== 'adjust') return false;
+    const d = new Date(l.date);
+    if (from && d < from) return false;
+    if (to   && d > to)   return false;
+    return true;
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const headers = ['Date/Time','Item','Category','SKU','Unit','Expected (Before)','Actual (After)','Variance','Cost per Unit','Cost Impact','Type','Reason','Performed By'];
+  const rows = [headers.join(',')];
+  logs.forEach(l => {
+    const item = db.items.find(i => i.id === l.itemId);
+    const expected   = l.absQty != null ? l.absQty - (l.variance || 0) : '';
+    const actual     = l.absQty != null ? l.absQty : '';
+    const costImpact = Math.abs(l.variance || 0) * (item?.cost || 0);
+    const vType      = (l.variance || 0) < 0 ? 'Shortage' : (l.variance || 0) > 0 ? 'Excess' : 'No change';
+    rows.push([
+      new Date(l.date).toLocaleString('en-PH', { hour12: true }),
+      item?.name || 'Deleted Item',
+      item?.category || '',
+      item?.sku || '',
+      item?.unit || '',
+      expected,
+      actual,
+      l.variance || 0,
+      item?.cost || 0,
+      costImpact.toFixed(2),
+      vType,
+      l.varianceReason || '',
+      l.by || ''
+    ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(','));
+  });
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'variance_report_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+// ─── SEED DATA ───────────────────────────────────────────────────────────────────
+const SEED_ITEMS = [{"id":"seed0001","name":"Extra Small Box (No Logo) 22.5x140x100mm - Kiehl's","category":"Packaging","location":"","qty":26101,"unit":"piece","minQty":0,"reorderQty":0,"cost":5.5,"supplier":"Locad","sku":"LCDBX001","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":1},{"id":"seed0002","name":"Extra Small Box (No Logo) 24.9x13.8x8.4cm","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":10000,"reorderQty":0,"cost":5.5,"supplier":"Locad","sku":"LCDBX001","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":2},{"id":"seed0003","name":"Small Box (No Logo) 300x244x160mm","category":"Packaging","location":"","qty":11807,"unit":"piece","minQty":10000,"reorderQty":0,"cost":11.5,"supplier":"Locad","sku":"LCDBX002","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":3},{"id":"seed0004","name":"Medium Box (No Logo) 361x270x178mm","category":"Packaging","location":"","qty":20907,"unit":"piece","minQty":10000,"reorderQty":0,"cost":15.25,"supplier":"Locad","sku":"LCDBX003","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":4},{"id":"seed0005","name":"Box (No Logo) 456x296x232mm","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":10000,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"LCDBX004","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":5},{"id":"seed0006","name":"Large Box (No Logo) 460x361x320mm","category":"Packaging","location":"","qty":5950,"unit":"piece","minQty":8000,"reorderQty":0,"cost":24.0,"supplier":"Locad","sku":"LCDBX005","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":6},{"id":"seed0007","name":"XLarge Box (No Logo)","category":"Packaging","location":"","qty":23152,"unit":"piece","minQty":8000,"reorderQty":0,"cost":27.9,"supplier":"Locad","sku":"LCDBX006","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":7},{"id":"seed0008","name":"XXLarge Box (No Logo)","category":"Packaging","location":"","qty":16250,"unit":"piece","minQty":8000,"reorderQty":0,"cost":39.9,"supplier":"Locad","sku":"LCDBX007","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":8},{"id":"seed0009","name":"Small Pouch (Black)","category":"Packaging","location":"","qty":520790,"unit":"piece","minQty":100000,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"LCDPC001","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":9},{"id":"seed0010","name":"Medium Pouch (Black)","category":"Packaging","location":"","qty":173400,"unit":"piece","minQty":100000,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"LCDPC002","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":10},{"id":"seed0011","name":"Large Pouch (Black)","category":"Packaging","location":"","qty":124500,"unit":"piece","minQty":80000,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"LCDPC003","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":11},{"id":"seed0012","name":"XLarge Pouch (Black)","category":"Packaging","location":"","qty":57600,"unit":"piece","minQty":80000,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"LCDPC004","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":12},{"id":"seed0013","name":"Corrugated Sheet","category":"Packaging","location":"","qty":2,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":13},{"id":"seed0014","name":"Bin Box 495x1888mm","category":"Packaging","location":"","qty":4494,"unit":"","minQty":0,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":14},{"id":"seed0015","name":"Edamama - Extra Small NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":2000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":15},{"id":"seed0016","name":"Edamama - Small NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":5000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":16},{"id":"seed0017","name":"Edamama - Medium NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":5000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":17},{"id":"seed0018","name":"Edamama - Large NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":3500,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":18},{"id":"seed0019","name":"Edamama - Extra Large NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":2000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":19},{"id":"seed0020","name":"Edamama - Small Pouch","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":100000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":20},{"id":"seed0021","name":"Edamama - Medium Pouch","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":100000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":21},{"id":"seed0022","name":"Edamama - Large Pouch","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":100000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":22},{"id":"seed0023","name":"Edamama - Gift Wrap Green","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":50,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":23},{"id":"seed0024","name":"Edamama - Gift Card","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":3000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":24},{"id":"seed0025","name":"Edamama - Eco Bag White","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":25},{"id":"seed0026","name":"Edamama - Ribbon Green","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":26},{"id":"seed0027","name":"Edamama - Ribbon Silver (Gift Wrap Station)","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":90,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":27},{"id":"seed0028","name":"Edamama - Bubble Wrap","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":100,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":28},{"id":"seed0029","name":"Edamama - AHMC","category":"Packaging","location":"","qty":0,"unit":"","minQty":0,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":29},{"id":"seed0030","name":"Edamama - TMC","category":"Packaging","location":"","qty":0,"unit":"","minQty":0,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":30},{"id":"seed0031","name":"Edamama - Giftwrap Pink","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":31},{"id":"seed0032","name":"Edamama - Flowonder Warranty Card","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":32},{"id":"seed0033","name":"Emma Sleep - Ribbon White","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":200,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":33},{"id":"seed0034","name":"Emma Sleep - Ribbon Orange Big","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":200,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":34},{"id":"seed0035","name":"Emma Sleep - Ribbon Orange Small","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":200,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":35},{"id":"seed0036","name":"Emma Sleep - NEW Box w/ logo 28x28x97cm","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":10,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":36},{"id":"seed0037","name":"Emma Sleep - NEW Box w/ logo 38x38x102cm","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":5,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":37},{"id":"seed0038","name":"Emma Sleep - NEW Box w/ logo 39x39x114cm","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":25,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":38},{"id":"seed0039","name":"Emma Sleep - Invoice plastic","category":"Packaging","location":"","qty":0,"unit":"box","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":39},{"id":"seed0040","name":"Emma Sleep - Yarn","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":40},{"id":"seed0041","name":"Emma Sleep - Card Orange","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":41},{"id":"seed0042","name":"Emma Sleep - Card Violet","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":42},{"id":"seed0043","name":"Emma Sleep - Card White","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":43},{"id":"seed0044","name":"Emma Sleep - Card Violet Christmas Parol","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":44},{"id":"seed0045","name":"Kiehls - Brand Box","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Kiehls","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":45},{"id":"seed0046","name":"Kiehls - Brown Kraft 50cm","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"Kiehls","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":46},{"id":"seed0047","name":"Kiehls - Brown Kraft 30cm","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"Kiehls","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":47},{"id":"seed0048","name":"Kiehls - White Kraft - Rollform","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":50,"reorderQty":0,"cost":0,"supplier":"Kiehls","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":48},{"id":"seed0049","name":"Lancome - Brand Box","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":49},{"id":"seed0050","name":"Lancome - Sticker","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":25,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":50},{"id":"seed0051","name":"Lancome - Silk Paper","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":50,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":51},{"id":"seed0052","name":"Lancome - Paper Fillers","category":"Packaging","location":"","qty":0,"unit":"kg","minQty":50,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":52},{"id":"seed0053","name":"Lancome - Ribbon White","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":10,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":53},{"id":"seed0054","name":"Lancome - Ribbon","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":54},{"id":"seed0055","name":"Nuprene - Clamshell NEW Box w/ logo (BXA)","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":4000,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":55},{"id":"seed0056","name":"Nuprene - Raya NEW Box w/ logo (BXC)","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":10000,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":56},{"id":"seed0057","name":"Nuprene - Gia NEW Box w/ logo (BXB)","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":4000,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":57},{"id":"seed0058","name":"Nuprene - Extra Large NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":160,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":58},{"id":"seed0059","name":"Nuprene - Tag","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":59},{"id":"seed0060","name":"Nuprene - Thank You Card","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":60},{"id":"seed0061","name":"GRWM - Air Column - Small","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"GRWM","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":61},{"id":"seed0062","name":"GRWM - Air Column - Big","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":20,"reorderQty":0,"cost":0,"supplier":"GRWM","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":62},{"id":"seed0063","name":"ECOFLO - Brand Box","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":20,"reorderQty":0,"cost":0,"supplier":"ECOFLO","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":63},{"id":"seed0064","name":"Mood Food - Mood Food Box 001 - Extra Small","category":"Packaging","location":"","qty":0,"unit":"bundle","minQty":0,"reorderQty":0,"cost":0,"supplier":"Mood Food","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":64},{"id":"seed0065","name":"Mood Food - Mood Food Box 002 - Small","category":"Packaging","location":"","qty":0,"unit":"bundle","minQty":0,"reorderQty":0,"cost":0,"supplier":"Mood Food","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":65},{"id":"seed0066","name":"Mood Food - Mood Food Box 003 - Medium","category":"Packaging","location":"","qty":0,"unit":"bundle","minQty":0,"reorderQty":0,"cost":0,"supplier":"Mood Food","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":66},{"id":"seed0067","name":"Mood Food - Mood Food Box 004 - Large","category":"Packaging","location":"","qty":0,"unit":"bundle","minQty":0,"reorderQty":0,"cost":0,"supplier":"Mood Food","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":67},{"id":"seed0068","name":"NEUMI - Brand Box","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"NEUMI","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":68},{"id":"seed0069","name":"12 feet PVC Pipe 1/2\" diameter","category":"Operational","location":"","qty":0,"unit":"pc","minQty":50,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":69},{"id":"seed0070","name":"2D Handheld Barcode Scanner","category":"Operational","location":"","qty":0,"unit":"unit","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":70},{"id":"seed0071","name":"A4 Clearbook","category":"Operational","location":"","qty":0,"unit":"pc","minQty":3,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":71},{"id":"seed0072","name":"A4 Newsprint","category":"Operational","location":"","qty":0,"unit":"ream","minQty":4,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":72},{"id":"seed0073","name":"A4 Hardcopy","category":"Operational","location":"","qty":79,"unit":"ream","minQty":4,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":73},{"id":"seed0074","name":"Albatross","category":"Cleaning","location":"","qty":10,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":74},{"id":"seed0075","name":"AWB RIBBON 56MMX300MM","category":"Operational","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":75},{"id":"seed0076","name":"AWB RIBBON 70MMx300MM","category":"Operational","location":"","qty":0,"unit":"roll","minQty":13,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":76},{"id":"seed0077","name":"AWB RIBBON 60MMX300MM","category":"Operational","location":"","qty":205,"unit":"roll","minQty":373,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":77},{"id":"seed0078","name":"AWB RIBBON 4X6","category":"Operational","location":"","qty":632,"unit":"roll","minQty":240,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":78},{"id":"seed0079","name":"AWB Sticker 2x6\"","category":"Packaging","location":"","qty":20,"unit":"roll","minQty":36,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":79},{"id":"seed0080","name":"AWB Sticker 4X6","category":"Operational","location":"","qty":2311,"unit":"roll","minQty":2300,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":80},{"id":"seed0081","name":"Ballpen - black","category":"Operational","location":"","qty":7,"unit":"pc","minQty":36,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":81},{"id":"seed0082","name":"Ballpen - blue","category":"Operational","location":"","qty":0,"unit":"pc","minQty":24,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":82},{"id":"seed0083","name":"Barcode Sticker 2x3\"","category":"Operational","location":"","qty":84,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":83},{"id":"seed0084","name":"Barcode Sticker 2x1\"","category":"Operational","location":"","qty":28,"unit":"roll","minQty":36,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":84},{"id":"seed0085","name":"Barcode Sticker 2x6","category":"Operational","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":85},{"id":"seed0086","name":"Battery AAA","category":"Cleaning","location":"","qty":0,"unit":"pack","minQty":30,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":86},{"id":"seed0087","name":"Blade Cutter Refill","category":"Operational","location":"","qty":0,"unit":"pc","minQty":40,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":87},{"id":"seed0088","name":"Broom","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":3,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":88},{"id":"seed0089","name":"Broomstick with Handle","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":3,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":89},{"id":"seed0090","name":"Brother DRUM","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":90},{"id":"seed0091","name":"Brother Ink (Black) TN-2380","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":13,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":91},{"id":"seed0092","name":"Bubble Wrap 13\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":3000,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":92},{"id":"seed0093","name":"Bubble Wrap 20\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":3150,"reorderQty":0,"cost":268.8,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":93},{"id":"seed0094","name":"Bubble Wrap 40\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":100,"reorderQty":0,"cost":537.6,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":94},{"id":"seed0095","name":"Cable Tie 16\" - white SMALL","category":"Operational","location":"","qty":0,"unit":"pouch","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":95},{"id":"seed0096","name":"Cable Tie - Big BLACK","category":"Operational","location":"","qty":0,"unit":"pcs","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":96},{"id":"seed0097","name":"CCTV Camera","category":"Operational","location":"","qty":0,"unit":"unit","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":97},{"id":"seed0098","name":"Clear Tape 2\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":3500,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":98},{"id":"seed0099","name":"Combination Spanner 8-17mm","category":"Equipment","location":"","qty":0,"unit":"set","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":99},{"id":"seed0100","name":"Computer Mouse","category":"Operational","location":"","qty":0,"unit":"pc","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":100},{"id":"seed0101","name":"Cutter","category":"Operational","location":"","qty":0,"unit":"unit","minQty":50,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":101},{"id":"seed0102","name":"Dot Knitted Gloves (HGVK05)","category":"Operational","location":"","qty":0,"unit":"pair","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":102},{"id":"seed0103","name":"Double Sided Tape 1\"","category":"Operational","location":"","qty":0,"unit":"roll","minQty":480,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":103},{"id":"seed0104","name":"Double Sided Tape Foam","category":"Operational","location":"","qty":0,"unit":"roll","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":104},{"id":"seed0105","name":"Dual Slot SD Card Reader","category":"Operational","location":"","qty":0,"unit":"unit","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":105},{"id":"seed0106","name":"Dustpan","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":106},{"id":"seed0107","name":"Ethyl Alcohol","category":"Cleaning","location":"","qty":0,"unit":"gallon","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":107},{"id":"seed0108","name":"Extension Wire with Socket 6 gang","category":"Operational","location":"","qty":0,"unit":"pc","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":108},{"id":"seed0109","name":"Extension Wire with Socket 3 gang","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":109},{"id":"seed0110","name":"Fabric Conditioner","category":"Cleaning","location":"","qty":0,"unit":"gallon","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":110},{"id":"seed0111","name":"Fragile Sticker","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":300,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":111},{"id":"seed0112","name":"Fragile Tape","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":2100,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":112},{"id":"seed0113","name":"Glass Cleaner","category":"Cleaning","location":"","qty":0,"unit":"gallon","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":113},{"id":"seed0114","name":"GT53 HP INK BLACK","category":"Operational","location":"","qty":0,"unit":"bottle","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":114},{"id":"seed0115","name":"GT52 HP INK CYAN","category":"Operational","location":"","qty":0,"unit":"bottle","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":115},{"id":"seed0116","name":"GT52 HP INK YELLOW","category":"Operational","location":"","qty":0,"unit":"bottle","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":116},{"id":"seed0117","name":"GT52 HP INK MAGENTA","category":"Operational","location":"","qty":0,"unit":"bottle","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":117},{"id":"seed0118","name":"Hand Liquid Soap","category":"Cleaning","location":"","qty":0,"unit":"gallon","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":118},{"id":"seed0119","name":"HDMI Cord","category":"Operational","location":"","qty":0,"unit":"pc","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":119},{"id":"seed0120","name":"Ingco 12pcs Socket Wrench Set 1/2\" Drive (HKTS12122)","category":"Equipment","location":"","qty":0,"unit":"set","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":120},{"id":"seed0121","name":"Kyocera Toner (TK-5445C)","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":121},{"id":"seed0122","name":"Kyocera Toner (TK-5445K)","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":15,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":122},{"id":"seed0123","name":"Kyocera Toner (TK-5445M)","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":123},{"id":"seed0124","name":"Kyocera Toner (TK-5445Y)","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":124},{"id":"seed0125","name":"Laminating Film","category":"Operational","location":"","qty":0,"unit":"ream","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":125},{"id":"seed0126","name":"Laminating Machine","category":"Equipment","location":"","qty":0,"unit":"unit","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":126},{"id":"seed0127","name":"Long Folder - white","category":"Operational","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":127},{"id":"seed0128","name":"Long Envelope - Brown","category":"Operational","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":128},{"id":"seed0129","name":"Marker Ink - black","category":"Operational","location":"","qty":0,"unit":"pc","minQty":24,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":129},{"id":"seed0130","name":"Marker Ink - blue","category":"Operational","location":"","qty":0,"unit":"pc","minQty":12,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":130},{"id":"seed0131","name":"Mask - black","category":"Operational","location":"","qty":0,"unit":"box","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":131},{"id":"seed0132","name":"Max Staple Wire #35","category":"Operational","location":"","qty":0,"unit":"box","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":132},{"id":"seed0133","name":"Mini Hacksaw Blade","category":"Equipment","location":"","qty":0,"unit":"set","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":133},{"id":"seed0134","name":"Mop","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":3,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":134},{"id":"seed0135","name":"Pail / Bucket","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":135},{"id":"seed0136","name":"Paint Brush 1\"","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":136},{"id":"seed0137","name":"Paint Brush 2\"","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":137},{"id":"seed0138","name":"Plastic Gloves - blue","category":"Operational","location":"","qty":0,"unit":"box","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":138},{"id":"seed0139","name":"Plastic Tool Box 17\"","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":139},{"id":"seed0140","name":"Platform Push Cart Heavy Duty 300kgs","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":140},{"id":"seed0141","name":"Platform Push Cart Heavy Duty 400kgs","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":141},{"id":"seed0142","name":"Powder Detergent","category":"Cleaning","location":"","qty":0,"unit":"kg","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":142},{"id":"seed0143","name":"Printer (Brother)","category":"Equipment","location":"","qty":0,"unit":"unit","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":143},{"id":"seed0144","name":"Safety Reflector Vest (green)","category":"Operational","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":144},{"id":"seed0145","name":"Scissors","category":"Operational","location":"","qty":0,"unit":"pc","minQty":24,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":145},{"id":"seed0146","name":"Screwdriver Starheads","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":146},{"id":"seed0147","name":"SD Card Memory","category":"Operational","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":147},{"id":"seed0148","name":"SD Card Memory Reader","category":"Operational","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":148},{"id":"seed0149","name":"Snap Off Blade Cutter Small","category":"Operational","location":"","qty":0,"unit":"pc","minQty":50,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":149},{"id":"seed0150","name":"Sticky Note 7.6x10.2cm","category":"Operational","location":"","qty":0,"unit":"pad","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":150},{"id":"seed0151","name":"Stretch Film - black 3.2kg x 20\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":150,"reorderQty":0,"cost":415.0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":151},{"id":"seed0152","name":"Stretch Film - clear 3.2kg x 20\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":300,"reorderQty":0,"cost":295.0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":152},{"id":"seed0153","name":"Tape Dispenser 1\"","category":"Operational","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":153},{"id":"seed0154","name":"Tape Dispenser 2\"","category":"Operational","location":"","qty":0,"unit":"pc","minQty":50,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":154},{"id":"seed0155","name":"Toilet Brush","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":155},{"id":"seed0156","name":"Toilet Paper","category":"Cleaning","location":"","qty":0,"unit":"roll","minQty":48,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":156},{"id":"seed0157","name":"TP-Link Dongle 300mbps","category":"Operational","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":157},{"id":"seed0158","name":"Trash Bag Large","category":"Cleaning","location":"","qty":0,"unit":"bundle","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":158},{"id":"seed0159","name":"Trash Bag Medium","category":"Cleaning","location":"","qty":0,"unit":"bundle","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":159},{"id":"seed0160","name":"Universal Socket Adapter 3pin","category":"Operational","location":"","qty":0,"unit":"pc","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":160},{"id":"seed0161","name":"Utility Box 20\"","category":"Operational","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":161},{"id":"seed0162","name":"Weighing Scale 100kg capacity","category":"Equipment","location":"","qty":0,"unit":"unit","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":162},{"id":"seed0163","name":"Zonrox","category":"Cleaning","location":"","qty":0,"unit":"gallon","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":163},{"id":"seed0164","name":"Eco Tape","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":300,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":164},{"id":"seed0165","name":"Rags","category":"Cleaning","location":"","qty":0,"unit":"pcs","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":165},{"id":"seed0166","name":"HDMI Cord Adapter","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":166},{"id":"seed0167","name":"Foam Dish Washing","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":167},{"id":"seed0168","name":"Spray Bottle","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":168},{"id":"seed0169","name":"Thermal Tape White 2 Inch","category":"Packaging","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":169},{"id":"seed0170","name":"Thermal Tape Yellow 2 Inch","category":"Packaging","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":170},{"id":"seed0171","name":"Mouse Pad","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":171},{"id":"seed0172","name":"Rubberbond","category":"Operational","location":"","qty":0,"unit":"bundle","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":172},{"id":"seed0173","name":"Stapler","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":173},{"id":"seed0174","name":"Glass Board Marker","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":174},{"id":"seed0175","name":"Scanner","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":175},{"id":"seed0176","name":"First Aid Kit","category":"Operational","location":"","qty":0,"unit":"box","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":176},{"id":"seed0177","name":"Lutos Blue Chalk","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":177},{"id":"seed0178","name":"Paper Board","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":178},{"id":"seed0179","name":"Measuring Tape","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":179},{"id":"seed0180","name":"Electric Tape","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":180},{"id":"seed0181","name":"White Board Eraser","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":181},{"id":"seed0182","name":"Coated Clips #33","category":"Operational","location":"","qty":0,"unit":"box","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":182},{"id":"seed0183","name":"Portable USB","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":183},{"id":"seed0184","name":"Printer Accessories Scanpak","category":"Operational","location":"","qty":0,"unit":"box","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":184},{"id":"seed0185","name":"EPSON LQ590 Ribbon","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":185}];
+
+// ─── AUTH & ROLES ────────────────────────────────────────────────────────────────
+let currentRole = null;
+const PASS_KEY = 'consumables_tracker_passwords_v1';
+const ADMIN_USER_KEY = 'consumables_tracker_admin_username';
+const RECENT_LOGINS_KEY = 'consumables_tracker_recent_logins';
+const DEFAULT_PASSWORDS = { superuser: 'admin123', user: 'user123', viewer: 'viewer123' };
+
+function getRecentLogins() {
+  try { return JSON.parse(localStorage.getItem(RECENT_LOGINS_KEY) || '[]'); } catch(e) { return []; }
+}
+
+function addRecentLogin(username) {
+  var list = getRecentLogins().filter(function(u) { return u.toLowerCase() !== username.toLowerCase(); });
+  list.unshift(username);
+  if (list.length > 5) list = list.slice(0, 5);
+  localStorage.setItem(RECENT_LOGINS_KEY, JSON.stringify(list));
+}
+
+function renderRecentLogins() {
+  var list = getRecentLogins();
+  var wrap = document.getElementById('recent-logins-wrap');
+  var container = document.getElementById('recent-logins-list');
+  if (!list.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  container.innerHTML = list.map(function(u) {
+    var initials = u.slice(0, 2).toUpperCase();
+    var safe = u.replace(/'/g, "\\'");
+    return '<div class="rl-wrap" style="position:relative;display:inline-flex">'
+      + '<button onclick="selectRecentLogin(\'' + safe + '\')" '
+      + 'style="display:flex;flex-direction:column;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;cursor:pointer;transition:border-color .15s;min-width:64px" '
+      + 'onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'
+      + '<div style="width:36px;height:36px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#060A06">' + initials + '</div>'
+      + '<span style="font-size:11px;color:var(--text);max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + u + '</span>'
+      + '</button>'
+      + '<button class="rl-x" onclick="removeRecentLogin(\'' + safe + '\')" title="Remove" '
+      + 'style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;background:var(--danger);border:none;color:#fff;font-size:10px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0">✕</button>'
+      + '</div>';
+  }).join('');
+}
+
+function removeRecentLogin(username) {
+  var list = getRecentLogins().filter(function(u) { return u.toLowerCase() !== username.toLowerCase(); });
+  localStorage.setItem(RECENT_LOGINS_KEY, JSON.stringify(list));
+  renderRecentLogins();
+}
+
+function selectRecentLogin(username) {
+  document.getElementById('login-username').value = username;
+  document.getElementById('login-pass').value = '';
+  document.getElementById('login-error').textContent = '';
+  document.getElementById('login-pass').focus();
+}
+
+function getAdminUsername() {
+  var stored = localStorage.getItem(ADMIN_USER_KEY);
+  // Migrate old default 'admin' username to 'superuser'
+  if (!stored || stored === 'admin') {
+    localStorage.setItem(ADMIN_USER_KEY, 'superuser');
+    return 'superuser';
+  }
+  return stored;
+}
+
+function getPasswords() {
+  try {
+    const s = localStorage.getItem(PASS_KEY);
+    const p = s ? JSON.parse(s) : Object.assign({}, DEFAULT_PASSWORDS);
+    // Migrate old 'admin' key to 'superuser'
+    if (p.admin !== undefined && p.superuser === undefined) {
+      p.superuser = p.admin;
+      delete p.admin;
+      localStorage.setItem(PASS_KEY, JSON.stringify(p));
+    }
+    if (p.superuser === undefined) p.superuser = DEFAULT_PASSWORDS.superuser;
+    return p;
+  }
+  catch(e) { return Object.assign({}, DEFAULT_PASSWORDS); }
+}
+
+function can(action) {
+  if (!currentRole) return false;
+  if (currentRole === 'superuser') return true;
+  var userActions = ['view','log','adjust','export','mark_received','reorder'];
+  var viewerActions = ['view','export'];
+  if (currentRole === 'user') return userActions.indexOf(action) >= 0;
+  if (currentRole === 'viewer') return viewerActions.indexOf(action) >= 0;
+  return false;
+}
+
+function doLogin() {
+  var username = document.getElementById('login-username').value.trim();
+  var pass = document.getElementById('login-pass').value;
+  if (!username) { document.getElementById('login-error').textContent = 'Enter your username.'; return; }
+
+  var role = null;
+
+  // Check individual accounts first
+  var acct = db.accounts.find(function(a) { return a.username.toLowerCase() === username.toLowerCase(); });
+  if (acct) {
+    if (acct.password !== pass) { document.getElementById('login-error').textContent = 'Incorrect password. Try again.'; return; }
+    role = acct.role;
+  } else {
+    // Fallback: allow admin username with shared admin password
+    var passwords = getPasswords();
+    if (username.toLowerCase() === getAdminUsername().toLowerCase() && pass === passwords.superuser) {
+      role = 'superuser';
+    } else {
+      document.getElementById('login-error').textContent = 'Account not found or incorrect password.';
+      return;
+    }
+  }
+
+  currentRole = role;
+  currentUser = { username: username, role: role };
+  addRecentLogin(username);
+  localStorage.setItem(SESSION_ROLE_KEY, role);
+  localStorage.setItem(SESSION_USER_KEY, JSON.stringify(currentUser));
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('login-error').textContent = '';
+  applyRoleUI();
+  renderInventory(); renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
+}
+
+function logout() {
+  stopAutoRefresh();
+  currentRole = null;
+  currentUser = null;
+  localStorage.removeItem(SESSION_ROLE_KEY);
+  localStorage.removeItem(SESSION_USER_KEY);
+  document.getElementById('login-username').value = '';
+  document.getElementById('login-pass').value = '';
+  document.getElementById('login-error').textContent = '';
+  renderRecentLogins();
+  document.getElementById('login-overlay').style.display = 'flex';
+  var fab = document.getElementById('ai-fab');
+  if (fab) fab.style.display = 'none';
+  var panel = document.getElementById('ai-panel');
+  if (panel) panel.style.display = 'none';
+  aiHistory = [];
+  aiPanelOpen = false;
+}
+
+
+function applyRoleUI() {
+  // Role badge
+  var labels = { superuser: 'Superuser', user: 'User', viewer: 'Viewer' };
+  var colors = { superuser: 'var(--accent)', user: '#93c5fd', viewer: 'var(--muted)' };
+  var badge = document.getElementById('role-badge');
+  var uname = currentUser ? currentUser.username : '';
+  badge.textContent = uname ? uname + ' (' + (labels[currentRole] || currentRole) + ')' : (labels[currentRole] || currentRole);
+  badge.style.color = colors[currentRole] || 'var(--muted)';
+  badge.style.background = currentRole === 'superuser' ? 'rgba(77,255,110,0.12)' : currentRole === 'user' ? 'rgba(147,197,253,0.12)' : 'rgba(255,255,255,0.06)';
+
+  // Header buttons
+  show('btn-add-item',    can('add_item') || currentRole === 'superuser');
+  show('btn-reset',        currentRole === 'superuser');
+  show('btn-settings',     currentRole === 'superuser');
+  show('btn-change-pass',  !!currentRole);
+  show('btn-contact-admin', currentRole === 'user' || currentRole === 'viewer');
+  var fab = document.getElementById('ai-fab');
+  if (fab) { fab.style.display = currentRole ? 'flex' : 'none'; }
+  // Dynamic tab buttons (may not exist yet, renderX will handle them)
+  show('btn-log-usage',       can('log'));
+  show('btn-create-reorder',  can('reorder'));
+}
+
+function show(id, visible) {
+  var el = document.getElementById(id);
+  if (el) el.style.display = visible ? '' : 'none';
+}
+
+function confirmReset() {
+  if (!can('reset') && currentRole !== 'admin') return;
+  if (!confirm('Reset stock quantities to Master List defaults?\n\nNote: Your minimum stock levels, costs, and supplier settings will be preserved.\n\nThis cannot be undone.')) return;
+  // Only reset qty — preserve minQty, cost, supplier, unit, and other config
+  var seedMap = {};
+  SEED_ITEMS.forEach(function(s){ seedMap[s.id] = s; });
+  db.items = db.items.map(function(item) {
+    var seed = seedMap[item.id];
+    return seed ? Object.assign({}, item, { qty: seed.qty, updatedAt: new Date().toISOString() }) : item;
+  });
+  // Add any seed items not yet in db
+  db.items.forEach(function(i){ delete seedMap[i.id]; });
+  Object.values(seedMap).forEach(function(s){ db.items.push(JSON.parse(JSON.stringify(s))); });
+  db.logs = [];
+  db.reorders = [];
+  save(); // upserts reset items
+  _sbClearLogsAndReorders(); // removes deleted logs/reorders from DB
+  renderInventory();
+  renderLogs();
+  renderReorder();
+  updateSummary();
+  if(currentRole) applyRoleUI();
+  alert('Reset complete. All data restored to Master List defaults.');
+}
+
+const CONTACT_INFO_KEY = 'consumables_tracker_contact_info';
+
+function getContactInfo() {
+  try { const s = localStorage.getItem(CONTACT_INFO_KEY); return s ? JSON.parse(s) : {}; }
+  catch(e) { return {}; }
+}
+
+function openSettings() {
+  document.getElementById('set-admin-username').value = getAdminUsername();
+  document.getElementById('set-admin-pass').value = '';
+  document.getElementById('set-user-pass').value = '';
+  document.getElementById('set-viewer-pass').value = '';
+  document.getElementById('settings-msg').textContent = '';
+  var c = getContactInfo();
+  document.getElementById('set-contact-name').value  = c.name  || '';
+  document.getElementById('set-contact-email').value = c.email || '';
+  document.getElementById('set-contact-phone').value = c.phone || '';
+  document.getElementById('set-contact-note').value  = c.note  || '';
+  document.getElementById('set-ai-key').value = getAIKey() ? '••••••••••••••••' : '';
+  openModal('settings-modal');
+}
+
+function openContactAdmin() {
+  var c = getContactInfo();
+  var body = document.getElementById('contact-admin-body');
+  function row(icon, label, value, href) {
+    if (!value) return '';
+    var val = href ? '<a href="' + href + '" style="color:var(--accent)">' + esc(value) + '</a>' : esc(value);
+    return '<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">'
+      + '<span style="font-size:20px;line-height:1.4">' + icon + '</span>'
+      + '<div><div style="color:var(--muted);font-size:11px;margin-bottom:2px">' + label + '</div>'
+      + '<div style="font-size:14px">' + val + '</div></div></div>';
+  }
+  var html = row('👤', 'Admin', c.name || getAdminUsername())
+    + row('✉️', 'Email', c.email, c.email ? 'mailto:' + c.email : '')
+    + row('📱', 'Phone / Viber / WhatsApp', c.phone, c.phone ? 'tel:' + c.phone.replace(/\s/g,'') : '')
+    + row('📝', 'Note', c.note);
+  if (!html) html = '<p style="color:var(--muted);font-size:13px">No contact details have been set by the admin yet.</p>';
+  body.innerHTML = html;
+  openModal('contact-admin-modal');
+}
+
+function saveSettings() {
+  var newAdminUser = document.getElementById('set-admin-username').value.trim();
+  if (!newAdminUser) { document.getElementById('settings-msg').textContent = 'Superuser username cannot be empty.'; return; }
+  if (newAdminUser.length < 3) { document.getElementById('settings-msg').textContent = 'Superuser username must be at least 3 characters.'; return; }
+  var conflict = db.accounts.find(function(a) { return a.username.toLowerCase() === newAdminUser.toLowerCase(); });
+  if (conflict) { document.getElementById('settings-msg').textContent = '"' + newAdminUser + '" is already used by an account.'; return; }
+  localStorage.setItem(ADMIN_USER_KEY, newAdminUser);
+
+  var p = getPasswords();
+  var a = document.getElementById('set-admin-pass').value.trim();
+  var u = document.getElementById('set-user-pass').value.trim();
+  var v = document.getElementById('set-viewer-pass').value.trim();
+  if (a) p.superuser = a;
+  if (u) p.user = u;
+  if (v) p.viewer = v;
+  localStorage.setItem(PASS_KEY, JSON.stringify(p));
+
+  // If the current session is the admin, update the displayed username
+  if (currentUser && currentUser.role === 'superuser') {
+    currentUser.username = newAdminUser;
+    localStorage.setItem(SESSION_USER_KEY, JSON.stringify(currentUser));
+    applyRoleUI();
+  }
+
+  // Save contact info
+  var c = {
+    name:  document.getElementById('set-contact-name').value.trim(),
+    email: document.getElementById('set-contact-email').value.trim(),
+    phone: document.getElementById('set-contact-phone').value.trim(),
+    note:  document.getElementById('set-contact-note').value.trim()
+  };
+  localStorage.setItem(CONTACT_INFO_KEY, JSON.stringify(c));
+
+  // Save AI key (only if user typed a new one, not the masked placeholder)
+  var aiKeyInput = document.getElementById('set-ai-key').value.trim();
+  if (aiKeyInput && aiKeyInput !== '••••••••••••••••') {
+    localStorage.setItem(AI_KEY_STORE, aiKeyInput);
+  }
+
+  document.getElementById('settings-msg').textContent = 'Settings saved.';
+  setTimeout(function(){ document.getElementById('settings-msg').textContent = ''; }, 2000);
+}
+
+function openChangePassword() {
+  document.getElementById('cp-current').value = '';
+  document.getElementById('cp-new').value = '';
+  document.getElementById('cp-confirm').value = '';
+  document.getElementById('cp-msg').textContent = '';
+  document.getElementById('cp-msg').style.color = 'var(--danger)';
+  openModal('change-pass-modal');
+}
+
+function saveChangePassword() {
+  var current = document.getElementById('cp-current').value;
+  var newPass  = document.getElementById('cp-new').value;
+  var confirm  = document.getElementById('cp-confirm').value;
+  var msg = document.getElementById('cp-msg');
+
+  if (!current) { msg.textContent = 'Enter your current password.'; return; }
+  if (!newPass)  { msg.textContent = 'Enter a new password.'; return; }
+  if (newPass.length < 4) { msg.textContent = 'New password must be at least 4 characters.'; return; }
+  if (newPass !== confirm) { msg.textContent = 'Passwords do not match.'; return; }
+
+  var username = currentUser ? currentUser.username : '';
+
+  // Check if this is an individual account
+  var acct = db.accounts.find(function(a) { return a.username.toLowerCase() === username.toLowerCase(); });
+  if (acct) {
+    if (acct.password !== current) { msg.textContent = 'Current password is incorrect.'; return; }
+    acct.password = newPass;
+    save();
+    msg.style.color = 'var(--ok)';
+    msg.textContent = 'Password changed successfully.';
+    setTimeout(function() { closeModal('change-pass-modal'); }, 1500);
+    return;
+  }
+
+  // Admin account — password stored in localStorage
+  if (currentRole === 'superuser') {
+    var passwords = getPasswords();
+    if (passwords.superuser !== current) { msg.textContent = 'Current password is incorrect.'; return; }
+    passwords.superuser = newPass;
+    localStorage.setItem(PASS_KEY, JSON.stringify(passwords));
+    msg.style.color = 'var(--ok)';
+    msg.textContent = 'Password changed successfully.';
+    setTimeout(function() { closeModal('change-pass-modal'); }, 1500);
+    return;
+  }
+
+  msg.textContent = 'Unable to update password. Please contact superuser.';
+}
+
+function reconnectSupabase() {
+  if (!confirm('This will disconnect from Supabase and show the setup screen. Continue?')) return;
+  localStorage.removeItem(SUPABASE_URL_KEY);
+  localStorage.removeItem(SUPABASE_ANON_KEY);
+  sb = null;
+  closeModal('settings-modal');
+  currentRole = null;
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('supa-url-input').value = '';
+  document.getElementById('supa-key-input').value = '';
+  document.getElementById('supa-setup-error').textContent = '';
+  document.getElementById('supa-setup-overlay').style.display = 'flex';
+}
+
+// ─── ACCOUNT MANAGEMENT ──────────────────────────────────────────────────────────
+let editAccountId = null;
+
+function openAccountsModal() {
+  editAccountId = null;
+  document.getElementById('create-account-form').style.display = 'none';
+  renderAccountsList();
+  openModal('accounts-modal');
+}
+
+function renderAccountsList() {
+  const list = document.getElementById('accounts-list');
+  if (!db.accounts.length) {
+    list.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px 0">No accounts yet. Create one to get started.</p>';
+    return;
+  }
+  const roleColors = { user: '#93c5fd', viewer: 'var(--muted)' };
+  list.innerHTML = `<table style="width:100%"><thead><tr>
+    <th style="text-align:left;padding:6px 8px;font-size:11px;color:var(--muted)">Username</th>
+    <th style="text-align:left;padding:6px 8px;font-size:11px;color:var(--muted)">Access</th>
+    <th style="text-align:left;padding:6px 8px;font-size:11px;color:var(--muted)">Created</th>
+    <th></th>
+  </tr></thead><tbody>` +
+  db.accounts.map(a => `<tr style="border-top:1px solid var(--border)">
+    <td style="padding:8px 8px;font-weight:600">${esc(a.username)}</td>
+    <td style="padding:8px 8px"><span class="badge" style="background:rgba(147,197,253,0.1);color:${roleColors[a.role]||'var(--muted)'}">${a.role}</span></td>
+    <td style="padding:8px 8px;font-size:11px;color:var(--muted)">${a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
+    <td style="padding:8px 8px;text-align:right">
+      <div class="actions-cell" style="justify-content:flex-end">
+        <button class="btn btn-icon btn-sm" onclick="openEditAccount('${a.id}')" title="Edit">✏️</button>
+        <button class="btn btn-icon btn-sm btn-danger" onclick="deleteAccount('${a.id}')" title="Delete">🗑</button>
+      </div>
+    </td>
+  </tr>`).join('') + '</tbody></table>';
+}
+
+function openCreateAccount() {
+  editAccountId = null;
+  document.getElementById('acct-form-title').textContent = 'New Account';
+  document.getElementById('acct-username').value = '';
+  document.getElementById('acct-password').value = '';
+  document.getElementById('acct-password2').value = '';
+  document.getElementById('acct-role').value = 'user';
+  document.getElementById('acct-error').textContent = '';
+  document.getElementById('create-account-form').style.display = 'block';
+  document.getElementById('acct-username').focus();
+}
+
+function openEditAccount(id) {
+  const a = db.accounts.find(x => x.id === id);
+  if (!a) return;
+  editAccountId = id;
+  document.getElementById('acct-form-title').textContent = 'Edit Account';
+  document.getElementById('acct-username').value = a.username;
+  document.getElementById('acct-password').value = '';
+  document.getElementById('acct-password2').value = '';
+  document.getElementById('acct-role').value = a.role;
+  document.getElementById('acct-error').textContent = '';
+  document.getElementById('create-account-form').style.display = 'block';
+}
+
+function closeCreateAccount() {
+  document.getElementById('create-account-form').style.display = 'none';
+  editAccountId = null;
+}
+
+function saveAccount() {
+  const username = document.getElementById('acct-username').value.trim();
+  const password = document.getElementById('acct-password').value;
+  const password2 = document.getElementById('acct-password2').value;
+  const role = document.getElementById('acct-role').value;
+  const errEl = document.getElementById('acct-error');
+
+  if (!username) { errEl.textContent = 'Username is required.'; return; }
+  if (username.toLowerCase() === getAdminUsername().toLowerCase()) { errEl.textContent = '"' + getAdminUsername() + '" is the reserved superuser username.'; return; }
+
+  // Check for duplicate username (excluding current edit)
+  const dup = db.accounts.find(a => a.username.toLowerCase() === username.toLowerCase() && a.id !== editAccountId);
+  if (dup) { errEl.textContent = 'Username already exists.'; return; }
+
+  if (editAccountId) {
+    // Edit — password optional
+    if (password || password2) {
+      if (password !== password2) { errEl.textContent = 'Passwords do not match.'; return; }
+      if (password.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; return; }
+    }
+    const idx = db.accounts.findIndex(a => a.id === editAccountId);
+    db.accounts[idx].username = username;
+    db.accounts[idx].role = role;
+    if (password) db.accounts[idx].password = password;
+  } else {
+    // Create — password required
+    if (!password) { errEl.textContent = 'Password is required.'; return; }
+    if (password !== password2) { errEl.textContent = 'Passwords do not match.'; return; }
+    if (password.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; return; }
+    db.accounts.push({ id: uid(), username, password, role, createdAt: new Date().toISOString() });
+  }
+
+  save();
+  closeCreateAccount();
+  renderAccountsList();
+}
+
+function deleteAccount(id) {
+  const a = db.accounts.find(x => x.id === id);
+  if (!a) return;
+  if (!confirm('Delete account "' + a.username + '"? They will no longer be able to log in.')) return;
+  db.accounts = db.accounts.filter(x => x.id !== id);
+  _sbDeleteAccount(id);
+  renderAccountsList();
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────────
+initReportDates();
+
+// ?reset URL parameter — clears superuser credentials back to defaults
+(function() {
+  if (window.location.search.indexOf('reset') !== -1) {
+    var p = getPasswords();
+    p.superuser = 'admin123';
+    localStorage.setItem(PASS_KEY, JSON.stringify(p));
+    localStorage.setItem(ADMIN_USER_KEY, 'superuser');
+    localStorage.removeItem(SESSION_ROLE_KEY);
+    localStorage.removeItem(SESSION_USER_KEY);
+    window.history.replaceState({}, '', window.location.pathname);
+    alert('Superuser credentials reset.\nUsername: superuser\nPassword: admin123');
+  }
+})();
+
+document.addEventListener('DOMContentLoaded', function() { load(); });
+// Firebase setup or login is triggered by load()
+</script>
+
+<!-- SUPABASE SETUP OVERLAY -->
+<div id="supa-setup-overlay" style="position:fixed;inset:0;background:#060A06;z-index:1000;display:none;align-items:center;justify-content:center">
+  <div style="width:100%;max-width:520px;padding:24px">
+    <div style="text-align:center;margin-bottom:28px">
+      <img src="https://www.golocad.com/images/LOCAD-LOGO-WHITE.svg" alt="Locad" style="height:28px;margin-bottom:10px">
+      <p style="color:var(--text);font-size:1.1rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin:0 0 4px">SupplyBase</p>
+      <p style="color:var(--accent);font-size:13px;font-weight:600;margin-bottom:2px">Connect to Supabase</p>
+      <p style="color:var(--muted);font-size:12px">Set this up once — all users share the same database.</p>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px">
+      <div style="font-size:12px;color:var(--muted);line-height:1.9;margin-bottom:18px">
+        <b style="color:var(--text)">First-time setup (superuser only):</b><br>
+        1. Go to <span style="color:var(--accent);user-select:all">supabase.com</span> → New project (free tier is fine)<br>
+        2. In SQL Editor, run the setup SQL from your setup guide<br>
+        3. Go to <b style="color:var(--text)">Project Settings → API</b><br>
+        4. Copy the <b style="color:var(--warn)">Project URL</b> and the <b style="color:var(--warn)">anon / public key</b><br>
+        5. Paste both below and click Connect
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Supabase Project URL</label>
+        <input type="url" id="supa-url-input" placeholder="https://xxxxxxxxxxxx.supabase.co" autocomplete="off">
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Supabase Anon / Public Key</label>
+        <input type="text" id="supa-key-input" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." autocomplete="off">
+      </div>
+      <p id="supa-setup-error" style="color:var(--danger);font-size:12px;min-height:16px;margin-bottom:12px"></p>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="connectSupabase()">Connect to Supabase</button>
+    </div>
+    <p style="text-align:center;color:var(--muted);font-size:11px;margin-top:14px">All users connect to the same Supabase project. Data syncs in real time.</p>
+  </div>
+</div>
+
+<!-- LOGIN OVERLAY -->
+<div id="login-overlay" style="position:fixed;inset:0;background:radial-gradient(ellipse at 50% 40%, #0d2b10 0%, #060A06 70%);z-index:999;display:none;align-items:center;justify-content:center">
+  <div style="width:100%;max-width:380px;padding:24px">
+    <div style="text-align:center;margin-bottom:28px">
+      <img src="https://www.golocad.com/images/LOCAD-LOGO-WHITE.svg" alt="Locad" style="height:28px;margin-bottom:10px">
+      <p style="color:var(--text);font-size:1.35rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:0">SupplyBase</p>
+    </div>
+    <!-- Recent logins -->
+    <div id="recent-logins-wrap" style="display:none;margin-bottom:16px">
+      <p style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Recent</p>
+      <div id="recent-logins-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px">
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Username</label>
+        <input type="text" id="login-username" placeholder="Enter username" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
+      </div>
+      <div class="form-group" style="margin-bottom:6px">
+        <label>Password</label>
+        <input type="password" id="login-pass" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <p id="login-error" style="color:var(--danger);font-size:12px;min-height:18px;margin:6px 0 14px"></p>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Sign in</button>
+    </div>
+  </div>
+</div>
+
+<!-- CHANGE PASSWORD MODAL -->
+<div class="modal-bg" id="change-pass-modal">
+  <div class="modal" style="max-width:360px">
+    <h2>Change Password</h2>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Current Password</label>
+        <input type="password" id="cp-current" placeholder="Enter current password">
+      </div>
+      <div class="form-group full">
+        <label>New Password</label>
+        <input type="password" id="cp-new" placeholder="Min 4 characters">
+      </div>
+      <div class="form-group full">
+        <label>Confirm New Password</label>
+        <input type="password" id="cp-confirm" placeholder="Repeat new password">
+      </div>
+    </div>
+    <p id="cp-msg" style="font-size:12px;min-height:18px;margin:4px 0 12px"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('change-pass-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveChangePassword()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL (superuser only) -->
+<div class="modal-bg" id="settings-modal">
+  <div class="modal" style="max-width:400px">
+    <h2>Settings</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:18px">Change passwords for each role.</p>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Superuser username</label>
+        <input type="text" id="set-admin-username" placeholder="Superuser username" autocomplete="off">
+      </div>
+      <div class="form-group full">
+        <label>Superuser password</label>
+        <input type="password" id="set-admin-pass" placeholder="New password (leave blank to keep)">
+      </div>
+      <div class="form-group full">
+        <label>User password</label>
+        <input type="password" id="set-user-pass" placeholder="New password">
+      </div>
+      <div class="form-group full">
+        <label>Viewer password</label>
+        <input type="password" id="set-viewer-pass" placeholder="New password">
+      </div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+    <p style="color:var(--muted);font-size:13px;margin-bottom:12px">Contact info shown to users when they need help.</p>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Admin name</label>
+        <input type="text" id="set-contact-name" placeholder="e.g. John Santos" autocomplete="off">
+      </div>
+      <div class="form-group full">
+        <label>Email</label>
+        <input type="text" id="set-contact-email" placeholder="e.g. admin@company.com" autocomplete="off">
+      </div>
+      <div class="form-group full">
+        <label>Phone / Viber / WhatsApp</label>
+        <input type="text" id="set-contact-phone" placeholder="e.g. +63 917 123 4567" autocomplete="off">
+      </div>
+      <div class="form-group full">
+        <label>Additional note</label>
+        <input type="text" id="set-contact-note" placeholder="e.g. Available Mon–Fri, 9am–6pm" autocomplete="off">
+      </div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+    <p style="color:var(--muted);font-size:13px;margin-bottom:12px">🤖 AI Assistant — powered by Groq (free). Get your free API key at <span style="color:var(--accent);user-select:all;cursor:text">console.groq.com</span> → API Keys → Create API Key.</p>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Groq API Key</label>
+        <input type="password" id="set-ai-key" placeholder="gsk_..." autocomplete="off">
+      </div>
+    </div>
+    <p id="settings-msg" style="color:var(--ok);font-size:12px;min-height:18px;margin-top:8px"></p>
+    <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <button class="btn btn-danger btn-sm" onclick="reconnectSupabase()" title="Change Supabase connection">🔌 Change database</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary" onclick="closeModal('settings-modal');openAccountsModal()">👥 Manage Accounts</button>
+        <button class="btn btn-secondary" onclick="closeModal('settings-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSettings()">Save passwords</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONTACT ADMIN MODAL -->
+<div class="modal-bg" id="contact-admin-modal">
+  <div class="modal" style="max-width:400px">
+    <h2>📞 Contact Admin</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:18px">Reach out to the administrator for help or issues.</p>
+    <div id="contact-admin-body" style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="closeModal('contact-admin-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ACCOUNTS MODAL (superuser only) -->
+<div class="modal-bg" id="accounts-modal">
+  <div class="modal" style="max-width:560px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <h2 style="margin:0">Manage Accounts</h2>
+      <button class="btn btn-primary btn-sm" onclick="openCreateAccount()">+ Create Account</button>
+    </div>
+    <div id="accounts-list"></div>
+    <div id="create-account-form" style="display:none;border-top:1px solid var(--border);margin-top:16px;padding-top:16px">
+      <h3 style="margin:0 0 14px;font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em" id="acct-form-title">New Account</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="acct-username" placeholder="e.g. john.doe">
+        </div>
+        <div class="form-group">
+          <label>Access Type</label>
+          <select id="acct-role">
+            <option value="user">User</option>
+            <option value="viewer">Viewer</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="acct-password" placeholder="Set password">
+        </div>
+        <div class="form-group">
+          <label>Confirm Password</label>
+          <input type="password" id="acct-password2" placeholder="Repeat password">
+        </div>
+      </div>
+      <p id="acct-error" style="color:var(--danger);font-size:12px;min-height:16px;margin:8px 0 0"></p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn btn-secondary btn-sm" onclick="closeCreateAccount()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="saveAccount()">Save Account</button>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-secondary" onclick="closeModal('accounts-modal')">Close</button>
+    </div>
+  </div>
+</div>
+<!-- AI ASSISTANT PANEL -->
+<div id="ai-fab" onclick="toggleAIPanel()" title="Ask Loki" style="position:fixed;bottom:28px;right:28px;z-index:902;width:52px;height:52px;border-radius:50%;background:var(--accent);color:#060A06;font-size:22px;cursor:pointer;box-shadow:0 4px 18px rgba(77,255,110,0.35);display:none;align-items:center;justify-content:center;font-weight:700;transition:transform .15s" onmouseenter="this.style.transform='scale(1.08)'" onmouseleave="this.style.transform='scale(1)'">✦</div>
+
+<div id="ai-panel" style="display:none;position:fixed;bottom:92px;right:28px;z-index:903;width:360px;max-height:520px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.4);flex-direction:column;overflow:hidden">
+  <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface2)">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="color:var(--accent);font-size:16px">✦</span>
+      <span style="font-weight:600;font-size:14px">Loki</span>
+      <span style="font-size:10px;color:var(--muted);background:rgba(77,255,110,0.1);color:var(--accent);padding:2px 7px;border-radius:99px;font-weight:600">BETA</span>
+    </div>
+    <button onclick="toggleAIPanel()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0;line-height:1">×</button>
+  </div>
+  <div id="ai-messages" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:200px;max-height:340px"></div>
+  <div id="ai-suggestions" style="padding:0 12px 8px;display:flex;gap:6px;flex-wrap:wrap"></div>
+  <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px">
+    <input type="text" id="ai-input" placeholder="Ask about your inventory…" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px" onkeydown="if(event.key==='Enter')sendAIMessage()">
+    <button onclick="sendAIMessage()" style="background:var(--accent);color:#060A06;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:700;font-size:14px">↑</button>
+  </div>
+</div>
+
+<script>
+const AI_KEY_STORE = 'supplybase_ai_key';
+
+function getAIKey() { return localStorage.getItem(AI_KEY_STORE) || ''; }
+
+var aiHistory = [];
+var aiPanelOpen = false;
+
+function toggleAIPanel() {
+  aiPanelOpen = !aiPanelOpen;
+  var panel = document.getElementById('ai-panel');
+  panel.style.display = aiPanelOpen ? 'flex' : 'none';
+  if (aiPanelOpen && aiHistory.length === 0) {
+    renderAIWelcome();
+  }
+}
+
+function renderAIWelcome() {
+  if (!getAIKey()) { showAIKeyPrompt(); return; }
+  addAIMessage('assistant', 'Hi! I\'m Loki, your Locad warehouse assistant. I can see your current inventory, recent logs, and variances. Ask me anything — or try one of the suggestions below.');
+  renderAISuggestions([
+    'What items are critically low?',
+    'What should I reorder?',
+    'Show variance summary',
+    'How do I log usage?'
+  ]);
+}
+
+function showAIKeyPrompt() {
+  var el = document.getElementById('ai-messages');
+  el.innerHTML = '';
+  var div = document.createElement('div');
+  div.style.cssText = 'padding:12px;display:flex;flex-direction:column;gap:10px';
+  div.innerHTML = '<div style="font-size:13px;color:var(--text);line-height:1.6">👋 Hi! I\'m <strong>Loki</strong>, your Locad warehouse assistant.<br><br>To activate me, enter your free <strong>Groq API key</strong> below.<br><span style="color:var(--muted);font-size:12px">Get one free at: <span style="color:var(--accent);user-select:all">console.groq.com</span> → API Keys → Create API Key</span></div>'
+    + '<input type="password" id="loki-key-input" placeholder="Paste your Groq key here (gsk_...)" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;width:100%;box-sizing:border-box">'
+    + '<button onclick="saveLokiKey()" style="padding:9px;background:var(--accent);color:#060A06;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">Activate Loki ✦</button>';
+  el.appendChild(div);
+}
+
+function saveLokiKey() {
+  var val = document.getElementById('loki-key-input').value.trim();
+  if (!val) return;
+  localStorage.setItem(AI_KEY_STORE, val);
+  document.getElementById('ai-messages').innerHTML = '';
+  aiHistory = [];
+  renderAIWelcome();
+}
+
+function renderAISuggestions(suggestions) {
+  var el = document.getElementById('ai-suggestions');
+  el.innerHTML = suggestions.map(function(s) {
+    return '<button onclick="quickAsk(this)" data-q="' + s + '" style="font-size:11px;padding:4px 10px;border-radius:99px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;white-space:nowrap">' + s + '</button>';
+  }).join('');
+}
+
+function quickAsk(btn) {
+  document.getElementById('ai-input').value = btn.dataset.q;
+  sendAIMessage();
+}
+
+function addAIMessage(role, text) {
+  var el = document.getElementById('ai-messages');
+  var isUser = role === 'user';
+  var div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:flex-start;' + (isUser ? 'flex-direction:row-reverse' : '');
+  var avatar = '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:' + (isUser ? 'rgba(147,197,253,0.2);color:#93c5fd' : 'rgba(77,255,110,0.15);color:var(--accent)') + '">' + (isUser ? '👤' : '✦') + '</div>';
+  var bubble = '<div style="max-width:260px;padding:9px 12px;border-radius:' + (isUser ? '12px 4px 12px 12px' : '4px 12px 12px 12px') + ';background:' + (isUser ? 'rgba(147,197,253,0.1);border:1px solid rgba(147,197,253,0.2)' : 'var(--surface2);border:1px solid var(--border)') + ';font-size:13px;line-height:1.5;color:var(--text);white-space:pre-wrap">' + esc(text) + '</div>';
+  div.innerHTML = avatar + bubble;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function addAIThinking() {
+  var el = document.getElementById('ai-messages');
+  var div = document.createElement('div');
+  div.id = 'ai-thinking';
+  div.style.cssText = 'display:flex;gap:8px;align-items:flex-start';
+  div.innerHTML = '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:rgba(77,255,110,0.15);color:var(--accent)">✦</div>'
+    + '<div style="padding:9px 14px;border-radius:4px 12px 12px 12px;background:var(--surface2);border:1px solid var(--border);font-size:13px;color:var(--muted)">Thinking…</div>';
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function removeAIThinking() {
+  var el = document.getElementById('ai-thinking');
+  if (el) el.remove();
+}
+
+function buildAISystemPrompt() {
+  var lowItems = db.items.filter(function(i) { return stockStatus(i) !== 'ok'; });
+  var itemLines = db.items.map(function(item) {
+    var s = stockStatus(item);
+    return '- ' + item.name + (item.sku ? ' [' + item.sku + ']' : '') + ': ' + item.qty + ' ' + (item.unit||'units') + ' (min: ' + (item.minQty||0) + ', status: ' + s + ')' + (item.category ? ', cat: ' + item.category : '') + (item.location ? ', loc: ' + item.location : '');
+  }).join('\n');
+
+  var recentLogs = db.logs.slice(-30).reverse().map(function(log) {
+    var item = db.items.find(function(i) { return i.id === log.itemId; });
+    var d = new Date(log.date).toLocaleDateString('en-PH');
+    return '- ' + d + ': [' + log.type + '] ' + (item ? item.name : 'Unknown') + ' qty:' + (log.qty >= 0 ? '+' : '') + log.qty + ' by ' + (log.by||'?') + (log.variance != null ? ' (variance:' + (log.variance >= 0 ? '+' : '') + log.variance + ')' : '');
+  }).join('\n');
+
+  var pendingReorders = db.reorders.filter(function(r) { return r.status !== 'received'; });
+
+  return 'You are Loki, Locad\'s intelligent warehouse assistant for Locad\'s warehouse consumables and packaging materials tracker.\n\nCURRENT INVENTORY (' + db.items.length + ' items, ' + lowItems.length + ' need attention):\n' + itemLines + '\n\nRECENT ACTIVITY (last 30 logs):\n' + recentLogs + '\n\nPENDING REORDERS: ' + pendingReorders.length + '\n\nCurrent user: ' + (currentUser ? currentUser.username + ' (' + currentUser.role + ')' : 'unknown') + '\nDate: ' + new Date().toLocaleDateString('en-PH') + '\n\nYou help with:\n1. Answering inventory questions (stock levels, low stock alerts, usage trends)\n2. Reorder recommendations (based on current stock vs min qty)\n3. Variance analysis (explain discrepancies in stock adjustments)\n4. Guiding log entries (explain the steps to log usage, restock, adjust, or damage)\n5. General app help\n\nWhen recommending a log entry, end your response with a JSON block on its own line:\n[ACTION:{"type":"prefill_log","itemName":"...","logType":"use|restock|adjust|damage","qty":0}]\n\nKeep responses concise (under 150 words). Use plain text, no markdown. Be specific and practical.';
+}
+
+async function sendAIMessage() {
+  var input = document.getElementById('ai-input');
+  var text = input.value.trim();
+  if (!text) return;
+
+  var key = getAIKey();
+  if (!key) {
+    showAIKeyPrompt();
+    input.value = '';
+    return;
+  }
+
+  input.value = '';
+  document.getElementById('ai-suggestions').innerHTML = '';
+  addAIMessage('user', text);
+  aiHistory.push({ role: 'user', content: text });
+  addAIThinking();
+
+  try {
+    var messages = [{ role: 'system', content: buildAISystemPrompt() }].concat(aiHistory.slice(-10));
+
+    var resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + key
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: messages,
+        max_tokens: 512,
+        temperature: 0.7
+      })
+    });
+    var data = await resp.json();
+    removeAIThinking();
+
+    if (data.error) {
+      addAIMessage('assistant', 'Error: ' + data.error.message);
+      aiHistory.pop();
+      return;
+    }
+
+    var reply = data.choices[0].message.content;
+    var actionMatch = reply.match(/\[ACTION:(\{.*?\})\]/s);
+    var displayText = reply.replace(/\[ACTION:.*?\]/s, '').trim();
+
+    aiHistory.push({ role: 'assistant', content: reply });
+    addAIMessage('assistant', displayText);
+
+    if (actionMatch) {
+      try {
+        var action = JSON.parse(actionMatch[1]);
+        if (action.type === 'prefill_log') {
+          var btn = document.createElement('button');
+          btn.textContent = '📝 Open log form for ' + action.itemName;
+          btn.style.cssText = 'margin:4px 12px 8px;padding:7px 12px;background:rgba(77,255,110,0.12);border:1px solid rgba(77,255,110,0.3);color:var(--accent);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;width:calc(100% - 24px);text-align:left';
+          btn.onclick = function() {
+            toggleAIPanel();
+            var item = db.items.find(function(i) { return i.name.toLowerCase().includes(action.itemName.toLowerCase()); });
+            if (item) { openLogForItem(item.id); }
+            else { openLogModal(); }
+          };
+          document.getElementById('ai-messages').appendChild(btn);
+          document.getElementById('ai-messages').scrollTop = 99999;
+        }
+      } catch(e) {}
+    }
+
+    renderAISuggestions(['Tell me more', 'What else needs attention?', 'Show top 5 low stock', 'Help me log an entry']);
+
+  } catch(e) {
+    removeAIThinking();
+    addAIMessage('assistant', 'Connection error. Check your internet connection and API key.');
+    aiHistory.pop();
+  }
+}
+</script>
+</body>
+</html>
