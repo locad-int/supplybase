@@ -45,9 +45,16 @@
   .sidebar-header { padding: 20px 18px 16px; border-bottom: 1px solid var(--sidebar-border); }
   .sidebar-app-name { color: rgba(255,255,255,0.5); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; margin-top: 4px; }
   .sidebar-nav { padding: 10px 0; flex: 1; }
-  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; color: var(--sidebar-muted); cursor: pointer; font-size: 14px; font-weight: 500; border-radius: 6px; margin: 2px 10px; transition: .15s; user-select: none; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; color: var(--sidebar-muted); cursor: pointer; font-size: 14px; font-weight: 500; border-radius: 6px; margin: 2px 10px; transition: .15s; user-select: none; position: relative; }
   .nav-item:hover { background: var(--sidebar-hover); color: #e2e8f0; }
   .nav-item.active { background: var(--sidebar-active-bg); color: var(--sidebar-active-text); font-weight: 600; }
+  .nav-item.drag-over { border: 1px dashed var(--sidebar-active-text); background: rgba(34,197,94,0.06); }
+  .nav-item.dragging { opacity: .4; }
+  .nav-drag-handle { display: none; color: #444; font-size: 13px; cursor: grab; padding: 0 2px; margin-left: auto; line-height: 1; }
+  .nav-item:hover .nav-drag-handle { display: block; }
+  .sidebar-nav.reorder-mode .nav-item { cursor: grab; }
+  .sidebar-nav.reorder-mode .nav-item:hover { background: var(--sidebar-hover); }
+  .reorder-hint { font-size: 11px; color: #444; text-align: center; padding: 4px 0 8px; }
   .sidebar-bottom { padding: 14px; border-top: 1px solid var(--sidebar-border); }
   .sidebar-role-badge { font-size: 13px; color: #94a3b8; background: #1a1a1a; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; font-weight: 500; word-break: break-word; }
   .sidebar-actions { display: flex; flex-direction: column; gap: 5px; }
@@ -231,12 +238,13 @@
     <img src="https://www.golocad.com/images/LOCAD-LOGO-WHITE.svg" alt="Locad" style="height:20px;display:block;margin-bottom:6px" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Empty.png/1px-Empty.png'">
     <div class="sidebar-app-name">SupplyBase</div>
   </div>
-  <nav class="sidebar-nav">
-    <div id="nav-inventory" class="nav-item active" data-tab="inventory" onclick="switchTab('inventory')">📋 <span>Inventory</span></div>
-    <div id="nav-usage" class="nav-item" data-tab="usage" onclick="switchTab('usage')">📝 <span>Usage Log</span></div>
-    <div id="nav-reorder" class="nav-item" data-tab="reorder" onclick="switchTab('reorder')">🔄 <span>Reorder</span></div>
-    <div id="nav-report" class="nav-item" data-tab="report" onclick="switchTab('report')">💰 <span>Cost Report</span></div>
-    <div id="nav-dashboard" class="nav-item" data-tab="dashboard" onclick="switchTab('dashboard')">📊 <span>Dashboard</span></div>
+  <nav class="sidebar-nav" id="sidebar-nav">
+    <div id="nav-inventory" class="nav-item active" data-tab="inventory" draggable="true" onclick="switchTab('inventory')">📋 <span>Inventory</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-usage" class="nav-item" data-tab="usage" draggable="true" onclick="switchTab('usage')">📝 <span>Usage Log</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-reorder" class="nav-item" data-tab="reorder" draggable="true" onclick="switchTab('reorder')">🔄 <span>Reorder</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-report" class="nav-item" data-tab="report" draggable="true" onclick="switchTab('report')">💰 <span>Cost Report</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-dashboard" class="nav-item" data-tab="dashboard" draggable="true" onclick="switchTab('dashboard')">📊 <span>Dashboard</span><span class="nav-drag-handle">⠿</span></div>
+    <div class="reorder-hint" id="reorder-hint" style="display:none">Drag to reorder</div>
   </nav>
   <div class="sidebar-bottom">
     <div id="role-badge" class="sidebar-role-badge"></div>
@@ -338,13 +346,12 @@
       <select id="log-filter-item" onchange="renderLogs()" style="width:auto;max-width:220px">
         <option value="">All Items</option>
       </select>
-      <select id="log-filter-type" onchange="renderLogs()" style="width:auto">
-        <option value="">All Types</option>
-        <option value="use">Use</option>
-        <option value="restock">Restock</option>
-        <option value="adjust">Adjust</option>
-        <option value="damage">Damage</option>
-      </select>
+      <div id="log-type-chips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button class="status-chip" data-type="use"     onclick="toggleLogTypeChip('use')"     style="border-color:#3b82f6;color:#3b82f6">Use</button>
+        <button class="status-chip" data-type="restock" onclick="toggleLogTypeChip('restock')" style="border-color:var(--ok);color:var(--ok)">Restock</button>
+        <button class="status-chip" data-type="adjust"  onclick="toggleLogTypeChip('adjust')"  style="border-color:var(--warn);color:var(--warn)">Adjust</button>
+        <button class="status-chip" data-type="damage"  onclick="toggleLogTypeChip('damage')"  style="border-color:var(--danger);color:var(--danger)">Damage</button>
+      </div>
       <button id="btn-log-usage" class="btn btn-primary" onclick="openLogModal()">+ Log Usage</button>
     </div>
     <div id="log-list"></div>
@@ -640,7 +647,7 @@
       </div>
       <div class="form-group">
         <label>Performed By *</label>
-        <input type="text" id="lf-by" placeholder="Name or team">
+        <input type="text" id="lf-by" placeholder="Name or team" readonly style="background:var(--surface2);color:var(--muted);cursor:not-allowed">
       </div>
       <div class="form-group">
         <label>Date &amp; Time</label>
@@ -780,8 +787,8 @@
         </select>
       </div>
       <div class="form-group">
-        <label>Counted by</label>
-        <input type="text" id="adj-by" placeholder="Name">
+        <label>Performed By *</label>
+        <input type="text" id="adj-by" placeholder="Name" readonly style="background:var(--surface2);color:var(--muted);cursor:not-allowed">
       </div>
       <div class="form-group">
         <label>Date &amp; Time</label>
@@ -1154,6 +1161,12 @@ function toggleStatusChip(val) {
   renderInventory();
 }
 
+function toggleLogTypeChip(type) {
+  const chip = document.querySelector(`#log-type-chips .status-chip[data-type="${type}"]`);
+  chip.classList.toggle('active');
+  renderLogs();
+}
+
 function getActiveStatusFilters() {
   return Array.from(document.querySelectorAll('.status-chip.active')).map(c => c.dataset.val);
 }
@@ -1190,7 +1203,7 @@ function updateSummary() {
   const now = new Date();
   const dayOfWeek = now.getDay(); // 0=Sun
   const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1)); // Monday
+  weekStart.setDate(now.getDate() - dayOfWeek); // Sunday
   weekStart.setHours(0, 0, 0, 0);
   const weekExpenses = db.logs
     .filter(l => (l.type === 'use' || l.type === 'damage') && new Date(l.date) >= weekStart)
@@ -1355,11 +1368,11 @@ function deleteItem(id) {
 function renderLogs() {
   const q = document.getElementById('log-search').value.toLowerCase();
   const fi = document.getElementById('log-filter-item').value;
-  const ft = document.getElementById('log-filter-type').value;
+  const activeTypes = [...document.querySelectorAll('#log-type-chips .status-chip.active')].map(c => c.dataset.type);
   let logs = db.logs.filter(l => {
     const item = db.items.find(i => i.id === l.itemId);
     if (fi && l.itemId !== fi) return false;
-    if (ft && l.type !== ft) return false;
+    if (activeTypes.length && !activeTypes.includes(l.type)) return false;
     if (q) {
       const itemName = item?.name?.toLowerCase() || '';
       if (!itemName.includes(q) && !l.by?.toLowerCase().includes(q) && !l.notes?.toLowerCase().includes(q)) return false;
@@ -1506,7 +1519,7 @@ function openLogModal() {
   document.getElementById('lf-delivery-cost').value = '';
   const wacPrev = document.getElementById('lf-wac-preview');
   if (wacPrev) wacPrev.style.display = 'none';
-  document.getElementById('lf-by').value = '';
+  document.getElementById('lf-by').value = currentUser ? currentUser.username : '';
   document.getElementById('lf-date-display').textContent = new Date().toLocaleString();
   document.getElementById('lf-ref').value = '';
   document.getElementById('lf-notes').value = '';
@@ -1785,7 +1798,7 @@ function openAdjust(id) {
   document.getElementById('adj-qty').value = '';
   document.getElementById('adj-reason').value = '';
   document.getElementById('adj-reason-group').style.display = 'none';
-  document.getElementById('adj-by').value = '';
+  document.getElementById('adj-by').value = currentUser ? currentUser.username : '';
   adjustTimestamp = new Date();
   document.getElementById('adj-date-display').textContent = adjustTimestamp.toLocaleString();
   document.getElementById('adj-notes').value = '';
@@ -1933,6 +1946,9 @@ function applyAdjust() {
 
   var phys, diff;
 
+  const adjBy = document.getElementById('adj-by').value.trim();
+  if (!adjBy) { alert('Performed By is required.'); return; }
+
   if (isVarianceMode) {
     const varVal = document.getElementById('adj-variance-input').value;
     diff = parseFloat(varVal);
@@ -1964,7 +1980,7 @@ function applyAdjust() {
     variance: diff,
     sysQty: sysQty,
     varianceReason: reasonSel,
-    by: document.getElementById('adj-by').value.trim() || 'Manual',
+    by: document.getElementById('adj-by').value.trim(),
     date: (adjustTimestamp || new Date()).toISOString(),
     notes: notes,
     ref: ''
@@ -2410,7 +2426,7 @@ function getDashRange() {
   let from, to;
   if (dashPeriod === 'week') {
     const day = now.getDay();
-    from = new Date(now); from.setDate(now.getDate() - (day === 0 ? 6 : day - 1)); from.setHours(0,0,0,0);
+    from = new Date(now); from.setDate(now.getDate() - day); from.setHours(0,0,0,0); // Sunday
     to = new Date(now); to.setHours(23,59,59,999);
   } else if (dashPeriod === 'month') {
     from = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -2698,6 +2714,58 @@ function logout() {
   aiPanelOpen = false;
 }
 
+
+// ─── NAV REORDER ────────────────────────────────────────────────────────────────
+(function initNavDrag() {
+  const NAV_ORDER_KEY = 'sb_nav_order';
+  const nav = document.getElementById('sidebar-nav');
+  if (!nav) return;
+
+  // Restore saved order
+  try {
+    const saved = JSON.parse(localStorage.getItem(NAV_ORDER_KEY) || '[]');
+    if (saved.length) {
+      saved.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) nav.insertBefore(el, document.getElementById('reorder-hint'));
+      });
+    }
+  } catch(e) {}
+
+  let dragSrc = null;
+
+  nav.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('dragstart', function(e) {
+      dragSrc = this;
+      this.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    item.addEventListener('dragend', function() {
+      this.classList.remove('dragging');
+      nav.querySelectorAll('.nav-item').forEach(i => i.classList.remove('drag-over'));
+      // Save order
+      const order = [...nav.querySelectorAll('.nav-item[id]')].map(i => i.id);
+      localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(order));
+    });
+    item.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      nav.querySelectorAll('.nav-item').forEach(i => i.classList.remove('drag-over'));
+      if (this !== dragSrc) this.classList.add('drag-over');
+    });
+    item.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (this !== dragSrc) {
+        const items = [...nav.querySelectorAll('.nav-item[id]')];
+        const srcIdx = items.indexOf(dragSrc);
+        const tgtIdx = items.indexOf(this);
+        if (srcIdx < tgtIdx) nav.insertBefore(dragSrc, this.nextSibling);
+        else nav.insertBefore(dragSrc, this);
+      }
+      this.classList.remove('drag-over');
+    });
+  });
+})();
 
 function applyRoleUI() {
   var labels = { superuser: 'Superuser', user: 'User', viewer: 'Viewer' };
