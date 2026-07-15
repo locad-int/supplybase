@@ -182,6 +182,45 @@
     main { padding: 14px 16px; }
     .summary { grid-template-columns: 1fr 1fr; }
   }
+
+  /* ── Dashboard ───────────────────────────────────────────── */
+  .dash-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+  .dash-section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 16px; }
+  .dash-period-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  .dash-period-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: .15s; }
+  .dash-period-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .dash-period-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .dash-date-inputs { display: flex; gap: 6px; align-items: center; }
+  .dash-date-inputs input { padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: var(--surface); color: var(--text); }
+  .dash-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .dash-kpi { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; border-left: 3px solid var(--border); }
+  .dash-kpi.accent  { border-left-color: var(--accent); }
+  .dash-kpi.danger  { border-left-color: var(--danger); }
+  .dash-kpi.warn    { border-left-color: var(--warn); }
+  .dash-kpi.info    { border-left-color: #3b82f6; }
+  .dash-kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 6px; }
+  .dash-kpi-value { font-size: 1.5rem; font-weight: 700; color: var(--text); line-height: 1; }
+  .dash-kpi-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  /* Vertical bar chart (spending over time) */
+  .bar-chart-wrap { display: flex; align-items: flex-end; gap: 4px; height: 140px; padding-bottom: 28px; position: relative; }
+  .bar-chart-wrap::after { content: ''; position: absolute; left: 0; right: 0; bottom: 28px; border-top: 1px dashed var(--border); }
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+  .bar-col-bar { width: 100%; border-radius: 4px 4px 0 0; background: var(--accent); opacity: .85; transition: height .3s, opacity .15s; cursor: default; min-height: 2px; }
+  .bar-col-bar:hover { opacity: 1; }
+  .bar-col-label { font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-align: center; }
+  .bar-col-val { font-size: 9px; color: var(--muted); }
+  /* Horizontal bar chart (top items / categories) */
+  .hbar-list { display: flex; flex-direction: column; gap: 10px; }
+  .hbar-row { display: grid; grid-template-columns: 160px 1fr 80px; align-items: center; gap: 10px; }
+  .hbar-row-label { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hbar-track { background: var(--surface2); border-radius: 99px; height: 8px; overflow: hidden; }
+  .hbar-fill { height: 100%; border-radius: 99px; background: var(--accent); transition: width .4s; }
+  .hbar-fill.danger { background: var(--danger); }
+  .hbar-fill.warn   { background: var(--warn); }
+  .hbar-val { font-size: 11px; font-weight: 600; color: var(--text); text-align: right; }
+  .dash-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 900px) { .dash-two-col { grid-template-columns: 1fr; } }
+  .dash-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 30px 0; }
 </style>
 </head>
 <body>
@@ -197,6 +236,7 @@
     <div id="nav-usage" class="nav-item" data-tab="usage" onclick="switchTab('usage')">📝 <span>Usage Log</span></div>
     <div id="nav-reorder" class="nav-item" data-tab="reorder" onclick="switchTab('reorder')">🔄 <span>Reorder</span></div>
     <div id="nav-report" class="nav-item" data-tab="report" onclick="switchTab('report')">💰 <span>Cost Report</span></div>
+    <div id="nav-dashboard" class="nav-item" data-tab="dashboard" onclick="switchTab('dashboard')">📊 <span>Dashboard</span></div>
   </nav>
   <div class="sidebar-bottom">
     <div id="role-badge" class="sidebar-role-badge"></div>
@@ -276,6 +316,7 @@
             <th>Level</th>
             <th onclick="sortBy('unit')">Unit <span class="sort-arrow" id="sort-unit">↕</span></th>
             <th onclick="sortBy('minQty')">Min Qty <span class="sort-arrow" id="sort-minQty">↕</span></th>
+            <th onclick="sortBy('cost')">Cost/Unit <span class="sort-arrow" id="sort-cost">↕</span></th>
             <th>Status</th>
             <th>Location</th>
             <th>Actions</th>
@@ -445,6 +486,67 @@
     </div>
   </div>
 
+  <!-- DASHBOARD TAB -->
+  <div class="tab-panel" id="tab-dashboard">
+
+    <!-- Period selector -->
+    <div class="dash-period-bar">
+      <button class="dash-period-btn active" data-period="week"    onclick="setDashPeriod('week')">This Week</button>
+      <button class="dash-period-btn"        data-period="month"   onclick="setDashPeriod('month')">This Month</button>
+      <button class="dash-period-btn"        data-period="30days"  onclick="setDashPeriod('30days')">Last 30 Days</button>
+      <button class="dash-period-btn"        data-period="90days"  onclick="setDashPeriod('90days')">Last 90 Days</button>
+      <button class="dash-period-btn"        data-period="custom"  onclick="setDashPeriod('custom')">Custom</button>
+      <div class="dash-date-inputs" id="dash-custom-inputs" style="display:none">
+        <input type="date" id="dash-date-from" onchange="renderDashboard()">
+        <span style="color:var(--muted);font-size:12px">→</span>
+        <input type="date" id="dash-date-to" onchange="renderDashboard()">
+      </div>
+    </div>
+
+    <!-- KPI cards -->
+    <div class="dash-kpi-grid" id="dash-kpis">
+      <div class="dash-kpi danger">
+        <div class="dash-kpi-label">Total Spend</div>
+        <div class="dash-kpi-value" id="dk-spend">₱0</div>
+        <div class="dash-kpi-sub" id="dk-spend-sub">in selected period</div>
+      </div>
+      <div class="dash-kpi accent">
+        <div class="dash-kpi-label">Transactions</div>
+        <div class="dash-kpi-value" id="dk-txn">0</div>
+        <div class="dash-kpi-sub">use + damage logs</div>
+      </div>
+      <div class="dash-kpi warn">
+        <div class="dash-kpi-label">Avg Cost / Txn</div>
+        <div class="dash-kpi-value" id="dk-avg">₱0</div>
+        <div class="dash-kpi-sub">per log entry</div>
+      </div>
+      <div class="dash-kpi info">
+        <div class="dash-kpi-label">Top Category</div>
+        <div class="dash-kpi-value" id="dk-top-cat" style="font-size:1rem">—</div>
+        <div class="dash-kpi-sub" id="dk-top-cat-sub">by spend</div>
+      </div>
+    </div>
+
+    <!-- Spending over time -->
+    <div class="dash-section">
+      <div class="dash-section-title">Spending Over Time</div>
+      <div id="dash-bar-chart" class="bar-chart-wrap"></div>
+    </div>
+
+    <!-- Two-column: top items + category breakdown -->
+    <div class="dash-two-col">
+      <div class="dash-section">
+        <div class="dash-section-title">Top Items by Cost</div>
+        <div id="dash-top-items" class="hbar-list"></div>
+      </div>
+      <div class="dash-section">
+        <div class="dash-section-title">Category Breakdown</div>
+        <div id="dash-cat-breakdown" class="hbar-list"></div>
+      </div>
+    </div>
+
+  </div>
+
   </main>
 </div>
 
@@ -529,7 +631,12 @@
       </div>
       <div class="form-group">
         <label>Quantity *</label>
-        <input type="number" id="lf-qty" min="0" placeholder="0">
+        <input type="number" id="lf-qty" min="0" placeholder="0" oninput="updateWACPreview()">
+      </div>
+      <div class="form-group" id="lf-delivery-cost-group" style="display:none">
+        <label>Delivery Cost per Unit (₱)</label>
+        <input type="number" id="lf-delivery-cost" min="0" step="0.01" placeholder="0.00" oninput="updateWACPreview()">
+        <div id="lf-wac-preview" style="font-size:12px;color:var(--muted);margin-top:4px;display:none"></div>
       </div>
       <div class="form-group">
         <label>Performed By *</label>
@@ -1031,13 +1138,14 @@ function switchTab(name) {
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report' };
+  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard' };
   var titleEl = document.getElementById('page-title');
   if (titleEl) titleEl.textContent = (titles[name] || name).toUpperCase();
   if (name === 'inventory') renderInventory();
   if (name === 'usage') renderLogs();
   if (name === 'reorder') renderReorder();
   if (name === 'report') { renderReport(); renderVariance(); }
+  if (name === 'dashboard') renderDashboard();
 }
 
 function toggleStatusChip(val) {
@@ -1150,6 +1258,7 @@ function renderInventory() {
       </td>
       <td>${esc(item.unit||'—')}</td>
       <td>${fmtInt(item.minQty||0)}</td>
+      <td>${item.cost ? fmtPHP(item.cost) : '<span style="color:var(--muted)">—</span>'}</td>
       <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
       <td>${esc(item.location||'—')}</td>
       <td>${actionsHtml}</td>`;
@@ -1394,6 +1503,9 @@ function openLogModal() {
   document.getElementById('lf-type').value = '';
   updateLogFormLabels();
   document.getElementById('lf-qty').value = '';
+  document.getElementById('lf-delivery-cost').value = '';
+  const wacPrev = document.getElementById('lf-wac-preview');
+  if (wacPrev) wacPrev.style.display = 'none';
   document.getElementById('lf-by').value = '';
   document.getElementById('lf-date-display').textContent = new Date().toLocaleString();
   document.getElementById('lf-ref').value = '';
@@ -1404,10 +1516,30 @@ function openLogModal() {
 function updateLogFormLabels() {
   const type = document.getElementById('lf-type').value;
   const label = document.getElementById('lf-notes-label');
-  const qtyLabel = document.querySelector('label[for="lf-qty"], .form-group:has(#lf-qty) label');
   if (label) label.textContent = type === 'adjust' ? 'Variance Reason' : 'Notes';
   const notesEl = document.getElementById('lf-notes');
   if (notesEl) notesEl.placeholder = type === 'adjust' ? 'Why is the count different? (e.g. physical count, damage found…)' : 'Reason, project, etc.';
+  // Show delivery cost field only for restock
+  const dcGroup = document.getElementById('lf-delivery-cost-group');
+  if (dcGroup) dcGroup.style.display = type === 'restock' ? '' : 'none';
+  updateWACPreview();
+}
+
+function updateWACPreview() {
+  const preview = document.getElementById('lf-wac-preview');
+  if (!preview) return;
+  const itemId = document.getElementById('lf-item').value;
+  const deliveryCost = parseFloat(document.getElementById('lf-delivery-cost').value);
+  const qty = parseFloat(document.getElementById('lf-qty').value);
+  const item = db.items.find(i => i.id === itemId);
+  if (!item || isNaN(deliveryCost) || isNaN(qty) || qty <= 0) { preview.style.display = 'none'; return; }
+  const currentStock = item.qty || 0;
+  const currentCost = item.cost || 0;
+  const newAvg = currentStock > 0
+    ? (currentStock * currentCost + qty * deliveryCost) / (currentStock + qty)
+    : deliveryCost;
+  preview.style.display = '';
+  preview.innerHTML = `New avg cost: <strong style="color:var(--accent)">${fmtPHP(newAvg)}</strong> (was ${fmtPHP(currentCost)})`;
 }
 
 function openLogForItem(itemId) {
@@ -1451,6 +1583,18 @@ function saveLog() {
     logEntry.varianceReason = document.getElementById('lf-notes').value.trim();
   }
   db.logs.push(logEntry);
+  // Weighted average cost update on restock
+  if (type === 'restock') {
+    const deliveryCost = parseFloat(document.getElementById('lf-delivery-cost').value);
+    if (!isNaN(deliveryCost) && deliveryCost > 0) {
+      const prevStock = originalQty;
+      const prevCost = item.cost || 0;
+      item.cost = prevStock > 0
+        ? (prevStock * prevCost + qty * deliveryCost) / (prevStock + qty)
+        : deliveryCost;
+      item.cost = Math.round(item.cost * 100) / 100; // round to 2 decimal places
+    }
+  }
   // Auto-update open reorders when a restock is logged for the same item
   if (type === 'restock') {
     db.reorders.forEach(r => {
@@ -2249,6 +2393,164 @@ function exportVarianceCSV() {
   a.click();
 }
 
+
+// ─── DASHBOARD ──────────────────────────────────────────────────────────────────
+var dashPeriod = 'week';
+
+function setDashPeriod(p) {
+  dashPeriod = p;
+  document.querySelectorAll('.dash-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === p));
+  const custom = document.getElementById('dash-custom-inputs');
+  if (custom) custom.style.display = p === 'custom' ? 'flex' : 'none';
+  renderDashboard();
+}
+
+function getDashRange() {
+  const now = new Date();
+  let from, to;
+  if (dashPeriod === 'week') {
+    const day = now.getDay();
+    from = new Date(now); from.setDate(now.getDate() - (day === 0 ? 6 : day - 1)); from.setHours(0,0,0,0);
+    to = new Date(now); to.setHours(23,59,59,999);
+  } else if (dashPeriod === 'month') {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
+    to = new Date(now); to.setHours(23,59,59,999);
+  } else if (dashPeriod === '30days') {
+    from = new Date(now); from.setDate(now.getDate() - 29); from.setHours(0,0,0,0);
+    to = new Date(now); to.setHours(23,59,59,999);
+  } else if (dashPeriod === '90days') {
+    from = new Date(now); from.setDate(now.getDate() - 89); from.setHours(0,0,0,0);
+    to = new Date(now); to.setHours(23,59,59,999);
+  } else {
+    const fv = document.getElementById('dash-date-from')?.value;
+    const tv = document.getElementById('dash-date-to')?.value;
+    from = fv ? new Date(fv + 'T00:00:00') : new Date(0);
+    to   = tv ? new Date(tv + 'T23:59:59') : new Date();
+  }
+  return { from, to };
+}
+
+function renderDashboard() {
+  const { from, to } = getDashRange();
+
+  // Filter cost logs (use + damage = spending)
+  const spendLogs = db.logs.filter(l => {
+    if (l.type !== 'use' && l.type !== 'damage') return false;
+    const d = new Date(l.date);
+    return d >= from && d <= to;
+  });
+
+  // KPIs
+  const totalSpend = spendLogs.reduce((s, l) => {
+    const item = db.items.find(i => i.id === l.itemId);
+    return s + (l.qty || 0) * (item?.cost || 0);
+  }, 0);
+  const txnCount = spendLogs.length;
+  const avgCost = txnCount > 0 ? totalSpend / txnCount : 0;
+
+  // Top category
+  const catMap = {};
+  spendLogs.forEach(l => {
+    const item = db.items.find(i => i.id === l.itemId);
+    const cat = item?.category || 'Uncategorized';
+    const cost = (l.qty || 0) * (item?.cost || 0);
+    catMap[cat] = (catMap[cat] || 0) + cost;
+  });
+  const topCat = Object.entries(catMap).sort((a,b) => b[1]-a[1])[0];
+
+  document.getElementById('dk-spend').textContent = fmtPHP(totalSpend);
+  document.getElementById('dk-txn').textContent = fmtInt(txnCount);
+  document.getElementById('dk-avg').textContent = fmtPHP(avgCost);
+  document.getElementById('dk-top-cat').textContent = topCat ? topCat[0] : '—';
+  document.getElementById('dk-top-cat-sub').textContent = topCat ? fmtPHP(topCat[1]) : 'no data';
+
+  // ── Spending over time ──
+  const diffDays = Math.round((to - from) / 86400000) + 1;
+  const bucketCount = diffDays <= 14 ? diffDays : diffDays <= 60 ? Math.ceil(diffDays / 7) : Math.ceil(diffDays / 30);
+  const bucketUnit  = diffDays <= 14 ? 'day' : diffDays <= 60 ? 'week' : 'month';
+  const buckets = [];
+  for (let i = 0; i < bucketCount; i++) {
+    let bFrom, bTo, label;
+    if (bucketUnit === 'day') {
+      bFrom = new Date(from); bFrom.setDate(from.getDate() + i); bFrom.setHours(0,0,0,0);
+      bTo   = new Date(bFrom); bTo.setHours(23,59,59,999);
+      label = bFrom.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+    } else if (bucketUnit === 'week') {
+      bFrom = new Date(from); bFrom.setDate(from.getDate() + i * 7);
+      bTo   = new Date(bFrom); bTo.setDate(bFrom.getDate() + 6); bTo.setHours(23,59,59,999);
+      if (bTo > to) bTo = to;
+      label = 'W' + (i + 1);
+    } else {
+      bFrom = new Date(from.getFullYear(), from.getMonth() + i, 1);
+      bTo   = new Date(from.getFullYear(), from.getMonth() + i + 1, 0, 23, 59, 59);
+      if (bTo > to) bTo = to;
+      label = bFrom.toLocaleDateString('en-PH', { month: 'short' });
+    }
+    const total = spendLogs.filter(l => { const d = new Date(l.date); return d >= bFrom && d <= bTo; })
+      .reduce((s, l) => { const item = db.items.find(i => i.id === l.itemId); return s + (l.qty||0)*(item?.cost||0); }, 0);
+    buckets.push({ label, total, bFrom, bTo });
+  }
+  const maxBucket = Math.max(...buckets.map(b => b.total), 1);
+  const barChart = document.getElementById('dash-bar-chart');
+  if (buckets.every(b => b.total === 0)) {
+    barChart.innerHTML = '<div class="dash-empty" style="width:100%">No spend data for this period.</div>';
+  } else {
+    barChart.innerHTML = buckets.map(b => {
+      const h = Math.max(2, Math.round((b.total / maxBucket) * 110));
+      const color = b.total === 0 ? 'var(--border)' : 'var(--accent)';
+      return `<div class="bar-col" title="${b.label}: ${fmtPHP(b.total)}">
+        <div class="bar-col-val">${b.total > 0 ? fmtPHP(b.total) : ''}</div>
+        <div class="bar-col-bar" style="height:${h}px;background:${color}"></div>
+        <div class="bar-col-label">${esc(b.label)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Top items by cost ──
+  const itemMap = {};
+  spendLogs.forEach(l => {
+    const item = db.items.find(i => i.id === l.itemId);
+    if (!item) return;
+    if (!itemMap[item.id]) itemMap[item.id] = { name: item.name, cost: 0, qty: 0 };
+    itemMap[item.id].cost += (l.qty || 0) * (item.cost || 0);
+    itemMap[item.id].qty  += (l.qty || 0);
+  });
+  const topItems = Object.values(itemMap).sort((a,b) => b.cost - a.cost).slice(0, 10);
+  const maxItem = Math.max(...topItems.map(x => x.cost), 1);
+  const topItemsEl = document.getElementById('dash-top-items');
+  if (topItems.length === 0) {
+    topItemsEl.innerHTML = '<div class="dash-empty">No data for this period.</div>';
+  } else {
+    topItemsEl.innerHTML = topItems.map((x, idx) => {
+      const pct = Math.max(2, Math.round((x.cost / maxItem) * 100));
+      const color = idx < 3 ? 'danger' : idx < 6 ? 'warn' : '';
+      return `<div class="hbar-row">
+        <div class="hbar-row-label" title="${esc(x.name)}">${esc(x.name)}</div>
+        <div class="hbar-track"><div class="hbar-fill ${color}" style="width:${pct}%"></div></div>
+        <div class="hbar-val">${fmtPHP(x.cost)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Category breakdown ──
+  const catList = Object.entries(catMap).sort((a,b) => b[1]-a[1]);
+  const maxCat = Math.max(...catList.map(x => x[1]), 1);
+  const catEl = document.getElementById('dash-cat-breakdown');
+  if (catList.length === 0) {
+    catEl.innerHTML = '<div class="dash-empty">No data for this period.</div>';
+  } else {
+    catEl.innerHTML = catList.map((x, idx) => {
+      const pct = Math.max(2, Math.round((x[1] / maxCat) * 100));
+      const share = totalSpend > 0 ? Math.round((x[1] / totalSpend) * 100) : 0;
+      const color = idx < 3 ? 'danger' : idx < 6 ? 'warn' : '';
+      return `<div class="hbar-row">
+        <div class="hbar-row-label" title="${esc(x[0])}">${esc(x[0])} <span style="color:var(--muted);font-size:10px">${share}%</span></div>
+        <div class="hbar-track"><div class="hbar-fill ${color}" style="width:${pct}%"></div></div>
+        <div class="hbar-val">${fmtPHP(x[1])}</div>
+      </div>`;
+    }).join('');
+  }
+}
 
 // ─── SEED DATA ───────────────────────────────────────────────────────────────────
 const SEED_ITEMS = [{"id":"seed0001","name":"Extra Small Box (No Logo) 22.5x140x100mm - Kiehl's","category":"Packaging","location":"","qty":26101,"unit":"piece","minQty":0,"reorderQty":0,"cost":5.5,"supplier":"Locad","sku":"LCDBX001","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":1},{"id":"seed0002","name":"Extra Small Box (No Logo) 24.9x13.8x8.4cm","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":10000,"reorderQty":0,"cost":5.5,"supplier":"Locad","sku":"LCDBX001","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":2},{"id":"seed0003","name":"Small Box (No Logo) 300x244x160mm","category":"Packaging","location":"","qty":11807,"unit":"piece","minQty":10000,"reorderQty":0,"cost":11.5,"supplier":"Locad","sku":"LCDBX002","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":3},{"id":"seed0004","name":"Medium Box (No Logo) 361x270x178mm","category":"Packaging","location":"","qty":20907,"unit":"piece","minQty":10000,"reorderQty":0,"cost":15.25,"supplier":"Locad","sku":"LCDBX003","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":4},{"id":"seed0005","name":"Box (No Logo) 456x296x232mm","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":10000,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"LCDBX004","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":5},{"id":"seed0006","name":"Large Box (No Logo) 460x361x320mm","category":"Packaging","location":"","qty":5950,"unit":"piece","minQty":8000,"reorderQty":0,"cost":24.0,"supplier":"Locad","sku":"LCDBX005","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":6},{"id":"seed0007","name":"XLarge Box (No Logo)","category":"Packaging","location":"","qty":23152,"unit":"piece","minQty":8000,"reorderQty":0,"cost":27.9,"supplier":"Locad","sku":"LCDBX006","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":7},{"id":"seed0008","name":"XXLarge Box (No Logo)","category":"Packaging","location":"","qty":16250,"unit":"piece","minQty":8000,"reorderQty":0,"cost":39.9,"supplier":"Locad","sku":"LCDBX007","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":8},{"id":"seed0009","name":"Small Pouch (Black)","category":"Packaging","location":"","qty":520790,"unit":"piece","minQty":100000,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"LCDPC001","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":9},{"id":"seed0010","name":"Medium Pouch (Black)","category":"Packaging","location":"","qty":173400,"unit":"piece","minQty":100000,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"LCDPC002","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":10},{"id":"seed0011","name":"Large Pouch (Black)","category":"Packaging","location":"","qty":124500,"unit":"piece","minQty":80000,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"LCDPC003","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":11},{"id":"seed0012","name":"XLarge Pouch (Black)","category":"Packaging","location":"","qty":57600,"unit":"piece","minQty":80000,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"LCDPC004","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":12},{"id":"seed0013","name":"Corrugated Sheet","category":"Packaging","location":"","qty":2,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":13},{"id":"seed0014","name":"Bin Box 495x1888mm","category":"Packaging","location":"","qty":4494,"unit":"","minQty":0,"reorderQty":0,"cost":0,"supplier":"Locad","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":14},{"id":"seed0015","name":"Edamama - Extra Small NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":2000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":15},{"id":"seed0016","name":"Edamama - Small NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":5000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":16},{"id":"seed0017","name":"Edamama - Medium NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":5000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":17},{"id":"seed0018","name":"Edamama - Large NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":3500,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":18},{"id":"seed0019","name":"Edamama - Extra Large NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":2000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":19},{"id":"seed0020","name":"Edamama - Small Pouch","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":100000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":20},{"id":"seed0021","name":"Edamama - Medium Pouch","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":100000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":21},{"id":"seed0022","name":"Edamama - Large Pouch","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":100000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":22},{"id":"seed0023","name":"Edamama - Gift Wrap Green","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":50,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":23},{"id":"seed0024","name":"Edamama - Gift Card","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":3000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":24},{"id":"seed0025","name":"Edamama - Eco Bag White","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":25},{"id":"seed0026","name":"Edamama - Ribbon Green","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":26},{"id":"seed0027","name":"Edamama - Ribbon Silver (Gift Wrap Station)","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":90,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":27},{"id":"seed0028","name":"Edamama - Bubble Wrap","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":100,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":28},{"id":"seed0029","name":"Edamama - AHMC","category":"Packaging","location":"","qty":0,"unit":"","minQty":0,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":29},{"id":"seed0030","name":"Edamama - TMC","category":"Packaging","location":"","qty":0,"unit":"","minQty":0,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":30},{"id":"seed0031","name":"Edamama - Giftwrap Pink","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":31},{"id":"seed0032","name":"Edamama - Flowonder Warranty Card","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Edamama","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":32},{"id":"seed0033","name":"Emma Sleep - Ribbon White","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":200,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":33},{"id":"seed0034","name":"Emma Sleep - Ribbon Orange Big","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":200,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":34},{"id":"seed0035","name":"Emma Sleep - Ribbon Orange Small","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":200,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":35},{"id":"seed0036","name":"Emma Sleep - NEW Box w/ logo 28x28x97cm","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":10,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":36},{"id":"seed0037","name":"Emma Sleep - NEW Box w/ logo 38x38x102cm","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":5,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":37},{"id":"seed0038","name":"Emma Sleep - NEW Box w/ logo 39x39x114cm","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":25,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":38},{"id":"seed0039","name":"Emma Sleep - Invoice plastic","category":"Packaging","location":"","qty":0,"unit":"box","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":39},{"id":"seed0040","name":"Emma Sleep - Yarn","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":40},{"id":"seed0041","name":"Emma Sleep - Card Orange","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":41},{"id":"seed0042","name":"Emma Sleep - Card Violet","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":42},{"id":"seed0043","name":"Emma Sleep - Card White","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":43},{"id":"seed0044","name":"Emma Sleep - Card Violet Christmas Parol","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"Emma Sleep","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":44},{"id":"seed0045","name":"Kiehls - Brand Box","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Kiehls","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":45},{"id":"seed0046","name":"Kiehls - Brown Kraft 50cm","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"Kiehls","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":46},{"id":"seed0047","name":"Kiehls - Brown Kraft 30cm","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"Kiehls","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":47},{"id":"seed0048","name":"Kiehls - White Kraft - Rollform","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":50,"reorderQty":0,"cost":0,"supplier":"Kiehls","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":48},{"id":"seed0049","name":"Lancome - Brand Box","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":49},{"id":"seed0050","name":"Lancome - Sticker","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":25,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":50},{"id":"seed0051","name":"Lancome - Silk Paper","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":50,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":51},{"id":"seed0052","name":"Lancome - Paper Fillers","category":"Packaging","location":"","qty":0,"unit":"kg","minQty":50,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":52},{"id":"seed0053","name":"Lancome - Ribbon White","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":10,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":53},{"id":"seed0054","name":"Lancome - Ribbon","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Lancome","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":54},{"id":"seed0055","name":"Nuprene - Clamshell NEW Box w/ logo (BXA)","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":4000,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":55},{"id":"seed0056","name":"Nuprene - Raya NEW Box w/ logo (BXC)","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":10000,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":56},{"id":"seed0057","name":"Nuprene - Gia NEW Box w/ logo (BXB)","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":4000,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":57},{"id":"seed0058","name":"Nuprene - Extra Large NEW Box w/ logo","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":160,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":58},{"id":"seed0059","name":"Nuprene - Tag","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":59},{"id":"seed0060","name":"Nuprene - Thank You Card","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":1000,"reorderQty":0,"cost":0,"supplier":"Nuprene","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":60},{"id":"seed0061","name":"GRWM - Air Column - Small","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"GRWM","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":61},{"id":"seed0062","name":"GRWM - Air Column - Big","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":20,"reorderQty":0,"cost":0,"supplier":"GRWM","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":62},{"id":"seed0063","name":"ECOFLO - Brand Box","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":20,"reorderQty":0,"cost":0,"supplier":"ECOFLO","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":63},{"id":"seed0064","name":"Mood Food - Mood Food Box 001 - Extra Small","category":"Packaging","location":"","qty":0,"unit":"bundle","minQty":0,"reorderQty":0,"cost":0,"supplier":"Mood Food","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":64},{"id":"seed0065","name":"Mood Food - Mood Food Box 002 - Small","category":"Packaging","location":"","qty":0,"unit":"bundle","minQty":0,"reorderQty":0,"cost":0,"supplier":"Mood Food","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":65},{"id":"seed0066","name":"Mood Food - Mood Food Box 003 - Medium","category":"Packaging","location":"","qty":0,"unit":"bundle","minQty":0,"reorderQty":0,"cost":0,"supplier":"Mood Food","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":66},{"id":"seed0067","name":"Mood Food - Mood Food Box 004 - Large","category":"Packaging","location":"","qty":0,"unit":"bundle","minQty":0,"reorderQty":0,"cost":0,"supplier":"Mood Food","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":67},{"id":"seed0068","name":"NEUMI - Brand Box","category":"Packaging","location":"","qty":0,"unit":"piece","minQty":0,"reorderQty":0,"cost":0,"supplier":"NEUMI","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":68},{"id":"seed0069","name":"12 feet PVC Pipe 1/2\" diameter","category":"Operational","location":"","qty":0,"unit":"pc","minQty":50,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":69},{"id":"seed0070","name":"2D Handheld Barcode Scanner","category":"Operational","location":"","qty":0,"unit":"unit","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":70},{"id":"seed0071","name":"A4 Clearbook","category":"Operational","location":"","qty":0,"unit":"pc","minQty":3,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":71},{"id":"seed0072","name":"A4 Newsprint","category":"Operational","location":"","qty":0,"unit":"ream","minQty":4,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":72},{"id":"seed0073","name":"A4 Hardcopy","category":"Operational","location":"","qty":79,"unit":"ream","minQty":4,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":73},{"id":"seed0074","name":"Albatross","category":"Cleaning","location":"","qty":10,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":74},{"id":"seed0075","name":"AWB RIBBON 56MMX300MM","category":"Operational","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":75},{"id":"seed0076","name":"AWB RIBBON 70MMx300MM","category":"Operational","location":"","qty":0,"unit":"roll","minQty":13,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":76},{"id":"seed0077","name":"AWB RIBBON 60MMX300MM","category":"Operational","location":"","qty":205,"unit":"roll","minQty":373,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":77},{"id":"seed0078","name":"AWB RIBBON 4X6","category":"Operational","location":"","qty":632,"unit":"roll","minQty":240,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":78},{"id":"seed0079","name":"AWB Sticker 2x6\"","category":"Packaging","location":"","qty":20,"unit":"roll","minQty":36,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":79},{"id":"seed0080","name":"AWB Sticker 4X6","category":"Operational","location":"","qty":2311,"unit":"roll","minQty":2300,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":80},{"id":"seed0081","name":"Ballpen - black","category":"Operational","location":"","qty":7,"unit":"pc","minQty":36,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":81},{"id":"seed0082","name":"Ballpen - blue","category":"Operational","location":"","qty":0,"unit":"pc","minQty":24,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":82},{"id":"seed0083","name":"Barcode Sticker 2x3\"","category":"Operational","location":"","qty":84,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":83},{"id":"seed0084","name":"Barcode Sticker 2x1\"","category":"Operational","location":"","qty":28,"unit":"roll","minQty":36,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":84},{"id":"seed0085","name":"Barcode Sticker 2x6","category":"Operational","location":"","qty":0,"unit":"roll","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":85},{"id":"seed0086","name":"Battery AAA","category":"Cleaning","location":"","qty":0,"unit":"pack","minQty":30,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":86},{"id":"seed0087","name":"Blade Cutter Refill","category":"Operational","location":"","qty":0,"unit":"pc","minQty":40,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":87},{"id":"seed0088","name":"Broom","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":3,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":88},{"id":"seed0089","name":"Broomstick with Handle","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":3,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":89},{"id":"seed0090","name":"Brother DRUM","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":90},{"id":"seed0091","name":"Brother Ink (Black) TN-2380","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":13,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":91},{"id":"seed0092","name":"Bubble Wrap 13\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":3000,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":92},{"id":"seed0093","name":"Bubble Wrap 20\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":3150,"reorderQty":0,"cost":268.8,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":93},{"id":"seed0094","name":"Bubble Wrap 40\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":100,"reorderQty":0,"cost":537.6,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":94},{"id":"seed0095","name":"Cable Tie 16\" - white SMALL","category":"Operational","location":"","qty":0,"unit":"pouch","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":95},{"id":"seed0096","name":"Cable Tie - Big BLACK","category":"Operational","location":"","qty":0,"unit":"pcs","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":96},{"id":"seed0097","name":"CCTV Camera","category":"Operational","location":"","qty":0,"unit":"unit","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":97},{"id":"seed0098","name":"Clear Tape 2\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":3500,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":98},{"id":"seed0099","name":"Combination Spanner 8-17mm","category":"Equipment","location":"","qty":0,"unit":"set","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":99},{"id":"seed0100","name":"Computer Mouse","category":"Operational","location":"","qty":0,"unit":"pc","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":100},{"id":"seed0101","name":"Cutter","category":"Operational","location":"","qty":0,"unit":"unit","minQty":50,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":101},{"id":"seed0102","name":"Dot Knitted Gloves (HGVK05)","category":"Operational","location":"","qty":0,"unit":"pair","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":102},{"id":"seed0103","name":"Double Sided Tape 1\"","category":"Operational","location":"","qty":0,"unit":"roll","minQty":480,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":103},{"id":"seed0104","name":"Double Sided Tape Foam","category":"Operational","location":"","qty":0,"unit":"roll","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":104},{"id":"seed0105","name":"Dual Slot SD Card Reader","category":"Operational","location":"","qty":0,"unit":"unit","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":105},{"id":"seed0106","name":"Dustpan","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":106},{"id":"seed0107","name":"Ethyl Alcohol","category":"Cleaning","location":"","qty":0,"unit":"gallon","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":107},{"id":"seed0108","name":"Extension Wire with Socket 6 gang","category":"Operational","location":"","qty":0,"unit":"pc","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":108},{"id":"seed0109","name":"Extension Wire with Socket 3 gang","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":109},{"id":"seed0110","name":"Fabric Conditioner","category":"Cleaning","location":"","qty":0,"unit":"gallon","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":110},{"id":"seed0111","name":"Fragile Sticker","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":300,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":111},{"id":"seed0112","name":"Fragile Tape","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":2100,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":112},{"id":"seed0113","name":"Glass Cleaner","category":"Cleaning","location":"","qty":0,"unit":"gallon","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":113},{"id":"seed0114","name":"GT53 HP INK BLACK","category":"Operational","location":"","qty":0,"unit":"bottle","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":114},{"id":"seed0115","name":"GT52 HP INK CYAN","category":"Operational","location":"","qty":0,"unit":"bottle","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":115},{"id":"seed0116","name":"GT52 HP INK YELLOW","category":"Operational","location":"","qty":0,"unit":"bottle","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":116},{"id":"seed0117","name":"GT52 HP INK MAGENTA","category":"Operational","location":"","qty":0,"unit":"bottle","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":117},{"id":"seed0118","name":"Hand Liquid Soap","category":"Cleaning","location":"","qty":0,"unit":"gallon","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":118},{"id":"seed0119","name":"HDMI Cord","category":"Operational","location":"","qty":0,"unit":"pc","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":119},{"id":"seed0120","name":"Ingco 12pcs Socket Wrench Set 1/2\" Drive (HKTS12122)","category":"Equipment","location":"","qty":0,"unit":"set","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":120},{"id":"seed0121","name":"Kyocera Toner (TK-5445C)","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":121},{"id":"seed0122","name":"Kyocera Toner (TK-5445K)","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":15,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":122},{"id":"seed0123","name":"Kyocera Toner (TK-5445M)","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":123},{"id":"seed0124","name":"Kyocera Toner (TK-5445Y)","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":124},{"id":"seed0125","name":"Laminating Film","category":"Operational","location":"","qty":0,"unit":"ream","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":125},{"id":"seed0126","name":"Laminating Machine","category":"Equipment","location":"","qty":0,"unit":"unit","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":126},{"id":"seed0127","name":"Long Folder - white","category":"Operational","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":127},{"id":"seed0128","name":"Long Envelope - Brown","category":"Operational","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":128},{"id":"seed0129","name":"Marker Ink - black","category":"Operational","location":"","qty":0,"unit":"pc","minQty":24,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":129},{"id":"seed0130","name":"Marker Ink - blue","category":"Operational","location":"","qty":0,"unit":"pc","minQty":12,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":130},{"id":"seed0131","name":"Mask - black","category":"Operational","location":"","qty":0,"unit":"box","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":131},{"id":"seed0132","name":"Max Staple Wire #35","category":"Operational","location":"","qty":0,"unit":"box","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":132},{"id":"seed0133","name":"Mini Hacksaw Blade","category":"Equipment","location":"","qty":0,"unit":"set","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":133},{"id":"seed0134","name":"Mop","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":3,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":134},{"id":"seed0135","name":"Pail / Bucket","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":135},{"id":"seed0136","name":"Paint Brush 1\"","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":136},{"id":"seed0137","name":"Paint Brush 2\"","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":137},{"id":"seed0138","name":"Plastic Gloves - blue","category":"Operational","location":"","qty":0,"unit":"box","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":138},{"id":"seed0139","name":"Plastic Tool Box 17\"","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":139},{"id":"seed0140","name":"Platform Push Cart Heavy Duty 300kgs","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":140},{"id":"seed0141","name":"Platform Push Cart Heavy Duty 400kgs","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":141},{"id":"seed0142","name":"Powder Detergent","category":"Cleaning","location":"","qty":0,"unit":"kg","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":142},{"id":"seed0143","name":"Printer (Brother)","category":"Equipment","location":"","qty":0,"unit":"unit","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":143},{"id":"seed0144","name":"Safety Reflector Vest (green)","category":"Operational","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":144},{"id":"seed0145","name":"Scissors","category":"Operational","location":"","qty":0,"unit":"pc","minQty":24,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":145},{"id":"seed0146","name":"Screwdriver Starheads","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":146},{"id":"seed0147","name":"SD Card Memory","category":"Operational","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":147},{"id":"seed0148","name":"SD Card Memory Reader","category":"Operational","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":148},{"id":"seed0149","name":"Snap Off Blade Cutter Small","category":"Operational","location":"","qty":0,"unit":"pc","minQty":50,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":149},{"id":"seed0150","name":"Sticky Note 7.6x10.2cm","category":"Operational","location":"","qty":0,"unit":"pad","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":150},{"id":"seed0151","name":"Stretch Film - black 3.2kg x 20\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":150,"reorderQty":0,"cost":415.0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":151},{"id":"seed0152","name":"Stretch Film - clear 3.2kg x 20\"","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":300,"reorderQty":0,"cost":295.0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":152},{"id":"seed0153","name":"Tape Dispenser 1\"","category":"Operational","location":"","qty":0,"unit":"pc","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":153},{"id":"seed0154","name":"Tape Dispenser 2\"","category":"Operational","location":"","qty":0,"unit":"pc","minQty":50,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":154},{"id":"seed0155","name":"Toilet Brush","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":2,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":155},{"id":"seed0156","name":"Toilet Paper","category":"Cleaning","location":"","qty":0,"unit":"roll","minQty":48,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":156},{"id":"seed0157","name":"TP-Link Dongle 300mbps","category":"Operational","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":157},{"id":"seed0158","name":"Trash Bag Large","category":"Cleaning","location":"","qty":0,"unit":"bundle","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":158},{"id":"seed0159","name":"Trash Bag Medium","category":"Cleaning","location":"","qty":0,"unit":"bundle","minQty":10,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":159},{"id":"seed0160","name":"Universal Socket Adapter 3pin","category":"Operational","location":"","qty":0,"unit":"pc","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":160},{"id":"seed0161","name":"Utility Box 20\"","category":"Operational","location":"","qty":0,"unit":"pc","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":161},{"id":"seed0162","name":"Weighing Scale 100kg capacity","category":"Equipment","location":"","qty":0,"unit":"unit","minQty":1,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":162},{"id":"seed0163","name":"Zonrox","category":"Cleaning","location":"","qty":0,"unit":"gallon","minQty":5,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":163},{"id":"seed0164","name":"Eco Tape","category":"Packaging","location":"","qty":0,"unit":"roll","minQty":300,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":164},{"id":"seed0165","name":"Rags","category":"Cleaning","location":"","qty":0,"unit":"pcs","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":165},{"id":"seed0166","name":"HDMI Cord Adapter","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":166},{"id":"seed0167","name":"Foam Dish Washing","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":167},{"id":"seed0168","name":"Spray Bottle","category":"Cleaning","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":168},{"id":"seed0169","name":"Thermal Tape White 2 Inch","category":"Packaging","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":169},{"id":"seed0170","name":"Thermal Tape Yellow 2 Inch","category":"Packaging","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":170},{"id":"seed0171","name":"Mouse Pad","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":171},{"id":"seed0172","name":"Rubberbond","category":"Operational","location":"","qty":0,"unit":"bundle","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":172},{"id":"seed0173","name":"Stapler","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":173},{"id":"seed0174","name":"Glass Board Marker","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":174},{"id":"seed0175","name":"Scanner","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":175},{"id":"seed0176","name":"First Aid Kit","category":"Operational","location":"","qty":0,"unit":"box","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":176},{"id":"seed0177","name":"Lutos Blue Chalk","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":177},{"id":"seed0178","name":"Paper Board","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":178},{"id":"seed0179","name":"Measuring Tape","category":"Equipment","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":179},{"id":"seed0180","name":"Electric Tape","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":180},{"id":"seed0181","name":"White Board Eraser","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":181},{"id":"seed0182","name":"Coated Clips #33","category":"Operational","location":"","qty":0,"unit":"box","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":182},{"id":"seed0183","name":"Portable USB","category":"Operational","location":"","qty":0,"unit":"pc","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":183},{"id":"seed0184","name":"Printer Accessories Scanpak","category":"Operational","location":"","qty":0,"unit":"box","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":184},{"id":"seed0185","name":"EPSON LQ590 Ribbon","category":"Operational","location":"","qty":0,"unit":"cartridge","minQty":0,"reorderQty":0,"cost":0,"supplier":"","sku":"","notes":"","createdAt":"2026-06-09T00:00:00.000Z","updatedAt":"2026-06-09T00:00:00.000Z","seq":185}];
