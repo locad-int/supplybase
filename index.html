@@ -878,14 +878,6 @@
         <input type="text" id="set-contact-note" placeholder="e.g. Available Mon–Fri, 9am–6pm" autocomplete="off">
       </div>
     </div>
-    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
-    <p style="color:var(--muted);font-size:13px;margin-bottom:12px">🤖 AI Assistant — powered by Groq (free). Get your free API key at <span style="color:var(--accent);user-select:all;cursor:text">console.groq.com</span> → API Keys → Create API Key.</p>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Groq API Key</label>
-        <input type="password" id="set-ai-key" placeholder="gsk_..." autocomplete="off">
-      </div>
-    </div>
     <p id="settings-msg" style="color:var(--ok);font-size:12px;min-height:18px;margin-top:8px"></p>
     <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
       <button class="btn btn-danger btn-sm" onclick="reconnectSupabase()" title="Change Supabase connection">🔌 Change database</button>
@@ -2706,12 +2698,6 @@ function logout() {
   document.getElementById('login-error').textContent = '';
   renderRecentLogins();
   document.getElementById('login-overlay').style.display = 'flex';
-  var fab = document.getElementById('ai-fab');
-  if (fab) fab.style.display = 'none';
-  var panel = document.getElementById('ai-panel');
-  if (panel) panel.style.display = 'none';
-  aiHistory = [];
-  aiPanelOpen = false;
 }
 
 
@@ -2778,8 +2764,6 @@ function applyRoleUI() {
   show('btn-settings',      currentRole === 'superuser');
   show('btn-change-pass',   !!currentRole);
   show('btn-contact-admin', currentRole === 'user' || currentRole === 'viewer');
-  var fab = document.getElementById('ai-fab');
-  if (fab) { fab.style.display = currentRole ? 'flex' : 'none'; }
   show('btn-log-usage',      can('log'));
   show('btn-create-reorder', can('reorder'));
 }
@@ -2832,7 +2816,6 @@ function openSettings() {
   document.getElementById('set-contact-email').value = c.email || '';
   document.getElementById('set-contact-phone').value = c.phone || '';
   document.getElementById('set-contact-note').value  = c.note  || '';
-  document.getElementById('set-ai-key').value = getAIKey() ? '••••••••••••••••' : '';
   openModal('settings-modal');
 }
 
@@ -2888,12 +2871,6 @@ function saveSettings() {
     note:  document.getElementById('set-contact-note').value.trim()
   };
   localStorage.setItem(CONTACT_INFO_KEY, JSON.stringify(c));
-
-  // Save AI key (only if user typed a new one, not the masked placeholder)
-  var aiKeyInput = document.getElementById('set-ai-key').value.trim();
-  if (aiKeyInput && aiKeyInput !== '••••••••••••••••') {
-    localStorage.setItem(AI_KEY_STORE, aiKeyInput);
-  }
 
   document.getElementById('settings-msg').textContent = 'Settings saved.';
   setTimeout(function(){ document.getElementById('settings-msg').textContent = ''; }, 2000);
@@ -3159,209 +3136,6 @@ document.addEventListener('DOMContentLoaded', function() { load(); });
   </div>
 </div>
 
-<!-- AI ASSISTANT PANEL -->
-<div id="ai-fab" onclick="toggleAIPanel()" title="Ask Loki" style="position:fixed;bottom:28px;right:28px;z-index:902;width:52px;height:52px;border-radius:50%;background:var(--accent);color:#fff;font-size:22px;cursor:pointer;box-shadow:0 4px 18px rgba(22,163,74,0.35);display:none;align-items:center;justify-content:center;font-weight:700;transition:transform .15s" onmouseenter="this.style.transform='scale(1.08)'" onmouseleave="this.style.transform='scale(1)'">✦</div>
 
-<div id="ai-panel" style="display:none;position:fixed;bottom:92px;right:28px;z-index:903;width:360px;max-height:520px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);flex-direction:column;overflow:hidden">
-  <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface2)">
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="color:var(--accent);font-size:16px">✦</span>
-      <span style="font-weight:600;font-size:14px">Loki</span>
-      <span style="font-size:10px;color:var(--accent);background:rgba(22,163,74,0.1);padding:2px 7px;border-radius:99px;font-weight:600">BETA</span>
-    </div>
-    <button onclick="toggleAIPanel()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0;line-height:1">×</button>
-  </div>
-  <div id="ai-messages" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:200px;max-height:340px"></div>
-  <div id="ai-suggestions" style="padding:0 12px 8px;display:flex;gap:6px;flex-wrap:wrap"></div>
-  <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px">
-    <input type="text" id="ai-input" placeholder="Ask about your inventory…" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px" onkeydown="if(event.key==='Enter')sendAIMessage()">
-    <button onclick="sendAIMessage()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:700;font-size:14px">↑</button>
-  </div>
-</div>
-
-<script>
-const AI_KEY_STORE = 'supplybase_ai_key';
-
-function getAIKey() { return localStorage.getItem(AI_KEY_STORE) || ''; }
-
-var aiHistory = [];
-var aiPanelOpen = false;
-
-function toggleAIPanel() {
-  aiPanelOpen = !aiPanelOpen;
-  var panel = document.getElementById('ai-panel');
-  panel.style.display = aiPanelOpen ? 'flex' : 'none';
-  if (aiPanelOpen && aiHistory.length === 0) {
-    renderAIWelcome();
-  }
-}
-
-function renderAIWelcome() {
-  if (!getAIKey()) { showAIKeyPrompt(); return; }
-  addAIMessage('assistant', 'Hi! I\'m Loki, your Locad warehouse assistant. I can see your current inventory, recent logs, and variances. Ask me anything — or try one of the suggestions below.');
-  renderAISuggestions([
-    'What items are critically low?',
-    'What should I reorder?',
-    'Show variance summary',
-    'How do I log usage?'
-  ]);
-}
-
-function showAIKeyPrompt() {
-  var el = document.getElementById('ai-messages');
-  el.innerHTML = '';
-  var div = document.createElement('div');
-  div.style.cssText = 'padding:12px;display:flex;flex-direction:column;gap:10px';
-  div.innerHTML = '<div style="font-size:13px;color:var(--text);line-height:1.6">👋 Hi! I\'m <strong>Loki</strong>, your Locad warehouse assistant.<br><br>To activate me, enter your free <strong>Groq API key</strong> below.<br><span style="color:var(--muted);font-size:12px">Get one free at: <span style="color:var(--accent);user-select:all">console.groq.com</span> → API Keys → Create API Key</span></div>'
-    + '<input type="password" id="loki-key-input" placeholder="Paste your Groq key here (gsk_...)" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;width:100%;box-sizing:border-box">'
-    + '<button onclick="saveLokiKey()" style="padding:9px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">Activate Loki ✦</button>';
-  el.appendChild(div);
-}
-
-function saveLokiKey() {
-  var val = document.getElementById('loki-key-input').value.trim();
-  if (!val) return;
-  localStorage.setItem(AI_KEY_STORE, val);
-  document.getElementById('ai-messages').innerHTML = '';
-  aiHistory = [];
-  renderAIWelcome();
-}
-
-function renderAISuggestions(suggestions) {
-  var el = document.getElementById('ai-suggestions');
-  el.innerHTML = suggestions.map(function(s) {
-    return '<button onclick="quickAsk(this)" data-q="' + s + '" style="font-size:11px;padding:4px 10px;border-radius:99px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;white-space:nowrap">' + s + '</button>';
-  }).join('');
-}
-
-function quickAsk(btn) {
-  document.getElementById('ai-input').value = btn.dataset.q;
-  sendAIMessage();
-}
-
-function addAIMessage(role, text) {
-  var el = document.getElementById('ai-messages');
-  var isUser = role === 'user';
-  var div = document.createElement('div');
-  div.style.cssText = 'display:flex;gap:8px;align-items:flex-start;' + (isUser ? 'flex-direction:row-reverse' : '');
-  var avatar = '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:' + (isUser ? 'rgba(147,197,253,0.2);color:#1e40af' : 'rgba(22,163,74,0.12);color:var(--accent)') + '">' + (isUser ? '👤' : '✦') + '</div>';
-  var bubble = '<div style="max-width:260px;padding:9px 12px;border-radius:' + (isUser ? '12px 4px 12px 12px' : '4px 12px 12px 12px') + ';background:' + (isUser ? 'rgba(147,197,253,0.1);border:1px solid rgba(147,197,253,0.25)' : 'var(--surface2);border:1px solid var(--border)') + ';font-size:13px;line-height:1.5;color:var(--text);white-space:pre-wrap">' + esc(text) + '</div>';
-  div.innerHTML = avatar + bubble;
-  el.appendChild(div);
-  el.scrollTop = el.scrollHeight;
-}
-
-function addAIThinking() {
-  var el = document.getElementById('ai-messages');
-  var div = document.createElement('div');
-  div.id = 'ai-thinking';
-  div.style.cssText = 'display:flex;gap:8px;align-items:flex-start';
-  div.innerHTML = '<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:rgba(22,163,74,0.12);color:var(--accent)">✦</div>'
-    + '<div style="padding:9px 14px;border-radius:4px 12px 12px 12px;background:var(--surface2);border:1px solid var(--border);font-size:13px;color:var(--muted)">Thinking…</div>';
-  el.appendChild(div);
-  el.scrollTop = el.scrollHeight;
-}
-
-function removeAIThinking() {
-  var el = document.getElementById('ai-thinking');
-  if (el) el.remove();
-}
-
-function buildAISystemPrompt() {
-  var lowItems = db.items.filter(function(i) { return stockStatus(i) !== 'ok'; });
-  var itemLines = db.items.map(function(item) {
-    var s = stockStatus(item);
-    return '- ' + item.name + (item.sku ? ' [' + item.sku + ']' : '') + ': ' + item.qty + ' ' + (item.unit||'units') + ' (min: ' + (item.minQty||0) + ', status: ' + s + ')' + (item.category ? ', cat: ' + item.category : '') + (item.location ? ', loc: ' + item.location : '');
-  }).join('\n');
-
-  var recentLogs = db.logs.slice(-30).reverse().map(function(log) {
-    var item = db.items.find(function(i) { return i.id === log.itemId; });
-    var d = new Date(log.date).toLocaleDateString('en-PH');
-    return '- ' + d + ': [' + log.type + '] ' + (item ? item.name : 'Unknown') + ' qty:' + (log.qty >= 0 ? '+' : '') + log.qty + ' by ' + (log.by||'?') + (log.variance != null ? ' (variance:' + (log.variance >= 0 ? '+' : '') + log.variance + ')' : '');
-  }).join('\n');
-
-  var pendingReorders = db.reorders.filter(function(r) { return r.status !== 'received'; });
-
-  return 'You are Loki, Locad\'s intelligent warehouse assistant for Locad\'s warehouse consumables and packaging materials tracker.\n\nCURRENT INVENTORY (' + db.items.length + ' items, ' + lowItems.length + ' need attention):\n' + itemLines + '\n\nRECENT ACTIVITY (last 30 logs):\n' + recentLogs + '\n\nPENDING REORDERS: ' + pendingReorders.length + '\n\nCurrent user: ' + (currentUser ? currentUser.username + ' (' + currentUser.role + ')' : 'unknown') + '\nDate: ' + new Date().toLocaleDateString('en-PH') + '\n\nYou help with:\n1. Answering inventory questions (stock levels, low stock alerts, usage trends)\n2. Reorder recommendations (based on current stock vs min qty)\n3. Variance analysis (explain discrepancies in stock adjustments)\n4. Guiding log entries (explain the steps to log usage, restock, adjust, or damage)\n5. General app help\n\nWhen recommending a log entry, end your response with a JSON block on its own line:\n[ACTION:{"type":"prefill_log","itemName":"...","logType":"use|restock|adjust|damage","qty":0}]\n\nKeep responses concise (under 150 words). Use plain text, no markdown. Be specific and practical.';
-}
-
-async function sendAIMessage() {
-  var input = document.getElementById('ai-input');
-  var text = input.value.trim();
-  if (!text) return;
-
-  var key = getAIKey();
-  if (!key) {
-    showAIKeyPrompt();
-    input.value = '';
-    return;
-  }
-
-  input.value = '';
-  document.getElementById('ai-suggestions').innerHTML = '';
-  addAIMessage('user', text);
-  aiHistory.push({ role: 'user', content: text });
-  addAIThinking();
-
-  try {
-    var messages = [{ role: 'system', content: buildAISystemPrompt() }].concat(aiHistory.slice(-10));
-
-    var resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + key
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: messages,
-        max_tokens: 512,
-        temperature: 0.7
-      })
-    });
-    var data = await resp.json();
-    removeAIThinking();
-
-    if (data.error) {
-      addAIMessage('assistant', 'Error: ' + data.error.message);
-      aiHistory.pop();
-      return;
-    }
-
-    var reply = data.choices[0].message.content;
-    var actionMatch = reply.match(/\[ACTION:(\{.*?\})\]/s);
-    var displayText = reply.replace(/\[ACTION:.*?\]/s, '').trim();
-
-    aiHistory.push({ role: 'assistant', content: reply });
-    addAIMessage('assistant', displayText);
-
-    if (actionMatch) {
-      try {
-        var action = JSON.parse(actionMatch[1]);
-        if (action.type === 'prefill_log') {
-          var btn = document.createElement('button');
-          btn.textContent = '📝 Open log form for ' + action.itemName;
-          btn.style.cssText = 'margin:4px 12px 8px;padding:7px 12px;background:rgba(22,163,74,0.08);border:1px solid rgba(22,163,74,0.25);color:var(--accent);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;width:calc(100% - 24px);text-align:left';
-          btn.onclick = function() {
-            toggleAIPanel();
-            var item = db.items.find(function(i) { return i.name.toLowerCase().includes(action.itemName.toLowerCase()); });
-            if (item) { openLogForItem(item.id); }
-            else { openLogModal(); }
-          };
-          document.getElementById('ai-messages').appendChild(btn);
-          document.getElementById('ai-messages').scrollTop = 99999;
-        }
-      } catch(e) {}
-    }
-
-    renderAISuggestions(['Tell me more', 'What else needs attention?', 'Show top 5 low stock', 'Help me log an entry']);
-
-  } catch(e) {
-    removeAIThinking();
-    addAIMessage('assistant', 'Connection error. Check your internet connection and API key.');
-    aiHistory.pop();
-  }
-}
-</script>
 </body>
 </html>
