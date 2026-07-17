@@ -3122,12 +3122,12 @@ function setReqFilter(f) {
 function openNewRequestModal() {
   document.getElementById('req-item-id').value = '';
   document.getElementById('req-item-search').value = '';
+  document.getElementById('req-item-dropdown').style.display = 'none';
   document.getElementById('req-unit').value = '';
   document.getElementById('req-qty').value = '';
   document.getElementById('req-notes').value = '';
   document.getElementById('req-error').textContent = '';
   openModal('new-request-modal');
-  setTimeout(() => document.getElementById('req-item-search').focus(), 80);
 }
 
 function filterReqItemDropdown() {
