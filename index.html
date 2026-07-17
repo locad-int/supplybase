@@ -1327,7 +1327,7 @@ function toggleLogTypeChip(type) {
 }
 
 function getActiveStatusFilters() {
-  return Array.from(document.querySelectorAll('.status-chip.active')).map(c => c.dataset.val);
+  return Array.from(document.querySelectorAll('.status-chip.active[data-val]')).map(c => c.dataset.val);
 }
 
 function filterInventory(status) {
