@@ -453,6 +453,7 @@
       </select>
       <button class="btn btn-secondary" onclick="exportReportCSV()">⬇ Export Summary CSV</button>
       <button class="btn btn-secondary" onclick="exportDetailedCSV()">⬇ Export Detailed Log</button>
+      <button class="btn btn-secondary" onclick="exportAllLogsCSV()">⬇ Export All Logs</button>
       <button class="btn btn-secondary" onclick="exportCostReportCSV()" style="font-size:12px">⬇ Export Cost CSV</button>
     </div>
 
@@ -2610,6 +2611,58 @@ function exportDetailedCSV() {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'detailed_log_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+function exportAllLogsCSV() {
+  const fromVal = document.getElementById('rpt-from').value;
+  const toVal   = document.getElementById('rpt-to').value;
+  const cat     = document.getElementById('rpt-cat').value;
+
+  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+  const to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+
+  const TYPE_LABELS = { use: 'Consumption', damage: 'Damage / Loss', restock: 'Restock', adjust: 'Adjustment' };
+
+  const filtered = db.logs.filter(l => {
+    const d = new Date(l.date);
+    if (from && d < from) return false;
+    if (to   && d > to)   return false;
+    const item = db.items.find(i => i.id === l.itemId);
+    if (cat && item?.category !== cat) return false;
+    return true;
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const headers = ['Date/Time','Item Name','Category','SKU','Unit','Transaction Type','Quantity','Stock After','Cost per Unit','Total Cost','Notes','Performed By','Reference'];
+  const rows = [headers.join(',')];
+
+  filtered.forEach(l => {
+    const item = db.items.find(i => i.id === l.itemId);
+    const cost = item?.cost || 0;
+    const isCost = l.type === 'use' || l.type === 'damage';
+    const total = isCost ? l.qty * cost : 0;
+    const row = [
+      l.date ? new Date(l.date).toLocaleString('en-PH', { hour12: true }) : '',
+      item?.name || l.itemId || 'Deleted Item',
+      item?.category || '',
+      item?.sku || '',
+      item?.unit || '',
+      TYPE_LABELS[l.type] || l.type || '',
+      l.qty,
+      l.absQty != null ? l.absQty : '',
+      cost,
+      total > 0 ? total.toFixed(2) : '',
+      l.notes || '',
+      l.by || '',
+      l.ref || ''
+    ].map(v => '"' + String(v).replace(/"/g, '""') + '"');
+    rows.push(row.join(','));
+  });
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'all_logs_' + new Date().toISOString().slice(0,10) + '.csv';
   a.click();
 }
 
