@@ -1272,13 +1272,15 @@ async function load() {
         if (currentUser.role === 'admin') { currentUser.role = 'superuser'; localStorage.setItem(SESSION_USER_KEY, JSON.stringify(currentUser)); }
         currentRole = currentUser.role;
         applyRoleUI();
-        renderInventory(); renderLogs(); renderReorder(); updateSummary(); updateMsgBadge(); startAutoRefresh();
+        switchTab('inventory');
+        renderLogs(); renderReorder(); updateSummary(); updateMsgBadge(); startAutoRefresh();
       } catch(e) { renderRecentLogins(); document.getElementById('login-overlay').style.display = 'flex'; }
     } else if (savedRole) {
       currentRole = savedRole;
       currentUser = { username: savedRole, role: savedRole };
       applyRoleUI();
-      renderInventory(); renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
+      switchTab('inventory');
+      renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
     } else {
       renderRecentLogins();
       document.getElementById('login-overlay').style.display = 'flex';
@@ -3482,7 +3484,8 @@ function doLogin() {
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('login-error').textContent = '';
   applyRoleUI();
-  renderInventory(); renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
+  switchTab('inventory');
+  renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
 }
 
 function logout() {
