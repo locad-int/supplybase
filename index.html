@@ -258,9 +258,17 @@
   .req-card-actions { display: flex; gap: 8px; margin-top: 10px; }
   .req-setup-box { background: var(--surface); border: 1px solid var(--warn); border-radius: 10px; padding: 18px 20px; margin-bottom: 14px; }
   .req-setup-box pre { background: var(--surface2); border-radius: 6px; padding: 10px 12px; font-size: 11px; margin-top: 10px; overflow-x: auto; color: var(--text); line-height: 1.5; }
+  .req-priority-urgent { font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(239,68,68,.12);color:#dc2626; }
+  .req-priority-normal { font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(156,163,175,.12);color:var(--muted); }
+  .req-priority-low    { font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(59,130,246,.12);color:#3b82f6; }
 </style>
 </head>
 <body>
+
+<div id="session-warn-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#b45309;color:#fff;padding:10px 20px;align-items:center;justify-content:center;gap:12px;font-size:13px;font-weight:600">
+  ⚠ You'll be logged out in 1 minute due to inactivity.
+  <button onclick="resetSessionTimer()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:13px">Stay logged in</button>
+</div>
 
 <!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
@@ -276,6 +284,7 @@
     <div id="nav-dashboard" class="nav-item" data-tab="dashboard" draggable="true" onclick="switchTab('dashboard')">📊 <span>Dashboard</span><span class="nav-drag-handle">⠿</span></div>
     <div id="nav-messages" class="nav-item" data-tab="messages" draggable="true" onclick="switchTab('messages')">📬 <span>Messages</span><span class="nav-drag-handle">⠿</span><span id="msg-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
     <div id="nav-requests" class="nav-item" data-tab="requests" draggable="true" onclick="switchTab('requests')">🛒 <span>Requests</span><span class="nav-drag-handle">⠿</span><span id="req-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
+    <div id="nav-audit" class="nav-item" data-tab="audit" draggable="true" onclick="switchTab('audit')">📋 <span>Audit Log</span><span class="nav-drag-handle">⠿</span></div>
     <div class="reorder-hint" id="reorder-hint" style="display:none">Drag to reorder</div>
   </nav>
   <div class="sidebar-bottom">
@@ -343,6 +352,7 @@
       <select id="inv-filter-cat" onchange="renderInventory()" style="max-width:220px;width:auto">
         <option value="">All Categories</option>
       </select>
+      <button class="btn btn-secondary" onclick="exportInventoryCSV()" style="font-size:12px">⬇ Export CSV</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -385,6 +395,7 @@
         <button class="status-chip" data-type="damage"  onclick="toggleLogTypeChip('damage')"  style="border-color:var(--danger);color:var(--danger)">Damage</button>
       </div>
       <button id="btn-log-usage" class="btn btn-primary" onclick="openLogModal()">+ Log Usage</button>
+      <button class="btn btn-secondary" onclick="exportLogsCSV()" style="font-size:12px">⬇ Export CSV</button>
     </div>
     <div id="log-list"></div>
     <div class="empty hidden" id="log-empty"><div class="icon">📝</div><p>No log entries yet.</p></div>
@@ -440,6 +451,7 @@
       </select>
       <button class="btn btn-secondary" onclick="exportReportCSV()">⬇ Export Summary CSV</button>
       <button class="btn btn-secondary" onclick="exportDetailedCSV()">⬇ Export Detailed Log</button>
+      <button class="btn btn-secondary" onclick="exportCostReportCSV()" style="font-size:12px">⬇ Export Cost CSV</button>
     </div>
 
     <div class="summary" style="margin-bottom:18px" id="rpt-summary">
@@ -522,6 +534,19 @@
         </table>
       </div>
       <div class="empty hidden" id="var-empty"><div class="icon">📊</div><p>No variance adjustments for this period.</p></div>
+    </div>
+
+    <div style="margin-top:28px">
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">📅 Monthly Spend (Last 6 Months)</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px">
+        <div id="monthly-report-wrap"></div>
+      </div>
+    </div>
+    <div style="margin-top:28px">
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">👤 Usage by User</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px">
+        <div id="user-report-wrap"></div>
+      </div>
     </div>
   </div>
 
@@ -623,6 +648,18 @@
     <div id="req-list-wrap"></div>
   </div>
 
+  <!-- AUDIT LOG TAB -->
+  <div class="tab-panel" id="tab-audit">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--text)">Audit Log</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Track of all changes made in the system</div>
+      </div>
+      <button class="btn btn-secondary" onclick="db_audit=[];saveAuditLocal();renderAuditLog()" id="btn-clear-audit" style="font-size:12px;display:none">Clear Log</button>
+    </div>
+    <div id="audit-list-wrap"></div>
+  </div>
+
   </main>
 </div>
 
@@ -636,6 +673,14 @@
         <input type="text" id="req-item-search" placeholder="Type to search item…" autocomplete="off" onkeydown="reqSearchReady=true" oninput="filterReqItemDropdown()" onblur="setTimeout(()=>closeReqItemDropdown(),180)">
         <input type="hidden" id="req-item-id">
         <div id="req-item-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:0 0 7px 7px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.15)"></div>
+      </div>
+      <div class="form-group">
+        <label>Priority</label>
+        <select id="req-priority">
+          <option value="normal">Normal</option>
+          <option value="urgent">🔴 Urgent</option>
+          <option value="low">🔵 Low</option>
+        </select>
       </div>
       <div class="form-group">
         <label>Quantity *</label>
@@ -663,6 +708,10 @@
   <div class="modal" style="max-width:460px">
     <h2 id="crm-title">Confirm Issuance</h2>
     <div id="crm-content"></div>
+    <div style="margin-top:12px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Qty to Issue</label>
+      <input type="number" id="crm-issue-qty" min="1" style="margin-top:6px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px;font-weight:600;width:120px">
+    </div>
     <div class="modal-actions">
       <button id="crm-btn-reject" class="btn" style="background:var(--danger);color:#fff;margin-right:auto" onclick="rejectRequest()">✕ Reject</button>
       <button class="btn btn-secondary" onclick="closeModal('confirm-request-modal')">Cancel</button>
@@ -1259,6 +1308,7 @@ async function load() {
     db.accounts = r4.data || [];
     await loadMessages(); // graceful — won't throw if table missing
     await loadRequests();
+    db_audit = getAuditLocal();
     // First time — seed from Master List
     if (db.items.length === 0) {
       db.items = JSON.parse(JSON.stringify(SEED_ITEMS));
@@ -1276,6 +1326,7 @@ async function load() {
         applyRoleUI();
         switchTab('inventory');
         renderLogs(); renderReorder(); updateSummary(); updateMsgBadge(); startAutoRefresh();
+        resetSessionTimer();
       } catch(e) { renderRecentLogins(); document.getElementById('login-overlay').style.display = 'flex'; }
     } else if (savedRole) {
       currentRole = savedRole;
@@ -1283,6 +1334,7 @@ async function load() {
       applyRoleUI();
       switchTab('inventory');
       renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
+      resetSessionTimer();
     } else {
       renderRecentLogins();
       document.getElementById('login-overlay').style.display = 'flex';
@@ -1302,16 +1354,17 @@ function switchTab(name) {
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests' };
+  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests', audit: 'Audit Log' };
   var titleEl = document.getElementById('page-title');
   if (titleEl) titleEl.textContent = (titles[name] || name).toUpperCase();
   if (name === 'inventory') renderInventory();
   if (name === 'usage') renderLogs();
   if (name === 'reorder') renderReorder();
-  if (name === 'report') { renderReport(); renderVariance(); }
+  if (name === 'report') { renderReport(); renderVariance(); renderMonthlyReport(); renderUserReport(); }
   if (name === 'dashboard') renderDashboard();
   if (name === 'messages') renderMessages();
   if (name === 'requests') renderRequests();
+  if (name === 'audit') renderAuditLog();
 }
 
 function toggleStatusChip(val) {
@@ -1508,6 +1561,7 @@ function saveItem() {
     db.items.push(data);
     db.logs.push({ id: uid(), itemId: data.id, type: 'restock', qty, absQty: qty, by: 'Initial', date: new Date().toISOString(), notes: 'Item created', ref: '' });
   }
+  logAudit(editItemId ? 'Item edited' : 'Item created', document.getElementById('f-name').value);
   save();
   closeModal('item-modal');
   renderInventory();
@@ -1515,6 +1569,7 @@ function saveItem() {
 
 function deleteItem(id) {
   if (!confirm('Delete this item and all its logs/reorders?')) return;
+  logAudit('Item deleted', db.items.find(i=>i.id===id)?.name || id);
   db.items = db.items.filter(i => i.id !== id);
   db.logs = db.logs.filter(l => l.itemId !== id);
   db.reorders = db.reorders.filter(r => r.itemId !== id);
@@ -1791,6 +1846,7 @@ function saveLog() {
       }
     });
   }
+  logAudit('Usage logged', type + ' — ' + (db.items.find(i=>i.id===itemId)?.name||itemId) + ' x' + qty);
   save();
   closeModal('log-modal');
   renderLogs();
@@ -2370,6 +2426,8 @@ function renderReport() {
     <td>${fmtInt(logs.length)}</td>
     <td>100%</td>`;
   tbody.appendChild(tfoot);
+  renderMonthlyReport();
+  renderUserReport();
 }
 
 function sortReport(field) {
@@ -3160,6 +3218,7 @@ function openNewRequestModal() {
   document.getElementById('req-item-dropdown').style.display = 'none';
   document.getElementById('req-unit').value = '';
   document.getElementById('req-qty').value = '';
+  document.getElementById('req-priority').value = 'normal';
   document.getElementById('req-notes').value = '';
   document.getElementById('req-error').textContent = '';
   openModal('new-request-modal');
@@ -3218,6 +3277,7 @@ async function submitRequest() {
     itemName:      item ? item.name : itemId,
     unit:          item ? (item.unit || '') : '',
     qty,
+    priority:      document.getElementById('req-priority').value || 'normal',
     notes,
     requestedBy:   currentUser.username,
     status:        'pending',
@@ -3257,6 +3317,7 @@ function openConfirmModal(reqId) {
     </div>
     <p style="font-size:13px;color:var(--text);line-height:1.6">Confirming will log a usage entry: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong> deducted from <strong>${esc(req.itemName)}</strong>, performed by <em>${esc(currentUser.username)}</em>.</p>`;
 
+  document.getElementById('crm-issue-qty').value = req.qty;
   document.getElementById('crm-btn-confirm').style.display = '';
   document.getElementById('crm-btn-reject').style.display  = '';
   openModal('confirm-request-modal');
@@ -3265,21 +3326,22 @@ function openConfirmModal(reqId) {
 async function confirmIssuance() {
   var req = db_reqs.find(r => r.id === currentViewReqId);
   if (!req) return;
+  var issueQty = Math.max(1, parseInt(document.getElementById('crm-issue-qty').value) || req.qty);
 
   // Create usage log entry
   var item = db.items.find(i => i.id === req.itemId);
   if (item) {
-    var newQty = Math.max(0, item.qty - req.qty);
+    var newQty = Math.max(0, item.qty - issueQty);
     var logEntry = {
       id:     uid(),
       itemId: req.itemId,
       type:   'use',
-      qty:    req.qty,
+      qty:    issueQty,
       absQty: newQty,
       by:     currentUser.username,
       date:   new Date().toISOString(),
       ref:    '',
-      notes:  'Requested by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
+      notes:  'Requested ' + req.qty + (issueQty !== req.qty ? ', issued ' + issueQty : '') + ' — by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
     };
     db.logs.push(logEntry);
     item.qty = newQty;
@@ -3304,6 +3366,7 @@ async function confirmIssuance() {
     catch(e) { saveReqsLocal(); }
   } else { saveReqsLocal(); }
 
+  logAudit('Request confirmed', req.itemName + ' x' + issueQty + ' → ' + req.requestedBy);
   closeModal('confirm-request-modal');
   updateRequestBadge();
   renderRequests();
@@ -3326,6 +3389,7 @@ async function rejectRequest() {
     catch(e) { saveReqsLocal(); }
   } else { saveReqsLocal(); }
 
+  logAudit('Request rejected', req.itemName + ' (requested by ' + req.requestedBy + ')');
   closeModal('confirm-request-modal');
   updateRequestBadge();
   renderRequests();
@@ -3337,7 +3401,7 @@ function renderRequests() {
   updateRequestBadge();
 
   var isAdmin  = currentRole === 'superuser' || currentRole === 'user';
-  var subLabel = isAdmin ? 'Review and confirm supply requests from requestors' : 'Your supply requests';
+  var subLabel = isAdmin ? 'Request history — all supply requests' : 'Your supply requests';
   document.getElementById('req-view-sub').textContent = subLabel;
   var newReqBtn = document.getElementById('btn-new-request');
   if (newReqBtn) newReqBtn.style.display = currentRole === 'requestor' ? '' : 'none';
@@ -3363,6 +3427,14 @@ function renderRequests() {
     : db_reqs.filter(r => r.requestedBy === currentUser?.username);
 
   if (currentReqFilter !== 'all') reqs = reqs.filter(r => r.status === currentReqFilter);
+
+  // Sort: within each status group, urgent first, then normal, then low
+  var priorityOrder = { urgent: 0, normal: 1, low: 2 };
+  reqs.sort(function(a, b) {
+    var pa = priorityOrder[a.priority || 'normal'] || 1;
+    var pb = priorityOrder[b.priority || 'normal'] || 1;
+    return pa - pb;
+  });
 
   var out = '';
 
@@ -3404,6 +3476,8 @@ function renderRequests() {
     var badgeCls = req.status === 'pending' ? 'req-badge-pending' : req.status === 'confirmed' ? 'req-badge-confirmed' : 'req-badge-rejected';
     var badgeLabel = req.status === 'pending' ? '⏳ Pending' : req.status === 'confirmed' ? '✓ Confirmed' : '✕ Rejected';
     var cardCls = 'req-' + req.status;
+    var prio = req.priority || 'normal';
+    var prioLabel = prio === 'urgent' ? '🔴 Urgent' : prio === 'low' ? '🔵 Low' : 'Normal';
     var actionButtons = '';
     if (isAdmin && req.status === 'pending') {
       actionButtons = `<div class="req-card-actions">
@@ -3417,6 +3491,7 @@ function renderRequests() {
     out += `<div class="req-card ${cardCls}">
       <div class="req-card-header">
         <span class="req-card-item">${esc(req.itemName)}</span>
+        <span class="req-priority-${prio}">${prioLabel}</span>
         <span class="req-badge ${badgeCls}">${badgeLabel}</span>
       </div>
       <div class="req-card-meta">Qty: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong> · Requested by: <strong>${esc(req.requestedBy)}</strong> · ${fmtDT(req.createdAt)}</div>
@@ -3556,10 +3631,12 @@ function doLogin() {
   applyRoleUI();
   switchTab('inventory');
   renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
+  resetSessionTimer();
 }
 
 function logout() {
   stopAutoRefresh();
+  stopSessionTimer();
   currentRole = null;
   currentUser = null;
   localStorage.removeItem(SESSION_ROLE_KEY);
@@ -3642,6 +3719,11 @@ function applyRoleUI() {
   var reqNav = document.getElementById('nav-requests');
   if (reqNav) reqNav.style.display = '';
 
+  // Audit Log nav: superuser only
+  var auditNav = document.getElementById('nav-audit');
+  if (auditNav) auditNav.style.display = currentRole === 'superuser' ? '' : 'none';
+  show('btn-clear-audit', currentRole === 'superuser');
+
   updateMsgBadge();
   updateRequestBadge();
 }
@@ -3673,6 +3755,7 @@ async function confirmReset() {
   }
   save(); // upserts reset items
   _sbClearLogsAndReorders(); // removes deleted logs/reorders from DB
+  logAudit('System reset', 'Stock reset to master list defaults');
   renderInventory();
   renderLogs();
   renderReorder();
@@ -3757,6 +3840,7 @@ function saveSettings() {
   };
   localStorage.setItem(CONTACT_INFO_KEY, JSON.stringify(c));
 
+  logAudit('Settings changed', 'Passwords/username updated');
   document.getElementById('settings-msg').textContent = 'Settings saved.';
   setTimeout(function(){ document.getElementById('settings-msg').textContent = ''; }, 2000);
 }
@@ -3922,6 +4006,7 @@ function saveAccount() {
     db.accounts.push({ id: uid(), username, password, role, createdAt: new Date().toISOString() });
   }
 
+  logAudit(editAccountId ? 'Account updated' : 'Account created', username + ' (' + role + ')');
   save();
   closeCreateAccount();
   renderAccountsList();
@@ -3931,6 +4016,7 @@ function deleteAccount(id) {
   const a = db.accounts.find(x => x.id === id);
   if (!a) return;
   if (!confirm('Delete account "' + a.username + '"? They will no longer be able to log in.')) return;
+  logAudit('Account deleted', db.accounts.find(a=>a.id===id)?.username || id);
   db.accounts = db.accounts.filter(x => x.id !== id);
   _sbDeleteAccount(id);
   renderAccountsList();
@@ -3955,6 +4041,211 @@ initReportDates();
 
 document.addEventListener('DOMContentLoaded', function() { load(); });
 // Firebase setup or login is triggered by load()
+
+// ─── SESSION TIMEOUT ────────────────────────────────────────────────────────────
+var _sessionTimer = null;
+var _sessionWarnTimer = null;
+var SESSION_TIMEOUT_MS = 10 * 60 * 1000;  // 10 minutes
+var SESSION_WARN_MS    =  9 * 60 * 1000;  //  9 minutes
+
+function resetSessionTimer() {
+  if (!currentRole) return;
+  clearTimeout(_sessionTimer);
+  clearTimeout(_sessionWarnTimer);
+  var warnEl = document.getElementById('session-warn-banner');
+  if (warnEl) warnEl.style.display = 'none';
+  _sessionWarnTimer = setTimeout(function() {
+    var wb = document.getElementById('session-warn-banner');
+    if (wb && currentRole) wb.style.display = 'flex';
+  }, SESSION_WARN_MS);
+  _sessionTimer = setTimeout(function() {
+    if (currentRole) { logout(); alert('You were logged out due to inactivity.'); }
+  }, SESSION_TIMEOUT_MS);
+}
+
+function stopSessionTimer() {
+  clearTimeout(_sessionTimer);
+  clearTimeout(_sessionWarnTimer);
+  var warnEl = document.getElementById('session-warn-banner');
+  if (warnEl) warnEl.style.display = 'none';
+}
+
+['mousemove','keydown','click','touchstart'].forEach(function(ev) {
+  document.addEventListener(ev, function() { if (currentRole) resetSessionTimer(); }, { passive: true });
+});
+
+// ─── CSV EXPORT ──────────────────────────────────────────────────────────────────
+function downloadCSV(filename, rows) {
+  var csv = rows.map(function(r) {
+    return r.map(function(v) {
+      var s = (v === null || v === undefined) ? '' : String(v);
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) s = '"' + s.replace(/"/g,'""') + '"';
+      return s;
+    }).join(',');
+  }).join('\n');
+  var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportInventoryCSV() {
+  var rows = [['#','Name','SKU','Category','Stock','Unit','Min Qty','Cost/Unit','Status','Location']];
+  db.items.forEach(function(item, i) {
+    var status = stockStatus(item);
+    var statusLabel = status === 'danger' ? 'Out of Stock' : status === 'warn' ? 'Low Stock' : 'Healthy';
+    rows.push([i+1, item.name, item.sku||'', item.category||'', item.qty, item.unit||'', item.minQty||0, item.cost||0, statusLabel, item.location||'']);
+  });
+  downloadCSV('inventory_' + new Date().toISOString().split('T')[0] + '.csv', rows);
+}
+
+function exportLogsCSV() {
+  var rows = [['Date','Item','Type','Qty','Performed By','Notes']];
+  var logs = db.logs.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+  logs.forEach(function(log) {
+    var item = db.items.find(function(i){ return i.id === log.itemId; });
+    rows.push([
+      new Date(log.date).toLocaleDateString('en-PH'),
+      item ? item.name : log.itemId,
+      log.type||'',
+      log.qty||0,
+      log.by||'',
+      log.notes||''
+    ]);
+  });
+  downloadCSV('usage_log_' + new Date().toISOString().split('T')[0] + '.csv', rows);
+}
+
+function exportCostReportCSV() {
+  var rows = [['Item','Category','Unit Cost','Units Used','Total Cost']];
+  var costMap = {};
+  db.logs.filter(function(l){ return l.type === 'use' || l.type === 'damage'; }).forEach(function(log) {
+    if (!costMap[log.itemId]) costMap[log.itemId] = { qty: 0, cost: 0 };
+    var item = db.items.find(function(i){ return i.id === log.itemId; });
+    costMap[log.itemId].qty += log.qty || 0;
+    costMap[log.itemId].cost += (log.qty || 0) * (item ? (item.cost || 0) : 0);
+    if (item) costMap[log.itemId].item = item;
+  });
+  Object.values(costMap).sort(function(a,b){ return b.cost - a.cost; }).forEach(function(entry) {
+    var it = entry.item;
+    rows.push([it ? it.name : '?', it ? (it.category||'') : '', it ? (it.cost||0) : 0, entry.qty, entry.cost.toFixed(2)]);
+  });
+  downloadCSV('cost_report_' + new Date().toISOString().split('T')[0] + '.csv', rows);
+}
+
+// ─── MONTHLY COST REPORT ─────────────────────────────────────────────────────────
+function renderMonthlyReport() {
+  var el = document.getElementById('monthly-report-wrap');
+  if (!el) return;
+
+  // Get last 6 months
+  var months = [];
+  var now = new Date();
+  for (var i = 5; i >= 0; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ label: d.toLocaleDateString('en-PH', { month: 'short', year: '2-digit' }), year: d.getFullYear(), month: d.getMonth(), total: 0 });
+  }
+
+  db.logs.filter(function(l){ return l.type === 'use' || l.type === 'damage'; }).forEach(function(log) {
+    var d = new Date(log.date);
+    var item = db.items.find(function(i){ return i.id === log.itemId; });
+    var cost = (log.qty || 0) * (item ? (item.cost || 0) : 0);
+    var bucket = months.find(function(m){ return m.year === d.getFullYear() && m.month === d.getMonth(); });
+    if (bucket) bucket.total += cost;
+  });
+
+  var max = Math.max.apply(null, months.map(function(m){ return m.total; })) || 1;
+  var W = 480, H = 160, pad = 40, barW = 50, gap = (W - pad*2 - barW*6) / 5;
+
+  var bars = months.map(function(m, i) {
+    var barH = Math.round((m.total / max) * (H - 40));
+    var x = pad + i * (barW + gap);
+    var y = H - 20 - barH;
+    return '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + barH + '" rx="4" fill="var(--accent)" opacity="0.85"/>'
+      + '<text x="' + (x + barW/2) + '" y="' + (H - 4) + '" text-anchor="middle" font-size="10" fill="var(--muted)">' + m.label + '</text>'
+      + (m.total > 0 ? '<text x="' + (x + barW/2) + '" y="' + (y - 4) + '" text-anchor="middle" font-size="9" fill="var(--text)">&#8369;' + (m.total >= 1000 ? (m.total/1000).toFixed(0)+'k' : Math.round(m.total)) + '</text>' : '');
+  }).join('');
+
+  el.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;max-width:' + W + 'px">' + bars + '</svg>';
+}
+
+// ─── USER USAGE REPORT ───────────────────────────────────────────────────────────
+function renderUserReport() {
+  var el = document.getElementById('user-report-wrap');
+  if (!el) return;
+
+  var userMap = {};
+  db.logs.forEach(function(log) {
+    var u = log.by || '—';
+    if (!userMap[u]) userMap[u] = { txns: 0, units: 0, cost: 0 };
+    userMap[u].txns++;
+    userMap[u].units += log.qty || 0;
+    var item = db.items.find(function(i){ return i.id === log.itemId; });
+    if (log.type === 'use' || log.type === 'damage') {
+      userMap[u].cost += (log.qty || 0) * (item ? (item.cost || 0) : 0);
+    }
+  });
+
+  var sorted = Object.entries(userMap).sort(function(a,b){ return b[1].cost - a[1].cost; });
+  if (!sorted.length) { el.innerHTML = '<div class="dash-empty">No usage data yet.</div>'; return; }
+
+  var rows = sorted.map(function(entry) {
+    var u = entry[0], d = entry[1];
+    return '<tr><td style="font-weight:600">' + u + '</td><td style="text-align:right">' + d.txns + '</td><td style="text-align:right">' + fmtInt(d.units) + '</td><td style="text-align:right;color:var(--accent);font-weight:600">&#8369;' + fmt(d.cost) + '</td></tr>';
+  }).join('');
+
+  el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px">'
+    + '<thead><tr style="border-bottom:2px solid var(--border)">'
+    + '<th style="text-align:left;padding:6px 0;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase">User</th>'
+    + '<th style="text-align:right;padding:6px 0;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase">Transactions</th>'
+    + '<th style="text-align:right;padding:6px 0;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase">Units Used</th>'
+    + '<th style="text-align:right;padding:6px 0;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase">Total Cost</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+// ─── AUDIT LOG ───────────────────────────────────────────────────────────────────
+var db_audit = [];
+var AUDIT_LS_KEY = 'supplybase_audit_log';
+
+function getAuditLocal()  { try { return JSON.parse(localStorage.getItem(AUDIT_LS_KEY)||'[]'); } catch(e){ return []; } }
+function saveAuditLocal() { localStorage.setItem(AUDIT_LS_KEY, JSON.stringify(db_audit.slice(0, 500))); }
+
+function logAudit(action, details) {
+  if (!currentUser) return;
+  var entry = {
+    id: 'aud_' + Date.now() + '_' + Math.random().toString(36).slice(2,5),
+    ts: new Date().toISOString(),
+    user: currentUser.username,
+    action: action,
+    details: details || ''
+  };
+  db_audit.unshift(entry);
+  if (db_audit.length > 500) db_audit = db_audit.slice(0, 500);
+  saveAuditLocal();
+}
+
+function renderAuditLog() {
+  var el = document.getElementById('audit-list-wrap');
+  if (!el) return;
+  if (!db_audit.length) { el.innerHTML = '<div class="dash-empty">No audit events yet.</div>'; return; }
+
+  function fmtDT(d) {
+    return d ? new Date(d).toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }) : '';
+  }
+
+  var out = '<div style="display:flex;flex-direction:column;gap:6px">';
+  db_audit.slice(0, 200).forEach(function(e) {
+    out += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;gap:12px;align-items:flex-start">'
+      + '<div style="flex:0 0 auto;font-size:11px;color:var(--muted);min-width:130px">' + fmtDT(e.ts) + '</div>'
+      + '<div style="flex:0 0 auto;font-size:11px;font-weight:700;color:var(--accent);min-width:90px">' + (e.user||'—') + '</div>'
+      + '<div style="font-size:12px;color:var(--text);font-weight:600;min-width:120px">' + e.action + '</div>'
+      + '<div style="font-size:12px;color:var(--muted);flex:1">' + (e.details||'') + '</div>'
+      + '</div>';
+  });
+  out += '</div>';
+  el.innerHTML = out;
+}
 
 </script>
 
