@@ -3197,21 +3197,20 @@ async function confirmIssuance() {
   // Create usage log entry
   var item = db.items.find(i => i.id === req.itemId);
   if (item) {
+    var newQty = Math.max(0, item.qty - req.qty);
     var logEntry = {
-      id:          'log_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-      itemId:      req.itemId,
-      itemName:    req.itemName,
-      qty:         req.qty,
-      unit:        req.unit,
-      performedBy: currentUser.username,
-      notes:       'Requested by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
-      date:        new Date().toISOString().split('T')[0],
-      createdAt:   new Date().toISOString(),
-      cost:        item.cost || 0,
-      totalCost:   (item.cost || 0) * req.qty
+      id:     uid(),
+      itemId: req.itemId,
+      type:   'use',
+      qty:    req.qty,
+      absQty: newQty,
+      by:     currentUser.username,
+      date:   new Date().toISOString(),
+      ref:    '',
+      notes:  'Requested by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
     };
-    db.logs.unshift(logEntry);
-    item.qty = Math.max(0, item.qty - req.qty);
+    db.logs.push(logEntry);
+    item.qty = newQty;
     item.updatedAt = new Date().toISOString();
     if (sb) {
       try {
