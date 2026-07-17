@@ -2873,11 +2873,15 @@ async function loadMessages() {
 function updateMsgBadge() {
   var count = 0;
   if (currentUser) {
-    if (currentRole === 'superuser') {
-      count = db_msgs.filter(m => m.toUser === 'admin' && !m.readAt).length;
-    } else {
-      count = db_msgs.filter(m => m.fromUser === currentUser.username && m.reply && !m.replyReadAt).length;
-    }
+    var me = currentUser.username.toLowerCase();
+    var isAdmin = currentRole === 'superuser';
+    // Unread messages in my inbox (I'm the recipient and haven't read them)
+    count = db_msgs.filter(m => {
+      var toMe = m.toUser.toLowerCase() === me || (isAdmin && m.toUser === 'admin');
+      return toMe && !m.readAt;
+    }).length;
+    // Replies to my sent messages that I haven't seen
+    count += db_msgs.filter(m => m.fromUser.toLowerCase() === me && m.reply && !m.replyReadAt).length;
   }
   var badge = document.getElementById('msg-nav-badge');
   if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none'; }
@@ -2891,14 +2895,16 @@ function setMsgFilter(f) {
 
 function openComposeMsg() {
   var toSel = document.getElementById('cm-to');
-  if (currentRole === 'superuser') {
-    var users = db.accounts.filter(a => a.role !== 'superuser').map(a => a.username);
-    toSel.innerHTML = users.length
-      ? users.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('')
-      : '<option value="all">All Users</option>';
-  } else {
-    toSel.innerHTML = '<option value="admin">Admin</option>';
+  var adminUname = getAdminUsername();
+  var me = currentUser.username.toLowerCase();
+  // All accounts except current user
+  var others = db.accounts.filter(a => a.username.toLowerCase() !== me);
+  var opts = others.map(a => `<option value="${esc(a.username)}">${esc(a.username)}</option>`).join('');
+  // Add superuser as option if not already in accounts list and current user is not superuser
+  if (currentRole !== 'superuser' && !others.find(a => a.username.toLowerCase() === adminUname.toLowerCase())) {
+    opts = `<option value="${esc(adminUname)}">${esc(adminUname)} (Admin)</option>` + opts;
   }
+  toSel.innerHTML = opts || `<option value="${esc(adminUname)}">${esc(adminUname)}</option>`;
   document.getElementById('cm-subject').value = '';
   document.getElementById('cm-body').value    = '';
   openModal('compose-msg-modal');
@@ -2942,8 +2948,13 @@ async function viewMessage(id) {
   if (!msg) return;
   currentViewMsgId = id;
 
-  // Mark as read (admin seeing a user message)
-  if (currentRole === 'superuser' && !msg.readAt) {
+  var me = currentUser.username.toLowerCase();
+  var isAdmin = currentRole === 'superuser';
+  var iAmRecipient = msg.toUser.toLowerCase() === me || (isAdmin && msg.toUser === 'admin');
+  var iAmSender    = msg.fromUser.toLowerCase() === me;
+
+  // Mark as read when recipient opens it
+  if (iAmRecipient && !msg.readAt) {
     msg.readAt = new Date().toISOString();
     if (sb && MSG_TABLE_OK !== false) {
       try { await sb.from('messages').update({ readAt: msg.readAt }).eq('id', id); }
@@ -2952,8 +2963,8 @@ async function viewMessage(id) {
     updateMsgBadge();
     renderMessages();
   }
-  // Mark reply as read (user seeing admin reply)
-  if (currentRole !== 'superuser' && msg.reply && !msg.replyReadAt) {
+  // Mark reply as read when sender opens it
+  if (iAmSender && msg.reply && !msg.replyReadAt) {
     msg.replyReadAt = new Date().toISOString();
     if (sb && MSG_TABLE_OK !== false) {
       try { await sb.from('messages').update({ replyReadAt: msg.replyReadAt }).eq('id', id); }
@@ -2978,7 +2989,7 @@ async function viewMessage(id) {
     </div>
     ${msg.reply ? `<div class="msg-thread-bubble msg-thread-out">
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="font-size:12px;font-weight:600;color:var(--accent)">↩ ${esc(msg.repliedBy || 'Admin')}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--accent)">↩ ${esc(msg.repliedBy)}</span>
         <span style="font-size:11px;color:var(--muted)">${fmtDT(msg.repliedAt)}</span>
       </div>
       <div style="font-size:13px;line-height:1.65;white-space:pre-wrap">${esc(msg.reply)}</div>
@@ -2988,10 +2999,11 @@ async function viewMessage(id) {
   document.getElementById('view-msg-content').innerHTML = html;
   document.getElementById('reply-body').value = '';
 
-  var canReply = currentRole === 'superuser' && !msg.reply;
+  var canReply = iAmRecipient && !msg.reply;
+  var canDelete = isAdmin || iAmSender;
   document.getElementById('view-msg-reply-form').style.display = canReply ? 'block' : 'none';
   document.getElementById('btn-send-reply').style.display = canReply ? '' : 'none';
-  document.getElementById('btn-delete-msg').style.display = currentRole === 'superuser' ? '' : 'none';
+  document.getElementById('btn-delete-msg').style.display = canDelete ? '' : 'none';
 
   openModal('view-msg-modal');
 }
@@ -3033,23 +3045,24 @@ function renderMessages() {
   if (!el) return;
   updateMsgBadge();
 
+  var me = currentUser?.username?.toLowerCase();
   var isAdmin = currentRole === 'superuser';
-  document.getElementById('msg-filter-row').style.display = isAdmin ? 'flex' : 'none';
-  document.getElementById('msg-view-sub').textContent = isAdmin ? 'Inbox — messages from users' : 'Your messages to the admin';
+  document.getElementById('msg-filter-row').style.display = 'flex';
+  document.getElementById('msg-view-sub').textContent = 'Inbox · Sent';
 
-  // Decide which messages to show
-  var msgs = isAdmin
-    ? db_msgs.filter(m => m.toUser === 'admin')
-    : db_msgs.filter(m => m.fromUser === currentUser?.username);
+  // Inbox: messages addressed to me
+  var inbox = db_msgs.filter(m => m.toUser.toLowerCase() === me || (isAdmin && m.toUser === 'admin'));
+  // Sent: messages I sent (excluding ones also in my inbox)
+  var sent  = db_msgs.filter(m => m.fromUser.toLowerCase() === me && !(m.toUser.toLowerCase() === me));
 
-  if (isAdmin) {
-    if (msgFilter === 'unread')  msgs = msgs.filter(m => !m.readAt);
-    if (msgFilter === 'replied') msgs = msgs.filter(m => m.reply);
-  }
+  // Apply inbox filter
+  var filteredInbox = inbox.slice();
+  if (msgFilter === 'unread')  filteredInbox = filteredInbox.filter(m => !m.readAt);
+  if (msgFilter === 'replied') filteredInbox = filteredInbox.filter(m => m.reply);
 
   var out = '';
 
-  // Setup warning box (admin only, table not found)
+  // Setup warning (admin only)
   if (isAdmin && MSG_TABLE_OK === false) {
     out += `<div class="msg-setup-box">
       <div style="font-weight:600;color:var(--warn);margin-bottom:6px">⚠ Messages table not found in Supabase</div>
@@ -3070,42 +3083,61 @@ function renderMessages() {
     </div>`;
   }
 
-  if (msgs.length === 0) {
-    el.innerHTML = out + '<div class="dash-empty">No messages yet.</div>';
-    return;
+  function inboxBadge(msg) {
+    if (!msg.readAt) return '<span class="msg-badge msg-badge-new">● New</span>';
+    if (msg.reply)   return '<span class="msg-badge msg-badge-replied">↩ Replied</span>';
+    return '<span class="msg-badge msg-badge-read">Read</span>';
   }
-
-  function badge(msg) {
-    if (isAdmin) {
-      if (!msg.readAt) return '<span class="msg-badge msg-badge-new">● New</span>';
-      if (msg.reply)   return '<span class="msg-badge msg-badge-replied">↩ Replied</span>';
-      return '<span class="msg-badge msg-badge-read">Read</span>';
-    } else {
-      if (msg.reply && !msg.replyReadAt) return '<span class="msg-badge msg-badge-replied">↩ New reply</span>';
-      if (msg.reply)   return '<span class="msg-badge msg-badge-read">✓ Replied</span>';
-      if (msg.readAt)  return '<span class="msg-badge msg-badge-read">Seen</span>';
-      return '<span class="msg-badge msg-badge-pending">Pending</span>';
-    }
+  function sentBadge(msg) {
+    if (msg.reply && !msg.replyReadAt) return '<span class="msg-badge msg-badge-replied">↩ New reply</span>';
+    if (msg.reply)   return '<span class="msg-badge msg-badge-read">✓ Replied</span>';
+    if (msg.readAt)  return '<span class="msg-badge msg-badge-read">Seen</span>';
+    return '<span class="msg-badge msg-badge-pending">Pending</span>';
   }
-
   function shortDate(d) {
     return d ? new Date(d).toLocaleDateString('en-PH', { month:'short', day:'numeric' }) : '';
   }
 
-  out += '<div class="msg-list">';
-  msgs.forEach(function(msg) {
-    var isUnread = isAdmin ? !msg.readAt : (msg.reply && !msg.replyReadAt);
-    var cls = isUnread ? ((!isAdmin && msg.reply) ? 'msg-new-reply' : 'msg-unread') : '';
-    out += `<div class="msg-card ${cls}" onclick="viewMessage('${msg.id}')">
-      <div class="msg-card-header">
-        <span class="msg-card-from">${isAdmin ? esc(msg.fromUser) : 'Admin'}</span>
-        <div style="display:flex;align-items:center;gap:8px">${badge(msg)}<span class="msg-card-date">${shortDate(msg.createdAt)}</span></div>
-      </div>
-      <div class="msg-card-subject">${esc(msg.subject)}</div>
-      <div class="msg-card-preview">${esc(msg.body.slice(0,90))}${msg.body.length>90?'…':''}</div>
-    </div>`;
-  });
-  out += '</div>';
+  // ── INBOX ──
+  out += `<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">📥 Inbox</div>`;
+  if (filteredInbox.length === 0) {
+    out += '<div class="dash-empty" style="margin-bottom:20px">No messages.</div>';
+  } else {
+    out += '<div class="msg-list" style="margin-bottom:20px">';
+    filteredInbox.forEach(function(msg) {
+      var cls = !msg.readAt ? 'msg-unread' : '';
+      out += `<div class="msg-card ${cls}" onclick="viewMessage('${msg.id}')">
+        <div class="msg-card-header">
+          <span class="msg-card-from">From: ${esc(msg.fromUser)}</span>
+          <div style="display:flex;align-items:center;gap:8px">${inboxBadge(msg)}<span class="msg-card-date">${shortDate(msg.createdAt)}</span></div>
+        </div>
+        <div class="msg-card-subject">${esc(msg.subject)}</div>
+        <div class="msg-card-preview">${esc(msg.body.slice(0,90))}${msg.body.length>90?'…':''}</div>
+      </div>`;
+    });
+    out += '</div>';
+  }
+
+  // ── SENT ──
+  out += `<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">📤 Sent</div>`;
+  if (sent.length === 0) {
+    out += '<div class="dash-empty">No sent messages.</div>';
+  } else {
+    out += '<div class="msg-list">';
+    sent.forEach(function(msg) {
+      var cls = (msg.reply && !msg.replyReadAt) ? 'msg-new-reply' : '';
+      out += `<div class="msg-card ${cls}" onclick="viewMessage('${msg.id}')">
+        <div class="msg-card-header">
+          <span class="msg-card-from">To: ${esc(msg.toUser)}</span>
+          <div style="display:flex;align-items:center;gap:8px">${sentBadge(msg)}<span class="msg-card-date">${shortDate(msg.createdAt)}</span></div>
+        </div>
+        <div class="msg-card-subject">${esc(msg.subject)}</div>
+        <div class="msg-card-preview">${esc(msg.body.slice(0,90))}${msg.body.length>90?'…':''}</div>
+      </div>`;
+    });
+    out += '</div>';
+  }
+
   el.innerHTML = out;
 }
 
