@@ -633,7 +633,7 @@
     <div class="form-grid">
       <div class="form-group full" style="position:relative">
         <label>Item *</label>
-        <input type="text" id="req-item-search" placeholder="Type to search item…" autocomplete="off" oninput="filterReqItemDropdown()" onblur="setTimeout(()=>closeReqItemDropdown(),180)">
+        <input type="text" id="req-item-search" placeholder="Type to search item…" autocomplete="off" onkeydown="reqSearchReady=true" oninput="filterReqItemDropdown()" onblur="setTimeout(()=>closeReqItemDropdown(),180)">
         <input type="hidden" id="req-item-id">
         <div id="req-item-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:0 0 7px 7px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.15)"></div>
       </div>
@@ -3119,7 +3119,10 @@ function setReqFilter(f) {
   renderRequests();
 }
 
+var reqSearchReady = false;
+
 function openNewRequestModal() {
+  reqSearchReady = false;
   document.getElementById('req-item-id').value = '';
   document.getElementById('req-item-search').value = '';
   document.getElementById('req-item-dropdown').style.display = 'none';
@@ -3131,8 +3134,10 @@ function openNewRequestModal() {
 }
 
 function filterReqItemDropdown() {
+  if (!reqSearchReady) return;
   var q  = document.getElementById('req-item-search').value.toLowerCase();
   var dd = document.getElementById('req-item-dropdown');
+  if (!q.trim()) { dd.style.display = 'none'; return; }
   var matches = db.items.filter(i => i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
   if (!matches.length) {
     dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No items found</div>';
