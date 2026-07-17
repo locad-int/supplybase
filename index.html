@@ -955,7 +955,15 @@
     <div class="form-grid">
       <div class="form-group full">
         <label>Item *</label>
-        <select id="rf-item" onchange="prefillReorder()"></select>
+        <div style="position:relative">
+          <input type="text" id="rf-item-search" placeholder="Type to search item…" autocomplete="off"
+            onkeydown="roSearchReady=true" oninput="filterRoItemDropdown()"
+            onfocus="if(roSearchReady) filterRoItemDropdown()"
+            onblur="setTimeout(closeRoItemDropdown,200)"
+            style="width:100%">
+          <input type="hidden" id="rf-item">
+          <div id="ro-item-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;z-index:200;box-shadow:0 4px 16px rgba(0,0,0,.12)"></div>
+        </div>
       </div>
       <div class="form-group">
         <label>Supplier</label>
@@ -1972,6 +1980,9 @@ function openReorderModal(id) {
   const r = id ? db.reorders.find(x => x.id === id) : null;
   document.getElementById('reorder-modal-title').textContent = r ? 'Edit Reorder' : 'Create Reorder';
   document.getElementById('rf-item').value = r?.itemId || '';
+  var rfItemName = r ? (db.items.find(i => i.id === r.itemId)?.name || '') : '';
+  document.getElementById('rf-item-search').value = rfItemName;
+  roSearchReady = false;
   document.getElementById('rf-supplier').value = r?.supplier || '';
   document.getElementById('rf-qty').value = r?.qty || '';
   document.getElementById('rf-cost').value = r?.cost || '';
@@ -1991,6 +2002,7 @@ function prefillReorder() {
   if (item.reorderQty) document.getElementById('rf-qty').value = item.reorderQty;
   if (item.cost) document.getElementById('rf-cost').value = item.cost;
 }
+
 
 function saveReorder() {
   const itemId = document.getElementById('rf-item').value;
@@ -2261,13 +2273,52 @@ function applyAdjust() {
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────────
+var roSearchReady = false;
+
 function populateItemSelects() {
-  // rf-item is still a plain select
-  const opts = '<option value="">— Select item —</option>' + db.items.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('');
-  document.getElementById('rf-item').innerHTML = opts;
+  // rf-item is now a hidden input backed by a search box — reset it
+  document.getElementById('rf-item').value = '';
+  document.getElementById('rf-item-search').value = '';
+  roSearchReady = false;
   // lf-item is now a hidden input backed by a search box — just reset it
   document.getElementById('lf-item').value = '';
   document.getElementById('lf-item-search').value = '';
+}
+
+function filterRoItemDropdown() {
+  if (!roSearchReady) return;
+  var q = document.getElementById('rf-item-search').value.toLowerCase();
+  var dd = document.getElementById('ro-item-dropdown');
+  if (!q.trim()) { dd.style.display = 'none'; return; }
+  var matches = db.items.filter(function(i) { return i.name.toLowerCase().includes(q) || (i.sku && i.sku.toLowerCase().includes(q)); }).slice(0, 30);
+  if (!matches.length) {
+    dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No items found</div>';
+  } else {
+    dd.innerHTML = matches.map(function(i) {
+      var st = stockStatus(i);
+      var dot = st==='danger'?'var(--danger)':st==='warn'?'var(--warn)':'var(--ok)';
+      return `<div onclick="selectRoItem('${i.id}','${esc(i.name).replace(/'/g,"\\'")}')"
+        style="padding:9px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)"
+        onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+        <span style="width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0"></span>
+        <span style="flex:1">${esc(i.name)}</span>
+        <span style="color:var(--muted);font-size:11px">${fmtInt(i.qty)} ${esc(i.unit||'')}</span>
+      </div>`;
+    }).join('');
+  }
+  dd.style.display = 'block';
+}
+
+function selectRoItem(id, name) {
+  document.getElementById('rf-item').value = id;
+  document.getElementById('rf-item-search').value = name;
+  closeRoItemDropdown();
+  prefillReorder();
+}
+
+function closeRoItemDropdown() {
+  var dd = document.getElementById('ro-item-dropdown');
+  if (dd) dd.style.display = 'none';
 }
 
 function filterItemDropdown() {
