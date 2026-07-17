@@ -3306,16 +3306,25 @@ function openConfirmModal(reqId) {
   currentViewReqId = reqId;
 
   var item = db.items.find(i => i.id === req.itemId);
-  var stockInfo = item ? ` (Current stock: ${fmtInt(item.qty)} ${item.unit || ''})` : '';
+  var st = item ? stockStatus(item) : null;
+  var stLabel = st === 'danger' ? '⛔ Out of Stock' : st === 'warn' ? '⚠️ Low Stock' : st === 'ok' ? '✅ In Stock' : '—';
+  var stColor = st === 'danger' ? '#dc2626' : st === 'warn' ? '#b45309' : '#16a34a';
+  var stBg    = st === 'danger' ? 'rgba(239,68,68,.08)' : st === 'warn' ? 'rgba(245,158,11,.08)' : 'rgba(22,163,74,.08)';
+  var curQty  = item ? fmtInt(item.qty) + ' ' + (item.unit || '') : '—';
+  var enough  = item && item.qty >= req.qty;
 
   document.getElementById('crm-content').innerHTML = `
     <div style="background:var(--surface2);border-radius:8px;padding:14px 16px;margin-bottom:12px">
-      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">${esc(req.itemName)}</div>
-      <div style="font-size:12px;color:var(--muted)">Qty requested: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong>${stockInfo}</div>
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px">${esc(req.itemName)}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:99px;background:${stBg};color:${stColor}">${stLabel}</span>
+        <span style="font-size:12px;color:var(--muted)">Current stock: <strong style="color:${stColor}">${curQty}</strong></span>
+      </div>
+      <div style="font-size:12px;color:var(--muted)">Qty requested: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong>${!enough && item ? ` <span style="color:#b45309;font-weight:600">(only ${fmtInt(item.qty)} available)</span>` : ''}</div>
       <div style="font-size:12px;color:var(--muted);margin-top:2px">Requested by: <strong>${esc(req.requestedBy)}</strong></div>
       ${req.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:6px;white-space:pre-wrap">${esc(req.notes)}</div>` : ''}
     </div>
-    <p style="font-size:13px;color:var(--text);line-height:1.6">Confirming will log a usage entry: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong> deducted from <strong>${esc(req.itemName)}</strong>, performed by <em>${esc(currentUser.username)}</em>.</p>`;
+    <p style="font-size:13px;color:var(--text);line-height:1.6">Confirming will log a usage entry deducted from <strong>${esc(req.itemName)}</strong>, performed by <em>${esc(currentUser.username)}</em>.</p>`;
 
   document.getElementById('crm-issue-qty').value = req.qty;
   document.getElementById('crm-btn-confirm').style.display = '';
@@ -3360,9 +3369,10 @@ async function confirmIssuance() {
   req.confirmedBy  = currentUser.username;
   req.confirmedAt  = new Date().toISOString();
   req.seenByRequestor = false;
+  req.issuedQty    = issueQty;
 
   if (sb && REQ_TABLE_OK !== false) {
-    try { await sb.from('supply_requests').update({ status: req.status, confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, seenByRequestor: false }).eq('id', req.id); }
+    try { await sb.from('supply_requests').update({ status: req.status, confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, seenByRequestor: false, issuedQty: issueQty }).eq('id', req.id); }
     catch(e) { saveReqsLocal(); }
   } else { saveReqsLocal(); }
 
@@ -3491,10 +3501,25 @@ function renderRequests() {
     out += `<div class="req-card ${cardCls}">
       <div class="req-card-header">
         <span class="req-card-item">${esc(req.itemName)}</span>
-        <span class="req-priority-${prio}">${prioLabel}</span>
-        <span class="req-badge ${badgeCls}">${badgeLabel}</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="req-priority-${prio}">${prioLabel}</span>
+          <span class="req-badge ${badgeCls}">${badgeLabel}</span>
+        </div>
       </div>
-      <div class="req-card-meta">Qty: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong> · Requested by: <strong>${esc(req.requestedBy)}</strong> · ${fmtDT(req.createdAt)}</div>
+      ${(function() {
+        var cardItem = db.items.find(function(i){ return i.id === req.itemId; });
+        if (!cardItem) return '';
+        var cs = stockStatus(cardItem);
+        var csLabel = cs === 'danger' ? '⛔ Out of Stock' : cs === 'warn' ? '⚠️ Low Stock' : '✅ In Stock';
+        var csColor = cs === 'danger' ? '#dc2626' : cs === 'warn' ? '#b45309' : '#16a34a';
+        var csBg    = cs === 'danger' ? 'rgba(239,68,68,.08)' : cs === 'warn' ? 'rgba(245,158,11,.08)' : 'rgba(22,163,74,.08)';
+        var enough  = cardItem.qty >= req.qty;
+        return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:${csBg};color:${csColor}">${csLabel}</span>
+          <span style="font-size:11px;color:var(--muted)">Stock: <strong style="color:${csColor}">${fmtInt(cardItem.qty)} ${esc(cardItem.unit||'')}</strong>${!enough ? ' <span style="color:#b45309">(insufficient)</span>' : ''}</span>
+        </div>`;
+      })()}
+      <div class="req-card-meta">${req.issuedQty && req.issuedQty !== req.qty ? `Requested: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong> · Issued: <strong style="color:var(--accent)">${fmtInt(req.issuedQty)} ${esc(req.unit)}</strong>` : `Qty: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong>`} · Requested by: <strong>${esc(req.requestedBy)}</strong> · ${fmtDT(req.createdAt)}</div>
       ${req.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-wrap">${esc(req.notes)}</div>` : ''}
       ${actionButtons}
     </div>`;
