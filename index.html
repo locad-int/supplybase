@@ -3578,7 +3578,7 @@ function show(id, visible) {
   if (el) el.style.display = visible ? '' : 'none';
 }
 
-function confirmReset() {
+async function confirmReset() {
   if (!can('reset') && currentRole !== 'admin') return;
   if (!confirm('Reset stock quantities to Master List defaults?\n\nNote: Your minimum stock levels, costs, and supplier settings will be preserved.\n\nThis cannot be undone.')) return;
   // Only reset qty — preserve minQty, cost, supplier, unit, and other config
@@ -3593,12 +3593,19 @@ function confirmReset() {
   Object.values(seedMap).forEach(function(s){ db.items.push(JSON.parse(JSON.stringify(s))); });
   db.logs = [];
   db.reorders = [];
+  db_reqs = [];
+  saveReqsLocal();
+  if (sb && REQ_TABLE_OK !== false) {
+    try { await sb.from('supply_requests').delete().neq('id', ''); } catch(e) {}
+  }
   save(); // upserts reset items
   _sbClearLogsAndReorders(); // removes deleted logs/reorders from DB
   renderInventory();
   renderLogs();
   renderReorder();
+  renderRequests();
   updateSummary();
+  updateRequestBadge();
   if(currentRole) applyRoleUI();
   alert('Reset complete. All data restored to Master List defaults.');
 }
