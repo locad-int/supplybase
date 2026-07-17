@@ -368,7 +368,6 @@
             <th onclick="sortBy('qty')">Stock <span class="sort-arrow" id="sort-qty">↕</span></th>
             <th>Level</th>
             <th onclick="sortBy('unit')">Unit <span class="sort-arrow" id="sort-unit">↕</span></th>
-            <th onclick="sortBy('minQty')">Min Qty <span class="sort-arrow" id="sort-minQty">↕</span></th>
             <th onclick="sortBy('cost')">Cost/Unit <span class="sort-arrow" id="sort-cost">↕</span></th>
             <th>Status</th>
             <th>Location</th>
@@ -1271,7 +1270,7 @@ function startAutoRefresh() {
   stopAutoRefresh();
   autoRefreshTimer = setInterval(function() {
     if (currentRole) refreshData();
-  }, 5 * 60 * 1000); // every 5 minutes
+  }, 1 * 60 * 1000); // every 1 minute
 }
 function stopAutoRefresh() {
   if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
@@ -1449,14 +1448,16 @@ function filterInventory(status) {
 // ─── SUMMARY ────────────────────────────────────────────────────────────────────
 function stockStatus(item) {
   if (item.qty <= 0) return 'danger';
-  if (item.qty <= item.minQty) return 'warn';
+  var ref = Math.max(item.qty, (item.minQty || 0) * 2, 1);
+  var pct = Math.round((item.qty / ref) * 100);
+  if (pct <= 30) return 'warn';
   return 'ok';
 }
 function updateSummary() {
   const total = db.items.length;
   const out = db.items.filter(i => i.qty <= 0).length;
-  const low = db.items.filter(i => i.qty > 0 && i.qty <= i.minQty).length;
-  const ok = db.items.filter(i => i.qty > i.minQty).length;
+  const low = db.items.filter(i => stockStatus(i) === 'warn').length;
+  const ok  = db.items.filter(i => stockStatus(i) === 'ok').length;
   const reorders = db.reorders.filter(r => r.status !== 'received').length;
   document.getElementById('s-total').textContent = fmtInt(total);
   document.getElementById('s-out').textContent = fmtInt(out);
@@ -1533,7 +1534,6 @@ function renderInventory() {
         </div>
       </td>
       <td>${esc(item.unit||'—')}</td>
-      <td>${fmtInt(item.minQty||0)}</td>
       <td>${item.cost ? fmtPHP(item.cost) : '<span style="color:var(--muted)">—</span>'}</td>
       <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
       <td>${esc(item.location||'—')}</td>
@@ -1759,7 +1759,6 @@ function openItemDetail(itemId) {
     + row('Category', item.category ? `<span class="badge badge-info">${esc(item.category)}</span>` : '—')
     + row('Status', `<span class="badge ${badgeClass}">${badgeLabel}</span>`)
     + row('Current Stock', `<strong style="font-size:1.05rem">${fmtInt(item.qty)}</strong> <span style="color:var(--muted)">${esc(item.unit||'')}</span>`)
-    + row('Min Qty', fmtInt(item.minQty||0) + ' ' + esc(item.unit||''))
     + row('Unit', esc(item.unit||'—'))
     + row('Unit Cost', item.cost ? fmtPHP(item.cost) : '')
     + row('Supplier', item.supplier ? esc(item.supplier) : '')
