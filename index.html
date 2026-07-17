@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg: #f4f5f7;
@@ -353,6 +354,8 @@
         <option value="">All Categories</option>
       </select>
       <button class="btn btn-secondary" onclick="exportInventoryCSV()" style="font-size:12px">⬇ Export CSV</button>
+      <button class="btn btn-primary" onclick="openImportModal()" style="font-size:12px" id="btn-import-file">⬆ Import File</button>
+      <input type="file" id="import-file-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
     </div>
     <div class="table-wrap">
       <table>
@@ -716,6 +719,53 @@
       <button id="crm-btn-reject" class="btn" style="background:var(--danger);color:#fff;margin-right:auto" onclick="rejectRequest()">✕ Reject</button>
       <button class="btn btn-secondary" onclick="closeModal('confirm-request-modal')">Cancel</button>
       <button id="crm-btn-confirm" class="btn btn-primary" onclick="confirmIssuance()">✓ Confirm Issuance</button>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT FILE MODAL -->
+<div class="modal-bg" id="import-modal">
+  <div class="modal" style="max-width:720px;width:95vw">
+    <h2>⬆ Import Inventory File</h2>
+    <div id="import-dropzone" style="border:2px dashed var(--border);border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:border-color .2s;margin-bottom:16px"
+      ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+      ondragleave="this.style.borderColor='var(--border)'"
+      ondrop="event.preventDefault();this.style.borderColor='var(--border)';handleImportFile({files:event.dataTransfer.files})"
+      onclick="document.getElementById('import-file-input2').click()">
+      <div style="font-size:28px;margin-bottom:8px">📂</div>
+      <div style="font-size:13px;font-weight:600;color:var(--text)">Click or drag a file here</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Supports <strong>.csv</strong>, <strong>.xlsx</strong>, <strong>.xls</strong></div>
+      <input type="file" id="import-file-input2" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
+    </div>
+    <div id="import-format-hint" style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+      <strong>Required column:</strong> <code>Name</code> or <code>SKU</code> — used to match items.<br>
+      <strong>Optional columns:</strong> <code>Stock</code> (or <code>Qty</code>) · <code>Cost/Unit</code> (or <code>Cost</code>) — only provided columns will be updated.<br>
+      <span style="color:var(--accent)">Tip: Export the current inventory CSV to use as a template.</span>
+    </div>
+    <div id="import-preview-wrap" style="display:none">
+      <div id="import-summary-bar" style="font-size:12px;font-weight:600;margin-bottom:10px;padding:8px 12px;border-radius:8px;background:var(--surface2)"></div>
+      <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--surface2);position:sticky;top:0">
+              <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Item</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Current Stock</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">New Stock</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Current Cost</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">New Cost</th>
+              <th style="padding:8px 12px;text-align:center;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Status</th>
+            </tr>
+          </thead>
+          <tbody id="import-preview-body"></tbody>
+        </table>
+      </div>
+      <div id="import-unmatched-wrap" style="display:none;margin-top:10px;font-size:11px;color:var(--muted)">
+        <strong>⚠ Unmatched rows (skipped):</strong> <span id="import-unmatched-list"></span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('import-modal');resetImportModal()">Cancel</button>
+      <button id="import-apply-btn" class="btn btn-primary" onclick="applyImport()" style="display:none">✓ Apply Updates</button>
     </div>
   </div>
 </div>
@@ -1211,7 +1261,7 @@ async function refreshData() {
     await loadMessages();
     await loadRequests();
     updateSummary();
-    renderInventory(); renderLogs(); renderReorder();
+    renderInventory(); renderLogs(); renderReorder(); renderRequests(); updateRequestBadge();
   } catch(e) { console.error('Refresh failed:', e); }
   if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; }
 }
@@ -1327,6 +1377,7 @@ async function load() {
         switchTab('inventory');
         renderLogs(); renderReorder(); updateSummary(); updateMsgBadge(); startAutoRefresh();
         resetSessionTimer();
+        loadRequests().then(function() { updateRequestBadge(); });
       } catch(e) { renderRecentLogins(); document.getElementById('login-overlay').style.display = 'flex'; }
     } else if (savedRole) {
       currentRole = savedRole;
@@ -1623,7 +1674,9 @@ function renderLogs() {
     var badgeClass = log.type==='use'?'badge-warn':log.type==='restock'?'badge-ok':log.type==='damage'?'badge-danger':'badge-info';
     div.innerHTML = '<span style="font-size:1.4rem;padding-top:2px">' + (typeIcons[log.type]||'📋') + '</span>'
       + '<div>'
-      + '<strong>' + esc(item ? item.name : 'Deleted Item') + '</strong>' + vBadge + vReason
+      + '<strong>' + esc(item ? item.name : 'Deleted Item') + '</strong>'
+      + (item && item.sku ? '<span style="font-size:11px;color:var(--muted);margin-left:6px;font-weight:500">SKU: ' + esc(item.sku) + '</span>' : '')
+      + vBadge + vReason
 
       + '<div class="log-meta">' + new Date(log.date).toLocaleString() + ' · By: ' + esc(log.by||'—') + (log.ref ? ' · Ref: ' + esc(log.ref) : '') + '</div>'
       + (log.notes ? '<div style="color:var(--muted);font-size:12px;margin-top:3px">' + esc(log.notes) + '</div>' : '')
@@ -2889,7 +2942,17 @@ async function loadRequests() {
   try {
     var r = await sb.from('supply_requests').select('*').order('createdAt', { ascending: false });
     if (r.error) { db_reqs = getReqsLocal(); REQ_TABLE_OK = false; }
-    else         { db_reqs = r.data || [];   REQ_TABLE_OK = true;  }
+    else {
+      REQ_TABLE_OK = true;
+      var sbData = r.data || [];
+      // Merge: Supabase is primary, but keep any localStorage-only items
+      // (requests that failed to sync due to schema differences are preserved)
+      var sbIds = new Set(sbData.map(function(x){ return x.id; }));
+      var localReqs = getReqsLocal();
+      var localOnly = localReqs.filter(function(x){ return !sbIds.has(x.id); });
+      db_reqs = sbData.concat(localOnly).sort(function(a,b){ return new Date(b.createdAt) - new Date(a.createdAt); });
+      saveReqsLocal(); // keep local cache in sync
+    }
   } catch(e) { db_reqs = getReqsLocal(); REQ_TABLE_OK = false; }
   updateRequestBadge();
 }
@@ -3290,10 +3353,19 @@ async function submitRequest() {
   };
 
   db_reqs.unshift(req);
+  saveReqsLocal(); // always save locally first
   if (sb && REQ_TABLE_OK !== false) {
     try { await sb.from('supply_requests').insert([req]); REQ_TABLE_OK = true; }
-    catch(e) { saveReqsLocal(); REQ_TABLE_OK = false; }
-  } else { saveReqsLocal(); }
+    catch(e) {
+      // Retry without newer fields that may not exist in older Supabase schemas
+      try {
+        var baseReq = Object.assign({}, req);
+        delete baseReq.priority;
+        await sb.from('supply_requests').insert([baseReq]);
+        REQ_TABLE_OK = true;
+      } catch(e2) { REQ_TABLE_OK = false; }
+    }
+  }
 
   closeModal('new-request-modal');
   updateRequestBadge();
@@ -3371,10 +3443,15 @@ async function confirmIssuance() {
   req.seenByRequestor = false;
   req.issuedQty    = issueQty;
 
+  saveReqsLocal(); // always persist locally
   if (sb && REQ_TABLE_OK !== false) {
     try { await sb.from('supply_requests').update({ status: req.status, confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, seenByRequestor: false, issuedQty: issueQty }).eq('id', req.id); }
-    catch(e) { saveReqsLocal(); }
-  } else { saveReqsLocal(); }
+    catch(e) {
+      // Retry without issuedQty in case column doesn't exist yet
+      try { await sb.from('supply_requests').update({ status: req.status, confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, seenByRequestor: false }).eq('id', req.id); }
+      catch(e2) {}
+    }
+  }
 
   logAudit('Request confirmed', req.itemName + ' x' + issueQty + ' → ' + req.requestedBy);
   closeModal('confirm-request-modal');
@@ -3459,16 +3536,22 @@ function renderRequests() {
   "itemName"      text not null,
   unit            text,
   qty             integer not null,
+  priority        text default 'normal',
   notes           text,
   "requestedBy"   text not null,
   status          text not null default 'pending',
   "createdAt"     timestamptz default now(),
   "confirmedBy"   text,
   "confirmedAt"   timestamptz,
+  "issuedQty"     integer,
   "rejectedBy"    text,
   "rejectedAt"    timestamptz,
   "seenByRequestor" boolean default false
-);</pre>
+);
+
+-- If table already exists, run these to add new columns:
+alter table supply_requests add column if not exists priority text default 'normal';
+alter table supply_requests add column if not exists "issuedQty" integer;</pre>
     </div>`;
   }
 
@@ -3657,6 +3740,8 @@ function doLogin() {
   switchTab('inventory');
   renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
   resetSessionTimer();
+  // Refresh requests on login so Users always see latest requestor submissions
+  loadRequests().then(function() { updateRequestBadge(); });
 }
 
 function logout() {
@@ -3748,6 +3833,9 @@ function applyRoleUI() {
   var auditNav = document.getElementById('nav-audit');
   if (auditNav) auditNav.style.display = currentRole === 'superuser' ? '' : 'none';
   show('btn-clear-audit', currentRole === 'superuser');
+
+  // Import button: superuser and user (write roles) only
+  show('btn-import-file', currentRole === 'superuser' || currentRole === 'user');
 
   updateMsgBadge();
   updateRequestBadge();
@@ -4126,13 +4214,14 @@ function exportInventoryCSV() {
 }
 
 function exportLogsCSV() {
-  var rows = [['Date','Item','Type','Qty','Performed By','Notes']];
+  var rows = [['Date','Item','SKU','Type','Qty','Performed By','Notes']];
   var logs = db.logs.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
   logs.forEach(function(log) {
     var item = db.items.find(function(i){ return i.id === log.itemId; });
     rows.push([
       new Date(log.date).toLocaleDateString('en-PH'),
       item ? item.name : log.itemId,
+      item ? (item.sku||'') : '',
       log.type||'',
       log.qty||0,
       log.by||'',
@@ -4157,6 +4246,237 @@ function exportCostReportCSV() {
     rows.push([it ? it.name : '?', it ? (it.category||'') : '', it ? (it.cost||0) : 0, entry.qty, entry.cost.toFixed(2)]);
   });
   downloadCSV('cost_report_' + new Date().toISOString().split('T')[0] + '.csv', rows);
+}
+
+// ─── IMPORT FILE ─────────────────────────────────────────────────────────────────
+var _importRows = []; // parsed + matched rows ready to apply
+
+function openImportModal() {
+  resetImportModal();
+  openModal('import-modal');
+}
+
+function resetImportModal() {
+  _importRows = [];
+  document.getElementById('import-preview-wrap').style.display = 'none';
+  document.getElementById('import-apply-btn').style.display = 'none';
+  document.getElementById('import-unmatched-wrap').style.display = 'none';
+  document.getElementById('import-preview-body').innerHTML = '';
+  // reset both file inputs so the same file can be re-selected
+  document.getElementById('import-file-input').value = '';
+  document.getElementById('import-file-input2').value = '';
+}
+
+function handleImportFile(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var ext = file.name.split('.').pop().toLowerCase();
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var data = e.target.result;
+    var rows = [];
+    try {
+      if (ext === 'csv') {
+        // Parse CSV manually (handles quoted fields)
+        var text = data;
+        var lines = text.split(/\r?\n/).filter(function(l){ return l.trim(); });
+        var headers = parseCSVLine(lines[0]);
+        for (var i = 1; i < lines.length; i++) {
+          var vals = parseCSVLine(lines[i]);
+          if (!vals.length || vals.every(function(v){ return !v.trim(); })) continue;
+          var obj = {};
+          headers.forEach(function(h, idx){ obj[h.trim()] = (vals[idx] || '').trim(); });
+          rows.push(obj);
+        }
+      } else {
+        // Excel
+        var wb = XLSX.read(data, { type: 'array' });
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      }
+    } catch(err) {
+      alert('Could not parse file: ' + err.message);
+      return;
+    }
+    previewImport(rows);
+  };
+  if (ext === 'csv') {
+    reader.readAsText(file);
+  } else {
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+function parseCSVLine(line) {
+  var result = [], cur = '', inQuotes = false;
+  for (var i = 0; i < line.length; i++) {
+    var c = line[i];
+    if (c === '"' && !inQuotes) { inQuotes = true; }
+    else if (c === '"' && inQuotes && line[i+1] === '"') { cur += '"'; i++; }
+    else if (c === '"' && inQuotes) { inQuotes = false; }
+    else if (c === ',' && !inQuotes) { result.push(cur); cur = ''; }
+    else { cur += c; }
+  }
+  result.push(cur);
+  return result;
+}
+
+function normalizeHeader(h) { return (h || '').toLowerCase().replace(/[\s\/\-_]/g, ''); }
+
+function previewImport(rows) {
+  if (!rows || !rows.length) { alert('No data found in file.'); return; }
+
+  // Detect columns (flexible header matching)
+  var sample = rows[0];
+  var headers = Object.keys(sample).map(normalizeHeader);
+
+  function findCol(keys) {
+    var origKeys = Object.keys(rows[0]);
+    for (var ki = 0; ki < keys.length; ki++) {
+      for (var hi = 0; hi < origKeys.length; hi++) {
+        if (normalizeHeader(origKeys[hi]) === keys[ki]) return origKeys[hi];
+      }
+    }
+    return null;
+  }
+
+  var colName  = findCol(['name','itemname','item']);
+  var colSku   = findCol(['sku','code','itemcode','skucode']);
+  var colQty   = findCol(['stock','qty','quantity','currentstock','currentqty']);
+  var colCost  = findCol(['costunit','cost','unitcost','costperunit','price']);
+
+  if (!colName && !colSku) {
+    alert('File must have a "Name" or "SKU" column to match items.');
+    return;
+  }
+
+  var matched = [], unmatched = [];
+
+  rows.forEach(function(row) {
+    var nameVal = colName ? (row[colName] || '').trim() : '';
+    var skuVal  = colSku  ? (row[colSku]  || '').trim() : '';
+    var qtyVal  = colQty  ? row[colQty]   : undefined;
+    var costVal = colCost ? row[colCost]  : undefined;
+
+    // Match: SKU first, then name
+    var item = null;
+    if (skuVal) item = db.items.find(function(i){ return i.sku && i.sku.toLowerCase() === skuVal.toLowerCase(); });
+    if (!item && nameVal) item = db.items.find(function(i){ return i.name.toLowerCase() === nameVal.toLowerCase(); });
+
+    if (!item) {
+      unmatched.push(nameVal || skuVal);
+      return;
+    }
+
+    var newQty  = (qtyVal  !== undefined && qtyVal  !== '') ? parseInt(qtyVal,  10) : undefined;
+    var newCost = (costVal !== undefined && costVal !== '') ? parseFloat(costVal) : undefined;
+
+    // Skip if nothing to update
+    if (newQty === undefined && newCost === undefined) return;
+    if (isNaN(newQty))  newQty  = undefined;
+    if (isNaN(newCost)) newCost = undefined;
+
+    matched.push({ item: item, newQty: newQty, newCost: newCost });
+  });
+
+  _importRows = matched;
+
+  // Build preview table
+  var tbody = document.getElementById('import-preview-body');
+  tbody.innerHTML = matched.map(function(r) {
+    var qtyChanged  = r.newQty  !== undefined && r.newQty  !== r.item.qty;
+    var costChanged = r.newCost !== undefined && r.newCost !== r.item.cost;
+    var hasChange = qtyChanged || costChanged;
+    var rowBg = hasChange ? '' : 'background:var(--surface2)';
+
+    function cell(old, nw, changed, isCost) {
+      var prefix = isCost ? '₱' : '';
+      if (nw === undefined) return '<td style="text-align:right;color:var(--muted)">—</td><td style="text-align:right;color:var(--muted)">—</td>';
+      var newStr = isCost ? fmt(nw) : fmtInt(nw);
+      var oldStr = isCost ? fmt(old||0) : fmtInt(old||0);
+      if (changed) {
+        return '<td style="text-align:right;color:var(--muted)">' + prefix + oldStr + '</td>'
+          + '<td style="text-align:right;color:var(--accent);font-weight:700">' + prefix + newStr + ' <span style="color:var(--muted);font-weight:400;font-size:10px">▶</span></td>';
+      }
+      return '<td style="text-align:right">' + prefix + oldStr + '</td><td style="text-align:right;color:var(--muted)">same</td>';
+    }
+
+    var statusBadge = hasChange
+      ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(22,163,74,.1);color:#16a34a">Will update</span>'
+      : '<span style="font-size:10px;color:var(--muted)">No change</span>';
+
+    return '<tr style="border-bottom:1px solid var(--border);' + rowBg + '">'
+      + '<td style="padding:8px 12px;font-weight:600;font-size:12px">' + esc(r.item.name) + (r.item.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.item.sku) + '</span>' : '') + '</td>'
+      + cell(r.item.qty,  r.newQty,  qtyChanged,  false)
+      + cell(r.item.cost, r.newCost, costChanged, true)
+      + '<td style="padding:8px 12px;text-align:center">' + statusBadge + '</td>'
+      + '</tr>';
+  }).join('') || '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--muted)">No matching items found.</td></tr>';
+
+  // Summary bar
+  var willUpdate = matched.filter(function(r){ return r.newQty !== undefined && r.newQty !== r.item.qty || r.newCost !== undefined && r.newCost !== r.item.cost; });
+  document.getElementById('import-summary-bar').innerHTML =
+    '✅ <strong>' + willUpdate.length + '</strong> item' + (willUpdate.length!==1?'s':'') + ' will be updated &nbsp;·&nbsp; '
+    + '<span style="color:var(--muted)">' + (matched.length - willUpdate.length) + ' unchanged &nbsp;·&nbsp; ' + unmatched.length + ' unmatched (skipped)</span>';
+
+  // Unmatched list
+  if (unmatched.length) {
+    document.getElementById('import-unmatched-wrap').style.display = '';
+    document.getElementById('import-unmatched-list').textContent = unmatched.join(', ');
+  }
+
+  document.getElementById('import-preview-wrap').style.display = '';
+  document.getElementById('import-apply-btn').style.display = willUpdate.length ? '' : 'none';
+}
+
+async function applyImport() {
+  var toUpdate = _importRows.filter(function(r) {
+    return (r.newQty !== undefined && r.newQty !== r.item.qty) || (r.newCost !== undefined && r.newCost !== r.item.cost);
+  });
+  if (!toUpdate.length) { closeModal('import-modal'); return; }
+
+  toUpdate.forEach(function(r) {
+    var changes = [];
+    if (r.newQty !== undefined && r.newQty !== r.item.qty) {
+      var diff = r.newQty - r.item.qty;
+      // Log an adjust entry for qty changes
+      var logEntry = {
+        id:     uid(),
+        itemId: r.item.id,
+        type:   'adjust',
+        qty:    Math.abs(diff),
+        absQty: r.newQty,
+        by:     currentUser.username,
+        date:   new Date().toISOString(),
+        ref:    '',
+        notes:  'Import update — was ' + r.item.qty + (r.item.unit ? ' ' + r.item.unit : '')
+      };
+      db.logs.push(logEntry);
+      r.item.qty = r.newQty;
+      changes.push('stock→' + r.newQty);
+    }
+    if (r.newCost !== undefined && r.newCost !== r.item.cost) {
+      changes.push('cost→₱' + r.newCost);
+      r.item.cost = r.newCost;
+    }
+    logAudit('Import update', r.item.name + ': ' + changes.join(', '));
+  });
+
+  save();
+  if (sb) {
+    try {
+      for (var i = 0; i < toUpdate.length; i++) {
+        var r = toUpdate[i];
+        await sb.from('items').update({ qty: r.item.qty, cost: r.item.cost }).eq('id', r.item.id);
+      }
+    } catch(e) {}
+  }
+
+  closeModal('import-modal');
+  resetImportModal();
+  updateSummary();
+  renderInventory();
+  alert('✅ ' + toUpdate.length + ' item' + (toUpdate.length!==1?'s':'') + ' updated successfully.');
 }
 
 // ─── MONTHLY COST REPORT ─────────────────────────────────────────────────────────
