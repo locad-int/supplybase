@@ -306,7 +306,9 @@
 <div class="main-wrap">
   <header class="topbar">
     <h1 class="page-title" id="page-title">INVENTORY</h1>
-    <div class="topbar-right"></div>
+    <div class="topbar-right">
+      <span id="last-refreshed" style="font-size:11px;color:var(--muted);display:none">Last refreshed: <span id="last-refreshed-time">—</span></span>
+    </div>
   </header>
   <main>
 
@@ -949,6 +951,44 @@
   </div>
 </div>
 
+<!-- ITEM HISTORY MODAL -->
+<div class="modal-bg" id="item-history-modal">
+  <div class="modal" style="max-width:700px;width:95%">
+    <h2 id="ihistory-title">Item History</h2>
+    <div id="ihistory-summary" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px;background:var(--bg);border-radius:8px;font-size:13px"></div>
+    <div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="ihistory-search" placeholder="Search notes, type, by…" oninput="filterItemHistory()" style="flex:1;min-width:160px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px">
+      <select id="ihistory-type" onchange="filterItemHistory()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px">
+        <option value="">All types</option>
+        <option value="use">Consumption</option>
+        <option value="restock">Restock</option>
+        <option value="damage">Damage/Loss</option>
+        <option value="adjust">Adjustment</option>
+      </select>
+      <button class="btn btn-secondary" style="font-size:12px" onclick="exportItemHistoryCSV()">⬇ Export CSV</button>
+    </div>
+    <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead style="position:sticky;top:0;background:var(--surface);z-index:1">
+          <tr style="border-bottom:2px solid var(--border)">
+            <th style="padding:8px 10px;text-align:left;color:var(--muted);font-weight:600">Date / Time</th>
+            <th style="padding:8px 10px;text-align:left;color:var(--muted);font-weight:600">Type</th>
+            <th style="padding:8px 10px;text-align:right;color:var(--muted);font-weight:600">Qty</th>
+            <th style="padding:8px 10px;text-align:right;color:var(--muted);font-weight:600">Stock After</th>
+            <th style="padding:8px 10px;text-align:left;color:var(--muted);font-weight:600">By</th>
+            <th style="padding:8px 10px;text-align:left;color:var(--muted);font-weight:600">Notes / Ref</th>
+          </tr>
+        </thead>
+        <tbody id="ihistory-tbody"></tbody>
+      </table>
+      <div id="ihistory-empty" class="hidden" style="text-align:center;padding:32px;color:var(--muted)">No transaction history found.</div>
+    </div>
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn btn-secondary" onclick="closeModal('item-history-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- REORDER MODAL -->
 <div class="modal-bg" id="reorder-modal">
   <div class="modal">
@@ -1124,6 +1164,18 @@
       </div>
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+    <div class="form-group full">
+      <label>Auto-refresh interval</label>
+      <select id="set-refresh-interval" style="width:100%">
+        <option value="1">Every 1 minute</option>
+        <option value="2">Every 2 minutes</option>
+        <option value="3">Every 3 minutes</option>
+        <option value="5">Every 5 minutes</option>
+        <option value="10">Every 10 minutes</option>
+        <option value="0">Disabled</option>
+      </select>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
     <p style="color:var(--muted);font-size:13px;margin-bottom:12px">Contact info shown to users when they need help.</p>
     <div class="form-grid">
       <div class="form-group full">
@@ -1272,14 +1324,50 @@ async function refreshData() {
     renderInventory(); renderLogs(); renderReorder(); renderRequests(); updateRequestBadge();
   } catch(e) { console.error('Refresh failed:', e); }
   if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; }
+  var lrEl = document.getElementById('last-refreshed');
+  var lrTime = document.getElementById('last-refreshed-time');
+  if (lrEl && lrTime) {
+    lrEl.style.display = '';
+    lrTime.textContent = new Date().toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+  }
 }
 
 var autoRefreshTimer = null;
+var REFRESH_INTERVAL_KEY = 'sb_refreshInterval';
+function getRefreshInterval() {
+  var v = parseInt(localStorage.getItem(REFRESH_INTERVAL_KEY));
+  return isNaN(v) ? 2 : v; // default 2 minutes
+}
+function saveRefreshIntervalLocal(mins) {
+  localStorage.setItem(REFRESH_INTERVAL_KEY, mins);
+}
+async function loadGlobalSettings() {
+  if (!sb) return;
+  try {
+    var r = await sb.from('settings').select('key, value');
+    if (r.error || !r.data) return;
+    r.data.forEach(function(row) {
+      if (row.key === 'refreshInterval') {
+        var v = parseInt(row.value);
+        if (!isNaN(v)) saveRefreshIntervalLocal(v);
+      }
+    });
+  } catch(e) {} // settings table may not exist yet — silently ignore
+}
+async function saveRefreshIntervalGlobal(mins) {
+  saveRefreshIntervalLocal(mins);
+  if (!sb) return;
+  try {
+    await sb.from('settings').upsert([{ key: 'refreshInterval', value: String(mins) }], { onConflict: 'key' });
+  } catch(e) {} // silently ignore if table not created yet
+}
 function startAutoRefresh() {
   stopAutoRefresh();
+  var mins = getRefreshInterval();
+  if (mins <= 0) return; // disabled
   autoRefreshTimer = setInterval(function() {
     if (currentRole) refreshData();
-  }, 1 * 60 * 1000); // every 1 minute
+  }, mins * 60 * 1000);
 }
 function stopAutoRefresh() {
   if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
@@ -1383,8 +1471,9 @@ async function load() {
         currentRole = currentUser.role;
         applyRoleUI();
         switchTab('inventory');
-        renderLogs(); renderReorder(); updateSummary(); updateMsgBadge(); startAutoRefresh();
+        renderLogs(); renderReorder(); updateSummary(); updateMsgBadge();
         resetSessionTimer();
+        loadGlobalSettings().then(function() { startAutoRefresh(); });
         loadRequests().then(function() { updateRequestBadge(); });
       } catch(e) { renderRecentLogins(); document.getElementById('login-overlay').style.display = 'flex'; }
     } else if (savedRole) {
@@ -1392,8 +1481,9 @@ async function load() {
       currentUser = { username: savedRole, role: savedRole };
       applyRoleUI();
       switchTab('inventory');
-      renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
+      renderLogs(); renderReorder(); updateSummary();
       resetSessionTimer();
+      loadGlobalSettings().then(function() { startAutoRefresh(); });
     } else {
       renderRecentLogins();
       document.getElementById('login-overlay').style.display = 'flex';
@@ -1455,9 +1545,25 @@ function filterInventory(status) {
 }
 
 // ─── SUMMARY ────────────────────────────────────────────────────────────────────
+// ─── MAX-REF (peak stock reference for level bar — stored on item.maxRef in Supabase) ──
+function getMaxRef(item) {
+  // fall back to current qty if maxRef not yet set (seeds on first read)
+  return Math.max(item.maxRef || item.qty || 1, 1);
+}
+async function updateMaxRef(item, newQty) {
+  if (!item) return;
+  if (!item.maxRef || newQty > item.maxRef) {
+    item.maxRef = newQty;
+    // persist to Supabase so all devices share the same reference
+    if (sb) {
+      try { await sb.from('items').update({ "maxRef": newQty }).eq('id', item.id); } catch(e) {}
+    }
+  }
+}
+
 function stockStatus(item) {
   if (item.qty <= 0) return 'danger';
-  var ref = Math.max(item.qty, (item.minQty || 0) * 2, 1);
+  var ref = getMaxRef(item);
   var pct = Math.round((item.qty / ref) * 100);
   if (pct <= 30) return 'warn';
   return 'ok';
@@ -1515,7 +1621,7 @@ function renderInventory() {
 
   items.forEach((item, i) => {
     const status = stockStatus(item);
-    const max = Math.max(item.qty, item.minQty * 2, 1);
+    const max = getMaxRef(item);
     const pct = Math.min(100, Math.round((item.qty / max) * 100));
     const barColor = status === 'danger' ? 'var(--danger)' : status === 'warn' ? 'var(--warn)' : 'var(--ok)';
     const badgeClass = status === 'danger' ? 'badge-danger' : status === 'warn' ? 'badge-warn' : 'badge-ok';
@@ -1525,6 +1631,7 @@ function renderInventory() {
     tr.title = 'Click to view details';
     tr.onclick = function() { openItemDetail(item.id); };
     var actionsHtml = '<div class="actions-cell">';
+    actionsHtml += '<button class="btn btn-icon btn-sm" title="Item history" onclick="event.stopPropagation();openItemHistory(\'' + item.id + '\')">📋</button>';
     if (can('log')) actionsHtml += '<button class="btn btn-icon btn-sm" title="Log usage" onclick="event.stopPropagation();openLogForItem(\'' + item.id + '\')">📝</button>';
     if (can('adjust')) actionsHtml += '<button class="btn btn-icon btn-sm" title="Stock adjustment" onclick="event.stopPropagation();openAdjust(\'' + item.id + '\')">⚖</button>';
     if (currentRole === 'superuser') actionsHtml += '<button class="btn btn-icon btn-sm" title="Edit item" onclick="event.stopPropagation();openItemModal(\'' + item.id + '\')">✏️</button>';
@@ -1613,6 +1720,7 @@ function saveItem() {
     db.items[idx] = { ...old, ...data };
     if (old.qty !== qty) {
       db.logs.push({ id: uid(), itemId: editItemId, type: 'adjust', qty: qty - old.qty, absQty: qty, by: 'Edit', date: new Date().toISOString(), notes: 'Item edited', ref: '' });
+      if (qty > old.qty) updateMaxRef(db.items[idx], qty);
     }
   } else {
     data.id = uid();
@@ -1620,6 +1728,9 @@ function saveItem() {
     data.createdAt = new Date().toISOString();
     db.items.push(data);
     db.logs.push({ id: uid(), itemId: data.id, type: 'restock', qty, absQty: qty, by: 'Initial', date: new Date().toISOString(), notes: 'Item created', ref: '' });
+    // seed maxRef with opening stock
+    data.maxRef = qty;
+    updateMaxRef(data, qty);
   }
   logAudit(editItemId ? 'Item edited' : 'Item created', document.getElementById('f-name').value);
   save();
@@ -1784,6 +1895,148 @@ function openItemModalFromDetail() {
   if (_itemDetailId) openItemModal(_itemDetailId);
 }
 
+// ─── ITEM HISTORY ──────────────────────────────────────────────────────────────
+var _historyItemId = null;
+var _historyLogs = [];
+
+var TYPE_META = {
+  use:     { label: 'Consumption', color: '#dc2626', bg: 'rgba(220,38,38,.08)',   sign: '-' },
+  damage:  { label: 'Damage/Loss', color: '#b45309', bg: 'rgba(180,83,9,.08)',    sign: '-' },
+  restock: { label: 'Restock',     color: '#16a34a', bg: 'rgba(22,163,74,.08)',   sign: '+' },
+  adjust:  { label: 'Adjustment',  color: '#2563eb', bg: 'rgba(37,99,235,.08)',   sign: '±' }
+};
+
+function openItemHistory(itemId) {
+  var item = db.items.find(function(i) { return i.id === itemId; });
+  if (!item) return;
+  _historyItemId = itemId;
+
+  // collect & sort logs oldest→newest to compute running balance
+  var allLogs = db.logs
+    .filter(function(l) { return l.itemId === itemId; })
+    .sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+
+  // compute running stock after each entry
+  var running = item.qty;
+  // walk backward from current qty
+  // first compute current qty as "running end", then walk forward
+  var withBalance = [];
+  // rebuild forward: start from earliest, accumulate
+  // We don't have a definitive opening stock, so we compute backwards:
+  // currentQty = qty after last log; walk backward to reconstruct
+  var reversed = allLogs.slice().reverse();
+  var bal = item.qty;
+  var balArr = [];
+  reversed.forEach(function(l) {
+    balArr.unshift(bal);
+    var qty = l.qty || 0;
+    if (l.type === 'use' || l.type === 'damage') bal += qty;
+    else if (l.type === 'restock') bal -= qty;
+    else if (l.type === 'adjust' && l.absQty != null) bal = l.absQty - (l.absQty - bal);
+    // adjust: absQty is stock after; qty is delta — we just restore
+  });
+
+  _historyLogs = allLogs.map(function(l, idx) {
+    return Object.assign({}, l, { _balanceAfter: balArr[idx] });
+  }).reverse(); // show newest first
+
+  // summary stats
+  var totalUse     = allLogs.filter(function(l){return l.type==='use';}).reduce(function(s,l){return s+l.qty;},0);
+  var totalRestock = allLogs.filter(function(l){return l.type==='restock';}).reduce(function(s,l){return s+l.qty;},0);
+  var totalDamage  = allLogs.filter(function(l){return l.type==='damage';}).reduce(function(s,l){return s+l.qty;},0);
+  var totalCost    = allLogs.filter(function(l){return l.type==='use'||l.type==='damage';}).reduce(function(s,l){return s+(l.qty*(item.cost||0));},0);
+
+  document.getElementById('ihistory-title').textContent = '📋 ' + item.name + ' — History';
+  document.getElementById('ihistory-summary').innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">CURRENT STOCK</span><strong style="font-size:1.1rem">' + fmtInt(item.qty) + ' ' + esc(item.unit||'') + '</strong></div>' +
+    '<div style="width:1px;background:var(--border)"></div>' +
+    '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">TOTAL CONSUMED</span><strong style="color:#dc2626">' + fmtInt(totalUse) + ' ' + esc(item.unit||'') + '</strong></div>' +
+    '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">TOTAL RESTOCKED</span><strong style="color:#16a34a">' + fmtInt(totalRestock) + ' ' + esc(item.unit||'') + '</strong></div>' +
+    (totalDamage ? '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">DAMAGE/LOSS</span><strong style="color:#b45309">' + fmtInt(totalDamage) + ' ' + esc(item.unit||'') + '</strong></div>' : '') +
+    '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">TOTAL COST VALUE</span><strong>' + fmtPHP(totalCost) + '</strong></div>' +
+    '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">TRANSACTIONS</span><strong>' + allLogs.length + '</strong></div>';
+
+  document.getElementById('ihistory-search').value = '';
+  document.getElementById('ihistory-type').value = '';
+  filterItemHistory();
+  openModal('item-history-modal');
+}
+
+function filterItemHistory() {
+  var q    = (document.getElementById('ihistory-search').value || '').toLowerCase();
+  var type = document.getElementById('ihistory-type').value;
+  var rows = _historyLogs.filter(function(l) {
+    if (type && l.type !== type) return false;
+    if (q) {
+      var haystack = [(l.notes||''), (l.by||''), (l.ref||''), (l.type||'')].join(' ').toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
+
+  var tbody = document.getElementById('ihistory-tbody');
+  var empty = document.getElementById('ihistory-empty');
+  tbody.innerHTML = '';
+
+  if (rows.length === 0) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  rows.forEach(function(l) {
+    var meta = TYPE_META[l.type] || { label: l.type, color: 'var(--muted)', bg: 'transparent', sign: '' };
+    var dateStr = l.date ? new Date(l.date).toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }) : '—';
+    var notesStr = [l.notes, l.ref ? ('Ref: ' + l.ref) : ''].filter(Boolean).join(' · ');
+    var qtySign  = (l.type === 'use' || l.type === 'damage') ? '−' : (l.type === 'restock' ? '+' : '±');
+    var tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--border)';
+    tr.innerHTML =
+      '<td style="padding:8px 10px;color:var(--muted);font-size:12px;white-space:nowrap">' + dateStr + '</td>' +
+      '<td style="padding:8px 10px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:' + meta.bg + ';color:' + meta.color + '">' + meta.label + '</span></td>' +
+      '<td style="padding:8px 10px;text-align:right;font-weight:700;color:' + meta.color + '">' + qtySign + fmtInt(l.qty) + '</td>' +
+      '<td style="padding:8px 10px;text-align:right;color:var(--muted);font-size:12px">' + (l._balanceAfter != null ? fmtInt(l._balanceAfter) : '—') + '</td>' +
+      '<td style="padding:8px 10px;font-size:12px">' + esc(l.by||'—') + '</td>' +
+      '<td style="padding:8px 10px;font-size:12px;color:var(--muted)">' + esc(notesStr||'—') + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function exportItemHistoryCSV() {
+  var item = db.items.find(function(i){ return i.id === _historyItemId; });
+  if (!item) return;
+  var type = document.getElementById('ihistory-type').value;
+  var q    = (document.getElementById('ihistory-search').value || '').toLowerCase();
+  var rows = _historyLogs.filter(function(l) {
+    if (type && l.type !== type) return false;
+    if (q) {
+      var hay = [(l.notes||''),(l.by||''),(l.ref||''),(l.type||'')].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  var headers = ['Date/Time','Item','SKU','Unit','Type','Qty','Stock After','Cost per Unit','Total Cost','By','Notes','Reference'];
+  var lines = [headers.join(',')];
+  rows.forEach(function(l) {
+    var meta = TYPE_META[l.type] || { label: l.type };
+    var isCost = l.type === 'use' || l.type === 'damage';
+    var line = [
+      l.date ? new Date(l.date).toLocaleString('en-PH',{hour12:true}) : '',
+      item.name, item.sku||'', item.unit||'',
+      meta.label, l.qty,
+      l._balanceAfter != null ? l._balanceAfter : '',
+      item.cost||0,
+      isCost ? ((l.qty*(item.cost||0)).toFixed(2)) : '',
+      l.by||'', l.notes||'', l.ref||''
+    ].map(function(v){ return '"'+String(v).replace(/"/g,'""')+'"'; });
+    lines.push(line.join(','));
+  });
+
+  var blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'history_' + (item.name||'item').replace(/\s+/g,'_') + '_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
 function openLogModal() {
   populateItemSelects();
   document.getElementById('lf-item').value = '';
@@ -1856,6 +2109,10 @@ function saveLog() {
   const newQty = Math.max(0, item.qty + delta);
   item.qty = newQty;
   item.updatedAt = new Date().toISOString();
+  // auto-calibrate peak reference on restock or upward adjust
+  if (type === 'restock' || (type === 'adjust' && newQty > originalQty)) {
+    updateMaxRef(item, newQty);
+  }
   const logDate = new Date().toISOString();
   const logEntry = {
     id: uid(), itemId, type,
@@ -3654,7 +3911,17 @@ function renderRequests() {
 
 -- If table already exists, run these to add new columns:
 alter table supply_requests add column if not exists priority text default 'normal';
-alter table supply_requests add column if not exists "issuedQty" integer;</pre>
+alter table supply_requests add column if not exists "issuedQty" integer;
+
+-- Required for level bar calibration (run once on your items table):
+alter table items add column if not exists "maxRef" integer;
+
+-- Required for global settings (refresh interval, etc.):
+create table if not exists settings (
+  key   text primary key,
+  value text
+);
+alter table settings disable row level security;</pre>
     </div>`;
   }
 
@@ -3841,9 +4108,9 @@ function doLogin() {
   document.getElementById('login-error').textContent = '';
   applyRoleUI();
   switchTab('inventory');
-  renderLogs(); renderReorder(); updateSummary(); startAutoRefresh();
+  renderLogs(); renderReorder(); updateSummary();
   resetSessionTimer();
-  // Refresh requests on login so Users always see latest requestor submissions
+  loadGlobalSettings().then(function() { startAutoRefresh(); });
   loadRequests().then(function() { updateRequestBadge(); });
 }
 
@@ -4000,6 +4267,7 @@ function openSettings() {
   document.getElementById('set-contact-email').value = c.email || '';
   document.getElementById('set-contact-phone').value = c.phone || '';
   document.getElementById('set-contact-note').value  = c.note  || '';
+  document.getElementById('set-refresh-interval').value = String(getRefreshInterval());
   openModal('settings-modal');
 }
 
@@ -4055,6 +4323,10 @@ function saveSettings() {
     note:  document.getElementById('set-contact-note').value.trim()
   };
   localStorage.setItem(CONTACT_INFO_KEY, JSON.stringify(c));
+
+  // Save refresh interval globally and restart timer
+  var refreshMins = parseInt(document.getElementById('set-refresh-interval').value) || 0;
+  saveRefreshIntervalGlobal(refreshMins).then(function() { startAutoRefresh(); });
 
   logAudit('Settings changed', 'Passwords/username updated');
   document.getElementById('settings-msg').textContent = 'Settings saved.';
@@ -4555,7 +4827,9 @@ async function applyImport() {
         notes:  'Import update — was ' + r.item.qty + (r.item.unit ? ' ' + r.item.unit : '')
       };
       db.logs.push(logEntry);
+      var prevQty = r.item.qty;
       r.item.qty = r.newQty;
+      if (r.newQty > prevQty) updateMaxRef(r.item, r.newQty);
       changes.push('stock→' + r.newQty);
     }
     if (r.newCost !== undefined && r.newCost !== r.item.cost) {
