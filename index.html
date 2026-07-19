@@ -741,7 +741,7 @@
     </div>
     <div id="import-format-hint" style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">
       <strong>Required column:</strong> <code>Name</code> or <code>SKU</code> — used to match items.<br>
-      <strong>Optional columns:</strong> <code>Stock</code> (or <code>Qty</code>) · <code>Cost/Unit</code> (or <code>Cost</code>) · <code>Supplier</code> — only provided columns will be updated.<br>
+      <strong>Optional columns:</strong> <code>Stock</code> (or <code>Qty</code>) · <code>Cost/Unit</code> · <code>Category</code> · <code>Supplier</code> — only provided columns will be updated.<br>
       <strong>REMARKS column:</strong> Rows with <em>"for removal"</em> in REMARKS will be <span style="color:var(--danger)">deleted</span> from the tracker.<br>
       <span style="color:var(--accent)">Tip: Export the current inventory CSV to use as a template.</span>
     </div>
@@ -4721,6 +4721,7 @@ function previewImport(rows) {
   var colQty      = findCol(['stock','qty','quantity','currentstock','currentqty']);
   var colCost     = findCol(['costunit','cost','unitcost','costperunit','price']);
   var colSupplier = findCol(['supplier','vendor','suppliername']);
+  var colCategory = findCol(['category','cat','itemcategory','type']);
   var colRemarks  = findCol(['remarks','remark','notes','comment','action']);
 
   if (!colName && !colSku) {
@@ -4736,6 +4737,7 @@ function previewImport(rows) {
     var qtyVal      = colQty      ? row[colQty]       : undefined;
     var costVal     = colCost     ? row[colCost]       : undefined;
     var supplierVal = colSupplier ? (row[colSupplier] || '').trim() : undefined;
+    var categoryVal = colCategory ? (row[colCategory] || '').trim() : undefined;
     var remarksVal  = colRemarks  ? (row[colRemarks]  || '').trim().toLowerCase() : '';
 
     // Match: SKU first, then name
@@ -4753,14 +4755,15 @@ function previewImport(rows) {
     var newQty      = (qtyVal  !== undefined && qtyVal  !== '') ? parseInt(qtyVal,  10) : undefined;
     var newCost     = (costVal !== undefined && costVal !== '') ? parseFloat(costVal) : undefined;
     var newSupplier = (supplierVal !== undefined && supplierVal !== '' && supplierVal !== (item.supplier || '')) ? supplierVal : undefined;
+    var newCategory = (categoryVal !== undefined && categoryVal !== '' && categoryVal !== (item.category || '')) ? categoryVal : undefined;
 
     if (isNaN(newQty))  newQty  = undefined;
     if (isNaN(newCost)) newCost = undefined;
 
     // Skip if nothing to do
-    if (!toDelete && newQty === undefined && newCost === undefined && newSupplier === undefined) return;
+    if (!toDelete && newQty === undefined && newCost === undefined && newSupplier === undefined && newCategory === undefined) return;
 
-    matched.push({ item: item, newQty: newQty, newCost: newCost, newSupplier: newSupplier, toDelete: toDelete });
+    matched.push({ item: item, newQty: newQty, newCost: newCost, newSupplier: newSupplier, newCategory: newCategory, toDelete: toDelete });
   });
 
   _importRows = matched;
@@ -4779,7 +4782,8 @@ function previewImport(rows) {
     var qtyChanged      = r.newQty      !== undefined && r.newQty      !== r.item.qty;
     var costChanged     = r.newCost     !== undefined && r.newCost     !== r.item.cost;
     var supplierChanged = r.newSupplier !== undefined;
-    var hasChange = qtyChanged || costChanged || supplierChanged;
+    var categoryChanged = r.newCategory !== undefined;
+    var hasChange = qtyChanged || costChanged || supplierChanged || categoryChanged;
     var rowBg = hasChange ? '' : 'background:var(--surface2)';
 
     function cell(old, nw, changed, isCost) {
@@ -4798,10 +4802,11 @@ function previewImport(rows) {
       ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(22,163,74,.1);color:#16a34a">Will update</span>'
       : '<span style="font-size:10px;color:var(--muted)">No change</span>';
 
-    var supplierNote = supplierChanged ? '<br><span style="font-size:10px;color:var(--accent)">Supplier: ' + esc(r.newSupplier) + '</span>' : '';
+    var supplierNote = supplierChanged ? '<br><span style="font-size:10px;color:var(--accent)">Supplier → ' + esc(r.newSupplier) + '</span>' : '';
+    var categoryNote = categoryChanged ? '<br><span style="font-size:10px;color:var(--accent)">Category: ' + esc(r.item.category||'—') + ' → ' + esc(r.newCategory) + '</span>' : '';
 
     return '<tr style="border-bottom:1px solid var(--border);' + rowBg + '">'
-      + '<td style="padding:8px 12px;font-weight:600;font-size:12px">' + esc(r.item.name) + (r.item.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.item.sku) + '</span>' : '') + supplierNote + '</td>'
+      + '<td style="padding:8px 12px;font-weight:600;font-size:12px">' + esc(r.item.name) + (r.item.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.item.sku) + '</span>' : '') + categoryNote + supplierNote + '</td>'
       + cell(r.item.qty,  r.newQty,  qtyChanged,  false)
       + cell(r.item.cost, r.newCost, costChanged, true)
       + '<td style="padding:8px 12px;text-align:center">' + statusBadge + '</td>'
@@ -4835,7 +4840,8 @@ async function applyImport() {
     return !r.toDelete && (
       (r.newQty !== undefined && r.newQty !== r.item.qty) ||
       (r.newCost !== undefined && r.newCost !== r.item.cost) ||
-      (r.newSupplier !== undefined)
+      (r.newSupplier !== undefined) ||
+      (r.newCategory !== undefined)
     );
   });
   if (!toDelete.length && !toUpdate.length) { closeModal('import-modal'); return; }
@@ -4878,6 +4884,10 @@ async function applyImport() {
       changes.push('supplier→' + r.newSupplier);
       r.item.supplier = r.newSupplier;
     }
+    if (r.newCategory !== undefined) {
+      changes.push('category: ' + (r.item.category||'—') + '→' + r.newCategory);
+      r.item.category = r.newCategory;
+    }
     logAudit('Import update', r.item.name + ': ' + changes.join(', '));
   });
 
@@ -4893,7 +4903,7 @@ async function applyImport() {
       // Update in Supabase
       for (var u = 0; u < toUpdate.length; u++) {
         var r = toUpdate[u];
-        await sb.from('items').update({ qty: r.item.qty, cost: r.item.cost, supplier: r.item.supplier }).eq('id', r.item.id);
+        await sb.from('items').update({ qty: r.item.qty, cost: r.item.cost, supplier: r.item.supplier, category: r.item.category }).eq('id', r.item.id);
       }
     } catch(e) {}
   }
