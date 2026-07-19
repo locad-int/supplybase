@@ -400,9 +400,22 @@
       </div>
       <button id="btn-log-usage" class="btn btn-primary" onclick="openLogModal()">+ Log Usage</button>
       <button class="btn btn-secondary" onclick="exportLogsCSV()" style="font-size:12px">⬇ Export CSV</button>
+      <button id="btn-clear-log" class="btn btn-danger btn-sm" onclick="clearLog()" style="font-size:12px;display:none">🗑 Clear Log</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:0 0 10px 0">
+      <span style="font-size:12px;color:var(--muted);font-weight:600">Date range:</span>
+      <input type="date" id="log-date-from" onchange="renderLogs()" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px">
+      <span style="font-size:12px;color:var(--muted)">to</span>
+      <input type="date" id="log-date-to" onchange="renderLogs()" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px">
+      <button class="btn btn-secondary" onclick="setLogDatePreset('today')"     style="font-size:11px;padding:4px 10px">Today</button>
+      <button class="btn btn-secondary" onclick="setLogDatePreset('week')"      style="font-size:11px;padding:4px 10px">This Week</button>
+      <button class="btn btn-secondary" onclick="setLogDatePreset('month')"     style="font-size:11px;padding:4px 10px">This Month</button>
+      <button class="btn btn-secondary" onclick="setLogDatePreset('lastmonth')" style="font-size:11px;padding:4px 10px">Last Month</button>
+      <button class="btn btn-secondary" onclick="setLogDatePreset('clear')"     style="font-size:11px;padding:4px 10px;color:var(--muted)">✕ Clear</button>
+      <span id="log-date-count" style="font-size:11px;color:var(--muted)"></span>
     </div>
     <div id="log-list"></div>
-    <div class="empty hidden" id="log-empty"><div class="icon">📝</div><p>No log entries yet.</p></div>
+    <div class="empty hidden" id="log-empty"><div class="icon">📝</div><p>No log entries found.</p></div>
   </div>
 
   <!-- REORDER TAB -->
@@ -1751,20 +1764,55 @@ function deleteItem(id) {
 }
 
 // ─── LOG ────────────────────────────────────────────────────────────────────────
+function setLogDatePreset(preset) {
+  var now = new Date();
+  var from, to;
+  if (preset === 'today') {
+    from = to = now.toISOString().slice(0, 10);
+  } else if (preset === 'week') {
+    var day = now.getDay();
+    var monday = new Date(now); monday.setDate(now.getDate() - ((day + 6) % 7));
+    from = monday.toISOString().slice(0, 10);
+    to   = now.toISOString().slice(0, 10);
+  } else if (preset === 'month') {
+    from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    to   = now.toISOString().slice(0, 10);
+  } else if (preset === 'lastmonth') {
+    var lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    from = lm.toISOString().slice(0, 10);
+    to   = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+  } else {
+    from = to = '';
+  }
+  document.getElementById('log-date-from').value = from;
+  document.getElementById('log-date-to').value   = to;
+  renderLogs();
+}
+
 function renderLogs() {
   const q = document.getElementById('log-search').value.toLowerCase();
   const fi = document.getElementById('log-filter-item').value;
   const activeTypes = [...document.querySelectorAll('#log-type-chips .status-chip.active')].map(c => c.dataset.type);
+  const fromVal = document.getElementById('log-date-from')?.value;
+  const toVal   = document.getElementById('log-date-to')?.value;
+  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+  const to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+
   let logs = db.logs.filter(l => {
     const item = db.items.find(i => i.id === l.itemId);
     if (fi && l.itemId !== fi) return false;
     if (activeTypes.length && !activeTypes.includes(l.type)) return false;
+    if (from && new Date(l.date) < from) return false;
+    if (to   && new Date(l.date) > to)   return false;
     if (q) {
       const itemName = item?.name?.toLowerCase() || '';
       if (!itemName.includes(q) && !l.by?.toLowerCase().includes(q) && !l.notes?.toLowerCase().includes(q)) return false;
     }
     return true;
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  var countEl = document.getElementById('log-date-count');
+  if (countEl) countEl.textContent = (from || to) ? logs.length + ' entr' + (logs.length !== 1 ? 'ies' : 'y') + ' found' : '';
 
   const list = document.getElementById('log-list');
   const empty = document.getElementById('log-empty');
@@ -4207,6 +4255,7 @@ function applyRoleUI() {
 
   // Import button: superuser and user (write roles) only
   show('btn-import-file', currentRole === 'superuser' || currentRole === 'user');
+  show('btn-clear-log', currentRole === 'superuser');
 
   updateMsgBadge();
   updateRequestBadge();
@@ -4587,6 +4636,56 @@ function exportInventoryCSV() {
     rows.push([i+1, item.name, item.sku||'', item.category||'', item.qty, item.unit||'', item.minQty||0, item.cost||0, statusLabel, item.location||'']);
   });
   downloadCSV('inventory_' + new Date().toISOString().split('T')[0] + '.csv', rows);
+}
+
+function clearLog() {
+  var fromVal = document.getElementById('log-date-from').value;
+  var toVal   = document.getElementById('log-date-to').value;
+  var hasFilter = fromVal || toVal;
+
+  var msg = hasFilter
+    ? 'Delete all log entries from ' + (fromVal || '—') + ' to ' + (toVal || 'now') + '?\n\nThis cannot be undone.'
+    : 'Delete ALL log entries?\n\nThis will clear the entire usage history and cannot be undone.';
+
+  if (!confirm(msg)) return;
+
+  var from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+  var to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+
+  var removed = 0;
+  if (from || to) {
+    var before = db.logs.length;
+    db.logs = db.logs.filter(function(l) {
+      var d = new Date(l.date);
+      if (from && d < from) return true;
+      if (to   && d > to)   return true;
+      return false;
+    });
+    removed = before - db.logs.length;
+  } else {
+    removed = db.logs.length;
+    db.logs = [];
+  }
+
+  logAudit('Clear Log', removed + ' entries deleted' + (hasFilter ? ' (' + (fromVal||'start') + ' to ' + (toVal||'now') + ')' : ' (all)'));
+  save();
+
+  if (sb) {
+    try {
+      if (from || to) {
+        // Supabase: delete by date range
+        var q = sb.from('logs').delete();
+        if (from) q = q.gte('date', from.toISOString());
+        if (to)   q = q.lte('date', to.toISOString());
+        q.then(function(){}).catch(function(){});
+      } else {
+        sb.from('logs').delete().neq('id', '').then(function(){}).catch(function(){});
+      }
+    } catch(e) {}
+  }
+
+  renderLogs();
+  alert('✅ ' + removed + ' log entr' + (removed !== 1 ? 'ies' : 'y') + ' deleted.');
 }
 
 function exportLogsCSV() {
