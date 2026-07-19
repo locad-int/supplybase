@@ -306,8 +306,9 @@
 <div class="main-wrap">
   <header class="topbar">
     <h1 class="page-title" id="page-title">INVENTORY</h1>
-    <div class="topbar-right">
+    <div class="topbar-right" style="display:flex;align-items:center;gap:12px">
       <span id="last-refreshed" style="font-size:11px;color:var(--muted);display:none">Last refreshed: <span id="last-refreshed-time">—</span></span>
+      <span id="realtime-dot" title="Realtime: connecting…" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;cursor:default"></span>
     </div>
   </header>
   <main>
@@ -1387,6 +1388,103 @@ function stopAutoRefresh() {
   if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
 }
 
+// ─── SUPABASE REALTIME ────────────────────────────────────────────────────────
+var _realtimeChannel = null;
+
+function startRealtime() {
+  if (!sb || _realtimeChannel) return;
+  try {
+    _realtimeChannel = sb.channel('supplybase-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, function(payload) {
+        handleRealtimeChange('items', payload);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'logs' }, function(payload) {
+        handleRealtimeChange('logs', payload);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reorders' }, function(payload) {
+        handleRealtimeChange('reorders', payload);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'supply_requests' }, function(payload) {
+        handleRealtimeChange('supply_requests', payload);
+      })
+      .subscribe(function(status) {
+        var dot = document.getElementById('realtime-dot');
+        if (dot) {
+          dot.style.background = status === 'SUBSCRIBED' ? '#16a34a' : '#b45309';
+          dot.title = 'Realtime: ' + status;
+        }
+      });
+  } catch(e) { console.warn('Realtime failed to start:', e); }
+}
+
+function stopRealtime() {
+  if (_realtimeChannel) {
+    try { sb.removeChannel(_realtimeChannel); } catch(e) {}
+    _realtimeChannel = null;
+  }
+  var dot = document.getElementById('realtime-dot');
+  if (dot) { dot.style.background = 'var(--muted)'; dot.title = 'Realtime: disconnected'; }
+}
+
+function handleRealtimeChange(table, payload) {
+  var ev  = payload.eventType; // INSERT, UPDATE, DELETE
+  var row = payload.new || {};
+  var old = payload.old || {};
+
+  if (table === 'items') {
+    if (ev === 'INSERT') {
+      if (!db.items.find(function(i){ return i.id === row.id; })) db.items.push(row);
+    } else if (ev === 'UPDATE') {
+      var idx = db.items.findIndex(function(i){ return i.id === row.id; });
+      if (idx >= 0) db.items[idx] = row; else db.items.push(row);
+    } else if (ev === 'DELETE') {
+      db.items = db.items.filter(function(i){ return i.id !== old.id; });
+    }
+    updateSummary(); renderInventory();
+
+  } else if (table === 'logs') {
+    if (ev === 'INSERT') {
+      if (!db.logs.find(function(l){ return l.id === row.id; })) db.logs.push(row);
+    } else if (ev === 'UPDATE') {
+      var idx2 = db.logs.findIndex(function(l){ return l.id === row.id; });
+      if (idx2 >= 0) db.logs[idx2] = row; else db.logs.push(row);
+    } else if (ev === 'DELETE') {
+      db.logs = db.logs.filter(function(l){ return l.id !== old.id; });
+    }
+    renderLogs();
+
+  } else if (table === 'reorders') {
+    if (ev === 'INSERT') {
+      if (!db.reorders.find(function(r){ return r.id === row.id; })) db.reorders.push(row);
+    } else if (ev === 'UPDATE') {
+      var idx3 = db.reorders.findIndex(function(r){ return r.id === row.id; });
+      if (idx3 >= 0) db.reorders[idx3] = row; else db.reorders.push(row);
+    } else if (ev === 'DELETE') {
+      db.reorders = db.reorders.filter(function(r){ return r.id !== old.id; });
+    }
+    renderReorder();
+
+  } else if (table === 'supply_requests') {
+    if (ev === 'INSERT') {
+      if (!db_reqs.find(function(r){ return r.id === row.id; })) db_reqs.unshift(row);
+    } else if (ev === 'UPDATE') {
+      var idx4 = db_reqs.findIndex(function(r){ return r.id === row.id; });
+      if (idx4 >= 0) db_reqs[idx4] = row; else db_reqs.unshift(row);
+    } else if (ev === 'DELETE') {
+      db_reqs = db_reqs.filter(function(r){ return r.id !== old.id; });
+    }
+    renderRequests(); updateRequestBadge();
+  }
+
+  // Update last-refreshed timestamp
+  var lrEl = document.getElementById('last-refreshed');
+  var lrTime = document.getElementById('last-refreshed-time');
+  if (lrEl && lrTime) {
+    lrEl.style.display = '';
+    lrTime.textContent = new Date().toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }) + ' (live)';
+  }
+}
+
 var _saveTimer = null;
 function save() {
   updateSummary();
@@ -1489,6 +1587,7 @@ async function load() {
         resetSessionTimer();
         loadGlobalSettings().then(function() { startAutoRefresh(); });
         loadRequests().then(function() { updateRequestBadge(); });
+        startRealtime();
       } catch(e) { renderRecentLogins(); document.getElementById('login-overlay').style.display = 'flex'; }
     } else if (savedRole) {
       currentRole = savedRole;
@@ -1498,6 +1597,7 @@ async function load() {
       renderLogs(); renderReorder(); updateSummary();
       resetSessionTimer();
       loadGlobalSettings().then(function() { startAutoRefresh(); });
+      startRealtime();
     } else {
       renderRecentLogins();
       document.getElementById('login-overlay').style.display = 'flex';
@@ -3970,7 +4070,13 @@ create table if not exists settings (
   key   text primary key,
   value text
 );
-alter table settings disable row level security;</pre>
+alter table settings disable row level security;
+
+-- Required for Realtime live updates (run once):
+alter publication supabase_realtime add table items;
+alter publication supabase_realtime add table logs;
+alter publication supabase_realtime add table reorders;
+alter publication supabase_realtime add table supply_requests;</pre>
     </div>`;
   }
 
@@ -4161,10 +4267,12 @@ function doLogin() {
   resetSessionTimer();
   loadGlobalSettings().then(function() { startAutoRefresh(); });
   loadRequests().then(function() { updateRequestBadge(); });
+  startRealtime();
 }
 
 function logout() {
   stopAutoRefresh();
+  stopRealtime();
   stopSessionTimer();
   currentRole = null;
   currentUser = null;
