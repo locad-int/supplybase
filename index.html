@@ -741,7 +741,8 @@
     </div>
     <div id="import-format-hint" style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">
       <strong>Required column:</strong> <code>Name</code> or <code>SKU</code> — used to match items.<br>
-      <strong>Optional columns:</strong> <code>Stock</code> (or <code>Qty</code>) · <code>Cost/Unit</code> (or <code>Cost</code>) — only provided columns will be updated.<br>
+      <strong>Optional columns:</strong> <code>Stock</code> (or <code>Qty</code>) · <code>Cost/Unit</code> (or <code>Cost</code>) · <code>Supplier</code> — only provided columns will be updated.<br>
+      <strong>REMARKS column:</strong> Rows with <em>"for removal"</em> in REMARKS will be <span style="color:var(--danger)">deleted</span> from the tracker.<br>
       <span style="color:var(--accent)">Tip: Export the current inventory CSV to use as a template.</span>
     </div>
     <div id="import-preview-wrap" style="display:none">
@@ -4715,10 +4716,12 @@ function previewImport(rows) {
     return null;
   }
 
-  var colName  = findCol(['name','itemname','item']);
-  var colSku   = findCol(['sku','code','itemcode','skucode']);
-  var colQty   = findCol(['stock','qty','quantity','currentstock','currentqty']);
-  var colCost  = findCol(['costunit','cost','unitcost','costperunit','price']);
+  var colName     = findCol(['name','itemname','item']);
+  var colSku      = findCol(['sku','code','itemcode','skucode']);
+  var colQty      = findCol(['stock','qty','quantity','currentstock','currentqty']);
+  var colCost     = findCol(['costunit','cost','unitcost','costperunit','price']);
+  var colSupplier = findCol(['supplier','vendor','suppliername']);
+  var colRemarks  = findCol(['remarks','remark','notes','comment','action']);
 
   if (!colName && !colSku) {
     alert('File must have a "Name" or "SKU" column to match items.');
@@ -4728,10 +4731,12 @@ function previewImport(rows) {
   var matched = [], unmatched = [];
 
   rows.forEach(function(row) {
-    var nameVal = colName ? (row[colName] || '').trim() : '';
-    var skuVal  = colSku  ? (row[colSku]  || '').trim() : '';
-    var qtyVal  = colQty  ? row[colQty]   : undefined;
-    var costVal = colCost ? row[colCost]  : undefined;
+    var nameVal     = colName     ? (row[colName]     || '').trim() : '';
+    var skuVal      = colSku      ? (row[colSku]      || '').trim() : '';
+    var qtyVal      = colQty      ? row[colQty]       : undefined;
+    var costVal     = colCost     ? row[colCost]       : undefined;
+    var supplierVal = colSupplier ? (row[colSupplier] || '').trim() : undefined;
+    var remarksVal  = colRemarks  ? (row[colRemarks]  || '').trim().toLowerCase() : '';
 
     // Match: SKU first, then name
     var item = null;
@@ -4743,15 +4748,19 @@ function previewImport(rows) {
       return;
     }
 
-    var newQty  = (qtyVal  !== undefined && qtyVal  !== '') ? parseInt(qtyVal,  10) : undefined;
-    var newCost = (costVal !== undefined && costVal !== '') ? parseFloat(costVal) : undefined;
+    var toDelete = remarksVal.includes('for removal') || remarksVal === 'delete' || remarksVal === 'remove';
 
-    // Skip if nothing to update
-    if (newQty === undefined && newCost === undefined) return;
+    var newQty      = (qtyVal  !== undefined && qtyVal  !== '') ? parseInt(qtyVal,  10) : undefined;
+    var newCost     = (costVal !== undefined && costVal !== '') ? parseFloat(costVal) : undefined;
+    var newSupplier = (supplierVal !== undefined && supplierVal !== '' && supplierVal !== (item.supplier || '')) ? supplierVal : undefined;
+
     if (isNaN(newQty))  newQty  = undefined;
     if (isNaN(newCost)) newCost = undefined;
 
-    matched.push({ item: item, newQty: newQty, newCost: newCost });
+    // Skip if nothing to do
+    if (!toDelete && newQty === undefined && newCost === undefined && newSupplier === undefined) return;
+
+    matched.push({ item: item, newQty: newQty, newCost: newCost, newSupplier: newSupplier, toDelete: toDelete });
   });
 
   _importRows = matched;
@@ -4759,9 +4768,18 @@ function previewImport(rows) {
   // Build preview table
   var tbody = document.getElementById('import-preview-body');
   tbody.innerHTML = matched.map(function(r) {
-    var qtyChanged  = r.newQty  !== undefined && r.newQty  !== r.item.qty;
-    var costChanged = r.newCost !== undefined && r.newCost !== r.item.cost;
-    var hasChange = qtyChanged || costChanged;
+    if (r.toDelete) {
+      return '<tr style="border-bottom:1px solid var(--border);background:rgba(220,38,38,.05)">'
+        + '<td style="padding:8px 12px;font-weight:600;font-size:12px;color:var(--danger)">' + esc(r.item.name) + (r.item.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.item.sku) + '</span>' : '') + '</td>'
+        + '<td colspan="4" style="padding:8px 12px;color:var(--muted);font-size:11px">Stock: ' + fmtInt(r.item.qty) + ' · Category: ' + esc(r.item.category||'—') + '</td>'
+        + '<td style="padding:8px 12px;text-align:center"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(220,38,38,.12);color:var(--danger)">🗑 Will delete</span></td>'
+        + '</tr>';
+    }
+
+    var qtyChanged      = r.newQty      !== undefined && r.newQty      !== r.item.qty;
+    var costChanged     = r.newCost     !== undefined && r.newCost     !== r.item.cost;
+    var supplierChanged = r.newSupplier !== undefined;
+    var hasChange = qtyChanged || costChanged || supplierChanged;
     var rowBg = hasChange ? '' : 'background:var(--surface2)';
 
     function cell(old, nw, changed, isCost) {
@@ -4780,8 +4798,10 @@ function previewImport(rows) {
       ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(22,163,74,.1);color:#16a34a">Will update</span>'
       : '<span style="font-size:10px;color:var(--muted)">No change</span>';
 
+    var supplierNote = supplierChanged ? '<br><span style="font-size:10px;color:var(--accent)">Supplier: ' + esc(r.newSupplier) + '</span>' : '';
+
     return '<tr style="border-bottom:1px solid var(--border);' + rowBg + '">'
-      + '<td style="padding:8px 12px;font-weight:600;font-size:12px">' + esc(r.item.name) + (r.item.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.item.sku) + '</span>' : '') + '</td>'
+      + '<td style="padding:8px 12px;font-weight:600;font-size:12px">' + esc(r.item.name) + (r.item.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.item.sku) + '</span>' : '') + supplierNote + '</td>'
       + cell(r.item.qty,  r.newQty,  qtyChanged,  false)
       + cell(r.item.cost, r.newCost, costChanged, true)
       + '<td style="padding:8px 12px;text-align:center">' + statusBadge + '</td>'
@@ -4789,10 +4809,12 @@ function previewImport(rows) {
   }).join('') || '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--muted)">No matching items found.</td></tr>';
 
   // Summary bar
-  var willUpdate = matched.filter(function(r){ return r.newQty !== undefined && r.newQty !== r.item.qty || r.newCost !== undefined && r.newCost !== r.item.cost; });
+  var willUpdate  = matched.filter(function(r){ return !r.toDelete && (r.newQty !== undefined && r.newQty !== r.item.qty || r.newCost !== undefined && r.newCost !== r.item.cost || r.newSupplier !== undefined); });
+  var willDelete  = matched.filter(function(r){ return r.toDelete; });
   document.getElementById('import-summary-bar').innerHTML =
-    '✅ <strong>' + willUpdate.length + '</strong> item' + (willUpdate.length!==1?'s':'') + ' will be updated &nbsp;·&nbsp; '
-    + '<span style="color:var(--muted)">' + (matched.length - willUpdate.length) + ' unchanged &nbsp;·&nbsp; ' + unmatched.length + ' unmatched (skipped)</span>';
+    '✅ <strong>' + willUpdate.length + '</strong> will update &nbsp;·&nbsp; '
+    + '<span style="color:var(--danger)">🗑 <strong>' + willDelete.length + '</strong> will delete</span> &nbsp;·&nbsp; '
+    + '<span style="color:var(--muted)">' + (matched.length - willUpdate.length - willDelete.length) + ' unchanged &nbsp;·&nbsp; ' + unmatched.length + ' unmatched (skipped)</span>';
 
   // Unmatched list
   if (unmatched.length) {
@@ -4801,20 +4823,36 @@ function previewImport(rows) {
   }
 
   document.getElementById('import-preview-wrap').style.display = '';
-  document.getElementById('import-apply-btn').style.display = willUpdate.length ? '' : 'none';
+  document.getElementById('import-apply-btn').style.display = (willUpdate.length || willDelete.length) ? '' : 'none';
+  document.getElementById('import-apply-btn').textContent = willDelete.length
+    ? '✓ Apply (' + willUpdate.length + ' updates + ' + willDelete.length + ' deletions)'
+    : '✓ Apply Updates';
 }
 
 async function applyImport() {
+  var toDelete = _importRows.filter(function(r) { return r.toDelete; });
   var toUpdate = _importRows.filter(function(r) {
-    return (r.newQty !== undefined && r.newQty !== r.item.qty) || (r.newCost !== undefined && r.newCost !== r.item.cost);
+    return !r.toDelete && (
+      (r.newQty !== undefined && r.newQty !== r.item.qty) ||
+      (r.newCost !== undefined && r.newCost !== r.item.cost) ||
+      (r.newSupplier !== undefined)
+    );
   });
-  if (!toUpdate.length) { closeModal('import-modal'); return; }
+  if (!toDelete.length && !toUpdate.length) { closeModal('import-modal'); return; }
 
+  // ── Process deletions ──
+  toDelete.forEach(function(r) {
+    db.items    = db.items.filter(function(i){ return i.id !== r.item.id; });
+    db.logs     = db.logs.filter(function(l){ return l.itemId !== r.item.id; });
+    db.reorders = db.reorders.filter(function(ro){ return ro.itemId !== r.item.id; });
+    logAudit('Import delete', r.item.name);
+  });
+
+  // ── Process updates ──
   toUpdate.forEach(function(r) {
     var changes = [];
     if (r.newQty !== undefined && r.newQty !== r.item.qty) {
       var diff = r.newQty - r.item.qty;
-      // Log an adjust entry for qty changes
       var logEntry = {
         id:     uid(),
         itemId: r.item.id,
@@ -4836,15 +4874,26 @@ async function applyImport() {
       changes.push('cost→₱' + r.newCost);
       r.item.cost = r.newCost;
     }
+    if (r.newSupplier !== undefined) {
+      changes.push('supplier→' + r.newSupplier);
+      r.item.supplier = r.newSupplier;
+    }
     logAudit('Import update', r.item.name + ': ' + changes.join(', '));
   });
 
   save();
   if (sb) {
     try {
-      for (var i = 0; i < toUpdate.length; i++) {
-        var r = toUpdate[i];
-        await sb.from('items').update({ qty: r.item.qty, cost: r.item.cost }).eq('id', r.item.id);
+      // Delete from Supabase
+      for (var d = 0; d < toDelete.length; d++) {
+        await sb.from('items').delete().eq('id', toDelete[d].item.id);
+        await sb.from('logs').delete().eq('itemId', toDelete[d].item.id);
+        await sb.from('reorders').delete().eq('itemId', toDelete[d].item.id);
+      }
+      // Update in Supabase
+      for (var u = 0; u < toUpdate.length; u++) {
+        var r = toUpdate[u];
+        await sb.from('items').update({ qty: r.item.qty, cost: r.item.cost, supplier: r.item.supplier }).eq('id', r.item.id);
       }
     } catch(e) {}
   }
@@ -4853,7 +4902,10 @@ async function applyImport() {
   resetImportModal();
   updateSummary();
   renderInventory();
-  alert('✅ ' + toUpdate.length + ' item' + (toUpdate.length!==1?'s':'') + ' updated successfully.');
+  var msg = [];
+  if (toUpdate.length) msg.push(toUpdate.length + ' item' + (toUpdate.length!==1?'s':'') + ' updated');
+  if (toDelete.length) msg.push(toDelete.length + ' item' + (toDelete.length!==1?'s':'') + ' deleted');
+  alert('✅ ' + msg.join(' · ') + '.');
 }
 
 // ─── MONTHLY COST REPORT ─────────────────────────────────────────────────────────
