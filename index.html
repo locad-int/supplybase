@@ -371,7 +371,7 @@
             <th onclick="sortBy('qty')">Stock <span class="sort-arrow" id="sort-qty">↕</span></th>
             <th>Level</th>
             <th onclick="sortBy('unit')">Unit <span class="sort-arrow" id="sort-unit">↕</span></th>
-            <th onclick="sortBy('cost')">Cost/Unit <span class="sort-arrow" id="sort-cost">↕</span></th>
+            <th onclick="sortBy('cost')" class="inv-col-cost">Cost/Unit <span class="sort-arrow" id="sort-cost">↕</span></th>
             <th>Status</th>
             <th>Location</th>
             <th>Actions</th>
@@ -1251,11 +1251,16 @@
         </div>
         <div class="form-group">
           <label>Access Type</label>
-          <select id="acct-role">
+          <select id="acct-role" onchange="toggleBrandField()">
             <option value="user">User</option>
             <option value="viewer">Viewer</option>
             <option value="requestor">Requestor</option>
+            <option value="brand">Brand</option>
           </select>
+        </div>
+        <div class="form-group full" id="acct-brand-wrap" style="display:none">
+          <label>Brand Name <span style="color:var(--muted);font-size:11px">(must match item names, e.g. "Kiehls")</span></label>
+          <input type="text" id="acct-brand" placeholder="e.g. Kiehls" autocomplete="off">
         </div>
         <div class="form-group">
           <label>Password</label>
@@ -1710,10 +1715,14 @@ function updateSummary() {
 
 // ─── INVENTORY ──────────────────────────────────────────────────────────────────
 function renderInventory() {
+  const isBrand = currentRole === 'brand';
+  const brandName = getBrandName().toLowerCase();
   const q = document.getElementById('inv-search').value.toLowerCase();
   const activeStatuses = getActiveStatusFilters();
   const fc = document.getElementById('inv-filter-cat').value;
   let items = db.items.filter(i => {
+    // Brand users only see their own items
+    if (isBrand && brandName && !i.name.toLowerCase().includes(brandName)) return false;
     if (q && !i.name.toLowerCase().includes(q) && !i.category?.toLowerCase().includes(q) && !i.sku?.toLowerCase().includes(q)) return false;
     if (activeStatuses.length && !activeStatuses.includes(stockStatus(i))) return false;
     if (fc && i.category !== fc) return false;
@@ -1764,7 +1773,7 @@ function renderInventory() {
         </div>
       </td>
       <td>${esc(item.unit||'—')}</td>
-      <td>${item.cost ? fmtPHP(item.cost) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td class="inv-col-cost" style="${isBrand ? 'display:none' : ''}">${item.cost ? fmtPHP(item.cost) : '<span style="color:var(--muted)">—</span>'}</td>
       <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
       <td>${esc(item.location||'—')}</td>
       <td>${actionsHtml}</td>`;
@@ -4225,10 +4234,16 @@ function can(action) {
   var userActions = ['view','log','adjust','export','mark_received','reorder'];
   var viewerActions = ['view','export'];
   var requestorActions = ['view','export','request'];
+  var brandActions = ['view'];
   if (currentRole === 'user') return userActions.indexOf(action) >= 0;
   if (currentRole === 'viewer') return viewerActions.indexOf(action) >= 0;
   if (currentRole === 'requestor') return requestorActions.indexOf(action) >= 0;
+  if (currentRole === 'brand') return brandActions.indexOf(action) >= 0;
   return false;
+}
+
+function getBrandName() {
+  return (currentUser && currentUser.brand) ? currentUser.brand.trim() : '';
 }
 
 function doLogin() {
@@ -4339,7 +4354,8 @@ function logout() {
 })();
 
 function applyRoleUI() {
-  var labels = { superuser: 'Superuser', user: 'User', viewer: 'Viewer', requestor: 'Requestor' };
+  var isBrand = currentRole === 'brand';
+  var labels = { superuser: 'Superuser', user: 'User', viewer: 'Viewer', requestor: 'Requestor', brand: 'Brand' };
   var badge = document.getElementById('role-badge');
   var uname = currentUser ? currentUser.username : '';
   badge.textContent = uname ? uname + ' · ' + (labels[currentRole] || currentRole) : (labels[currentRole] || currentRole);
@@ -4348,13 +4364,20 @@ function applyRoleUI() {
   show('btn-reset',         currentRole === 'superuser');
   show('btn-settings',      currentRole === 'superuser');
   show('btn-change-pass',   !!currentRole);
-  show('btn-contact-admin', false); // replaced by Messages tab
+  show('btn-contact-admin', false);
   show('btn-log-usage',      can('log'));
   show('btn-create-reorder', can('reorder'));
 
-  // Requests nav: visible to all roles (requestor submits, user/superuser reviews)
+  // Hide most nav tabs for brand users — inventory only
+  var navIds = ['nav-usage', 'nav-reorder', 'nav-requests', 'nav-messages', 'nav-report', 'nav-audit'];
+  navIds.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = isBrand ? 'none' : '';
+  });
+
+  // Requests nav: visible to non-brand roles
   var reqNav = document.getElementById('nav-requests');
-  if (reqNav) reqNav.style.display = '';
+  if (reqNav) reqNav.style.display = isBrand ? 'none' : '';
 
   // Audit Log nav: superuser only
   var auditNav = document.getElementById('nav-audit');
@@ -4365,8 +4388,14 @@ function applyRoleUI() {
   show('btn-import-file', currentRole === 'superuser' || currentRole === 'user');
   show('btn-clear-log', currentRole === 'superuser');
 
-  updateMsgBadge();
-  updateRequestBadge();
+  // Cost/unit column: hide from brand users
+  var costHeaders = document.querySelectorAll('.inv-col-cost');
+  costHeaders.forEach(function(el) { el.style.display = isBrand ? 'none' : ''; });
+
+  if (!isBrand) {
+    updateMsgBadge();
+    updateRequestBadge();
+  }
 }
 
 function show(id, visible) {
@@ -4590,6 +4619,12 @@ function renderAccountsList() {
   </tr>`).join('') + '</tbody></table>';
 }
 
+function toggleBrandField() {
+  var role = document.getElementById('acct-role').value;
+  var wrap = document.getElementById('acct-brand-wrap');
+  if (wrap) wrap.style.display = role === 'brand' ? '' : 'none';
+}
+
 function openCreateAccount() {
   editAccountId = null;
   document.getElementById('acct-form-title').textContent = 'New Account';
@@ -4597,7 +4632,9 @@ function openCreateAccount() {
   document.getElementById('acct-password').value = '';
   document.getElementById('acct-password2').value = '';
   document.getElementById('acct-role').value = 'user';
+  document.getElementById('acct-brand').value = '';
   document.getElementById('acct-error').textContent = '';
+  toggleBrandField();
   document.getElementById('create-account-form').style.display = 'block';
   document.getElementById('acct-username').focus();
 }
@@ -4611,7 +4648,9 @@ function openEditAccount(id) {
   document.getElementById('acct-password').value = '';
   document.getElementById('acct-password2').value = '';
   document.getElementById('acct-role').value = a.role;
+  document.getElementById('acct-brand').value = a.brand || '';
   document.getElementById('acct-error').textContent = '';
+  toggleBrandField();
   document.getElementById('create-account-form').style.display = 'block';
 }
 
@@ -4625,9 +4664,11 @@ function saveAccount() {
   const password = document.getElementById('acct-password').value;
   const password2 = document.getElementById('acct-password2').value;
   const role = document.getElementById('acct-role').value;
+  const brand = role === 'brand' ? (document.getElementById('acct-brand').value.trim()) : '';
   const errEl = document.getElementById('acct-error');
 
   if (!username) { errEl.textContent = 'Username is required.'; return; }
+  if (role === 'brand' && !brand) { errEl.textContent = 'Brand name is required for Brand accounts.'; return; }
   if (username.toLowerCase() === getAdminUsername().toLowerCase()) { errEl.textContent = '"' + getAdminUsername() + '" is the reserved superuser username.'; return; }
 
   // Check for duplicate username (excluding current edit)
@@ -4643,13 +4684,14 @@ function saveAccount() {
     const idx = db.accounts.findIndex(a => a.id === editAccountId);
     db.accounts[idx].username = username;
     db.accounts[idx].role = role;
+    db.accounts[idx].brand = brand;
     if (password) db.accounts[idx].password = password;
   } else {
     // Create — password required
     if (!password) { errEl.textContent = 'Password is required.'; return; }
     if (password !== password2) { errEl.textContent = 'Passwords do not match.'; return; }
     if (password.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; return; }
-    db.accounts.push({ id: uid(), username, password, role, createdAt: new Date().toISOString() });
+    db.accounts.push({ id: uid(), username, password, role, brand, createdAt: new Date().toISOString() });
   }
 
   logAudit(editAccountId ? 'Account updated' : 'Account created', username + ' (' + role + ')');
