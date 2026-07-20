@@ -4270,7 +4270,7 @@ function doLogin() {
   }
 
   currentRole = role;
-  currentUser = { username: username, role: role };
+  currentUser = { username: username, role: role, brand: acct ? (acct.brand || '') : '' };
   addRecentLogin(username);
   localStorage.setItem(SESSION_ROLE_KEY, role);
   localStorage.setItem(SESSION_USER_KEY, JSON.stringify(currentUser));
