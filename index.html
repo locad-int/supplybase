@@ -4405,17 +4405,19 @@ function show(id, visible) {
 
 async function confirmReset() {
   if (!can('reset') && currentRole !== 'admin') return;
-  if (!confirm('Reset stock quantities to Master List defaults?\n\nNote: Your minimum stock levels, costs, and supplier settings will be preserved.\n\nThis cannot be undone.')) return;
-  // Only reset qty — preserve minQty, cost, supplier, unit, and other config
-  var seedMap = {};
-  SEED_ITEMS.forEach(function(s){ seedMap[s.id] = s; });
-  db.items = db.items.map(function(item) {
-    var seed = seedMap[item.id];
-    return seed ? Object.assign({}, item, { qty: seed.qty, updatedAt: new Date().toISOString() }) : item;
+  if (!confirm('Reset inventory to last imported quantities and clear all usage logs, reorders, and supply requests?\n\nItems with no import history will keep their current count.\n\nThis cannot be undone.')) return;
+
+  // Revert each item qty to its last imported baseline (if set)
+  var itemsToUpdate = [];
+  db.items.forEach(function(item) {
+    if (item.baselineQty !== undefined && item.baselineQty !== null && item.qty !== item.baselineQty) {
+      item.qty = item.baselineQty;
+      item.updatedAt = new Date().toISOString();
+      itemsToUpdate.push(item);
+    }
   });
-  // Add any seed items not yet in db
-  db.items.forEach(function(i){ delete seedMap[i.id]; });
-  Object.values(seedMap).forEach(function(s){ db.items.push(JSON.parse(JSON.stringify(s))); });
+
+  // Clear transaction history
   db.logs = [];
   db.reorders = [];
   db_reqs = [];
@@ -4423,9 +4425,18 @@ async function confirmReset() {
   if (sb && REQ_TABLE_OK !== false) {
     try { await sb.from('supply_requests').delete().neq('id', ''); } catch(e) {}
   }
-  save(); // upserts reset items
-  _sbClearLogsAndReorders(); // removes deleted logs/reorders from DB
-  logAudit('System reset', 'Stock reset to master list defaults');
+  _sbClearLogsAndReorders();
+
+  // Persist reverted qtys to Supabase
+  if (sb && itemsToUpdate.length) {
+    try {
+      for (var i = 0; i < itemsToUpdate.length; i++) {
+        await sb.from('items').update({ qty: itemsToUpdate[i].qty, updatedAt: itemsToUpdate[i].updatedAt }).eq('id', itemsToUpdate[i].id);
+      }
+    } catch(e) {}
+  }
+
+  logAudit('System reset', 'Qty reverted to last import baseline; logs, reorders, and requests cleared');
   renderInventory();
   renderLogs();
   renderReorder();
@@ -4433,7 +4444,7 @@ async function confirmReset() {
   updateSummary();
   updateRequestBadge();
   if(currentRole) applyRoleUI();
-  alert('Reset complete. All data restored to Master List defaults.');
+  alert('Reset complete. Inventory reverted to last imported quantities. Logs and requests cleared.');
 }
 
 const CONTACT_INFO_KEY = 'consumables_tracker_contact_info';
@@ -5122,6 +5133,7 @@ async function applyImport() {
       db.logs.push(logEntry);
       var prevQty = r.item.qty;
       r.item.qty = r.newQty;
+      r.item.baselineQty = r.newQty; // snapshot for Reset
       if (r.newQty > prevQty) updateMaxRef(r.item, r.newQty);
       changes.push('stock→' + r.newQty);
     }
@@ -5152,7 +5164,7 @@ async function applyImport() {
       // Update in Supabase
       for (var u = 0; u < toUpdate.length; u++) {
         var r = toUpdate[u];
-        await sb.from('items').update({ qty: r.item.qty, cost: r.item.cost, supplier: r.item.supplier, category: r.item.category }).eq('id', r.item.id);
+        await sb.from('items').update({ qty: r.item.qty, cost: r.item.cost, supplier: r.item.supplier, category: r.item.category, "baselineQty": r.item.baselineQty }).eq('id', r.item.id);
       }
     } catch(e) {}
   }
