@@ -1842,7 +1842,7 @@ function saveItem() {
     const old = db.items[idx];
     db.items[idx] = { ...old, ...data };
     if (old.qty !== qty) {
-      db.logs.push({ id: uid(), itemId: editItemId, type: 'adjust', qty: qty - old.qty, absQty: qty, by: 'Edit', date: new Date().toISOString(), notes: 'Item edited', ref: '' });
+      db.logs.push({ id: uid(), itemId: editItemId, type: 'adjust', qty: qty - old.qty, absQty: qty, by: (currentUser && currentUser.username) || 'Edit', date: new Date().toISOString(), notes: 'Item edited', ref: '' });
       if (qty > old.qty) updateMaxRef(db.items[idx], qty);
     }
   } else {
