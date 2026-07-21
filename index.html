@@ -2249,7 +2249,7 @@ function openLogForItem(itemId) {
   switchTab('usage');
 }
 
-function saveLog() {
+async function saveLog() {
   const itemId = document.getElementById('lf-item').value;
   const type = document.getElementById('lf-type').value;
   const qty = parseFloat(document.getElementById('lf-qty').value);
@@ -2260,6 +2260,16 @@ function saveLog() {
   if (!by) { alert('Performed By is required.'); return; }
   const item = db.items.find(i => i.id === itemId);
   if (!item) return;
+  // Always fetch the latest qty from Supabase to prevent stale-read issues
+  // when multiple users log transactions concurrently
+  if (sb) {
+    try {
+      var fresh = await sb.from('items').select('qty').eq('id', itemId).single();
+      if (fresh.data && !fresh.error && fresh.data.qty !== undefined) {
+        item.qty = fresh.data.qty; // sync in-memory to latest DB value
+      }
+    } catch(e) {}
+  }
   const originalQty = item.qty;
   let delta = qty;
   if (type === 'use' || type === 'damage') delta = -qty;
@@ -2323,7 +2333,16 @@ function saveLog() {
     });
   }
   logAudit('Usage logged', type + ' — ' + (db.items.find(i=>i.id===itemId)?.name||itemId) + ' x' + qty);
-  save();
+  // Targeted item update — avoids bulk upsert overwriting concurrent changes from other sessions
+  updateSummary();
+  if (sb) {
+    try {
+      await sb.from('items').update({ qty: item.qty, cost: item.cost, updatedAt: item.updatedAt, "maxRef": item.maxRef }).eq('id', item.id);
+      await sb.from('logs').insert([logEntry]);
+    } catch(e) { save(); } // fallback to bulk save on error
+  } else {
+    save();
+  }
   closeModal('log-modal');
   renderLogs();
   renderInventory();
