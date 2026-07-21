@@ -704,6 +704,15 @@
         <input type="hidden" id="req-item-id">
         <div id="req-item-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:0 0 7px 7px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.15)"></div>
       </div>
+      <div id="req-oos-warning" style="display:none" class="form-group full">
+        <div style="background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);border-radius:8px;padding:10px 14px;display:flex;align-items:flex-start;gap:10px">
+          <span style="font-size:18px;line-height:1">⛔</span>
+          <div>
+            <div style="font-weight:700;color:#dc2626;font-size:13px">Item is Out of Stock</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">This item currently has 0 on hand. Your request may be rejected until stock is replenished. You can still submit, but consider waiting for a restock.</div>
+          </div>
+        </div>
+      </div>
       <div class="form-group">
         <label>Priority</label>
         <select id="req-priority">
@@ -727,7 +736,7 @@
     </div>
     <div id="req-error" style="color:var(--danger);font-size:12px;margin-top:-4px"></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal('new-request-modal')">Cancel</button>
+      <button class="btn btn-secondary" onclick="resetReqModal();closeModal('new-request-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="submitRequest()">Submit Request</button>
     </div>
   </div>
@@ -746,6 +755,18 @@
       <button id="crm-btn-reject" class="btn" style="background:var(--danger);color:#fff;margin-right:auto" onclick="rejectRequest()">✕ Reject</button>
       <button class="btn btn-secondary" onclick="closeModal('confirm-request-modal')">Cancel</button>
       <button id="crm-btn-confirm" class="btn btn-primary" onclick="confirmIssuance()">✓ Confirm Issuance</button>
+    </div>
+  </div>
+</div>
+
+<!-- GENERIC APP CONFIRM MODAL -->
+<div class="modal-bg" id="app-confirm-modal">
+  <div class="modal" style="max-width:420px">
+    <h2 id="acm-title">Confirm</h2>
+    <p id="acm-message" style="color:var(--muted);margin:4px 0 20px;line-height:1.55;white-space:pre-line;font-size:14px"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('app-confirm-modal')">Cancel</button>
+      <button id="acm-confirm-btn" class="btn btn-primary" onclick="_runAppConfirm()">Confirm</button>
     </div>
   </div>
 </div>
@@ -1873,14 +1894,15 @@ function saveItem() {
 }
 
 function deleteItem(id) {
-  if (!confirm('Delete this item and all its logs/reorders?')) return;
-  logAudit('Item deleted', db.items.find(i=>i.id===id)?.name || id);
-  db.items = db.items.filter(i => i.id !== id);
-  db.logs = db.logs.filter(l => l.itemId !== id);
-  db.reorders = db.reorders.filter(r => r.itemId !== id);
-  updateSummary();
-  _sbDeleteItem(id);
-  renderInventory();
+  showConfirm('Delete Item', 'Delete this item and all its logs and reorders? This cannot be undone.', function() {
+    logAudit('Item deleted', db.items.find(i=>i.id===id)?.name || id);
+    db.items = db.items.filter(i => i.id !== id);
+    db.logs = db.logs.filter(l => l.itemId !== id);
+    db.reorders = db.reorders.filter(r => r.itemId !== id);
+    updateSummary();
+    _sbDeleteItem(id);
+    renderInventory();
+  }, { danger: true, confirmLabel: 'Delete' });
 }
 
 // ─── LOG ────────────────────────────────────────────────────────────────────────
@@ -2504,11 +2526,12 @@ function markReceived(id) {
 }
 
 function deleteReorder(id) {
-  if (!confirm('Delete this reorder record?')) return;
-  db.reorders = db.reorders.filter(r => r.id !== id);
-  updateSummary();
-  _sbDeleteReorder(id);
-  renderReorder();
+  showConfirm('Delete Reorder', 'Delete this reorder record?', function() {
+    db.reorders = db.reorders.filter(r => r.id !== id);
+    updateSummary();
+    _sbDeleteReorder(id);
+    renderReorder();
+  }, { danger: true, confirmLabel: 'Delete' });
 }
 
 // ─── VARIANCE ADJUSTMENT ─────────────────────────────────────────────────────────
@@ -2801,6 +2824,35 @@ function closeItemDropdown() {
 
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ─── STYLED CONFIRM MODAL ───────────────────────────────────────────────────────
+var _appConfirmCallback = null;
+function showConfirm(title, message, onConfirm, opts) {
+  opts = opts || {};
+  document.getElementById('acm-title').textContent = title;
+  document.getElementById('acm-message').textContent = message;
+  var btn = document.getElementById('acm-confirm-btn');
+  btn.textContent = opts.confirmLabel || 'Confirm';
+  if (opts.danger) {
+    btn.style.background = 'var(--danger)';
+    btn.style.color = '#fff';
+    btn.style.borderColor = 'var(--danger)';
+  } else {
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+  }
+  _appConfirmCallback = onConfirm;
+  document.getElementById('app-confirm-modal').classList.add('open');
+}
+function _runAppConfirm() {
+  closeModal('app-confirm-modal');
+  if (typeof _appConfirmCallback === 'function') {
+    var cb = _appConfirmCallback;
+    _appConfirmCallback = null;
+    cb();
+  }
+}
 document.querySelectorAll('.modal-bg').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }));
 
 function esc(s) {
@@ -3740,15 +3792,17 @@ async function sendReply() {
 }
 
 async function deleteCurrentMsg() {
-  if (!confirm('Delete this message permanently?')) return;
-  db_msgs = db_msgs.filter(m => m.id !== currentViewMsgId);
-  if (sb && MSG_TABLE_OK !== false) {
-    try { await sb.from('messages').delete().eq('id', currentViewMsgId); }
-    catch(e) { saveMsgsLocal(); }
-  } else { saveMsgsLocal(); }
-  closeModal('view-msg-modal');
-  updateMsgBadge();
-  renderMessages();
+  var msgId = currentViewMsgId;
+  showConfirm('Delete Message', 'Delete this message permanently?', async function() {
+    db_msgs = db_msgs.filter(m => m.id !== msgId);
+    if (sb && MSG_TABLE_OK !== false) {
+      try { await sb.from('messages').delete().eq('id', msgId); }
+      catch(e) { saveMsgsLocal(); }
+    } else { saveMsgsLocal(); }
+    closeModal('view-msg-modal');
+    updateMsgBadge();
+    renderMessages();
+  }, { danger: true, confirmLabel: 'Delete' });
 }
 
 function renderMessages() {
@@ -3874,6 +3928,8 @@ function openNewRequestModal() {
   document.getElementById('req-priority').value = 'normal';
   document.getElementById('req-notes').value = '';
   document.getElementById('req-error').textContent = '';
+  var oosEl = document.getElementById('req-oos-warning');
+  if (oosEl) oosEl.style.display = 'none';
   openModal('new-request-modal');
 }
 
@@ -3902,10 +3958,14 @@ function filterReqItemDropdown() {
 }
 
 function selectReqItem(id, name, unit) {
-  document.getElementById('req-item-id').value   = id;
+  document.getElementById('req-item-id').value    = id;
   document.getElementById('req-item-search').value = name;
-  document.getElementById('req-unit').value        = unit;
+  document.getElementById('req-unit').value         = unit;
   closeReqItemDropdown();
+  // Show OOS warning if item has no stock
+  var item = db.items.find(function(i){ return i.id === id; });
+  var oosEl = document.getElementById('req-oos-warning');
+  if (oosEl) oosEl.style.display = (item && item.qty <= 0) ? '' : 'none';
   document.getElementById('req-qty').focus();
 }
 
@@ -3924,8 +3984,14 @@ async function submitRequest() {
   if (!qty || qty < 1) { errEl.textContent = 'Quantity must be at least 1.'; return; }
 
   var item = db.items.find(i => i.id === itemId);
+  // Generate request number: REQ-YYYYMM-XXXX (sequential within all time)
+  var now = new Date();
+  var yyyymm = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0');
+  var seq = String(db_reqs.length + 1).padStart(4, '0');
+  var reqNumber = 'REQ-' + yyyymm + '-' + seq;
   var req = {
     id:            'req_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    reqNumber,
     itemId,
     itemName:      item ? item.name : itemId,
     unit:          item ? (item.unit || '') : '',
@@ -3959,6 +4025,94 @@ async function submitRequest() {
 
   closeModal('new-request-modal');
   updateRequestBadge();
+  renderRequests();
+}
+
+var _editReqId = null;
+async function withdrawRequest(reqId) {
+  var req = db_reqs.find(r => r.id === reqId);
+  if (!req || req.status !== 'pending') return;
+  var label = req.reqNumber ? req.reqNumber + ' — ' + req.itemName : req.itemName;
+  showConfirm('Withdraw Request', 'Withdraw ' + label + '?\n\nThis cannot be undone.', async function() {
+    db_reqs = db_reqs.filter(r => r.id !== reqId);
+    saveReqsLocal();
+    if (sb && REQ_TABLE_OK !== false) {
+      try { await sb.from('supply_requests').delete().eq('id', reqId); } catch(e) {}
+    }
+    logAudit('Request withdrawn', label + ' (by ' + (currentUser?.username || '') + ')');
+    updateRequestBadge();
+    renderRequests();
+  }, { danger: true, confirmLabel: 'Withdraw' });
+}
+
+function resetReqModal() {
+  _editReqId = null;
+  var titleEl = document.querySelector('#new-request-modal h2');
+  if (titleEl) titleEl.textContent = 'New Supply Request';
+  var btn = document.querySelector('#new-request-modal button[onclick="saveEditRequest()"]');
+  if (btn) btn.setAttribute('onclick', 'submitRequest()');
+}
+function openEditRequest(reqId) {
+  var req = db_reqs.find(r => r.id === reqId);
+  if (!req || req.status !== 'pending') return;
+  _editReqId = reqId;
+
+  // Pre-fill the new request modal with existing values
+  document.getElementById('req-item-id').value     = req.itemId;
+  document.getElementById('req-item-search').value = req.itemName;
+  document.getElementById('req-unit').value         = req.unit || '';
+  document.getElementById('req-qty').value          = req.qty;
+  document.getElementById('req-notes').value        = req.notes || '';
+  document.getElementById('req-priority').value     = req.priority || 'normal';
+  document.getElementById('req-error').textContent  = '';
+
+  // Change modal title and button to reflect edit mode
+  var titleEl = document.querySelector('#new-request-modal h2');
+  if (titleEl) titleEl.textContent = 'Edit Request';
+  var submitBtn = document.querySelector('#new-request-modal button[onclick="submitRequest()"]');
+  if (submitBtn) submitBtn.setAttribute('onclick', 'saveEditRequest()');
+
+  openModal('new-request-modal');
+}
+
+async function saveEditRequest() {
+  var req = db_reqs.find(r => r.id === _editReqId);
+  if (!req || req.status !== 'pending') { closeModal('new-request-modal'); return; }
+
+  var itemId = document.getElementById('req-item-id').value;
+  var qty    = parseInt(document.getElementById('req-qty').value);
+  var notes  = document.getElementById('req-notes').value.trim();
+  var errEl  = document.getElementById('req-error');
+
+  if (!itemId) { errEl.textContent = 'Please select an item.'; return; }
+  if (!qty || qty < 1) { errEl.textContent = 'Quantity must be at least 1.'; return; }
+
+  var item = db.items.find(i => i.id === itemId);
+  req.itemId    = itemId;
+  req.itemName  = item ? item.name : itemId;
+  req.unit      = item ? (item.unit || '') : '';
+  req.qty       = qty;
+  req.notes     = notes;
+  req.priority  = document.getElementById('req-priority').value || 'normal';
+
+  saveReqsLocal();
+  if (sb && REQ_TABLE_OK !== false) {
+    try {
+      await sb.from('supply_requests').update({
+        "itemId": req.itemId, "itemName": req.itemName, unit: req.unit,
+        qty: req.qty, notes: req.notes, priority: req.priority
+      }).eq('id', req.id);
+    } catch(e) {}
+  }
+
+  // Restore modal to create mode
+  var titleEl = document.querySelector('#new-request-modal h2');
+  if (titleEl) titleEl.textContent = 'New Supply Request';
+  var submitBtn = document.querySelector('#new-request-modal button[onclick="saveEditRequest()"]');
+  if (submitBtn) submitBtn.setAttribute('onclick', 'submitRequest()');
+  _editReqId = null;
+
+  closeModal('new-request-modal');
   renderRequests();
 }
 
@@ -4054,22 +4208,22 @@ async function confirmIssuance() {
 async function rejectRequest() {
   var req = db_reqs.find(r => r.id === currentViewReqId);
   if (!req) return;
-  if (!confirm('Reject this supply request from ' + req.requestedBy + '?')) return;
+  showConfirm('Reject Request', 'Reject supply request from ' + req.requestedBy + '?', async function() {
+    req.status      = 'rejected';
+    req.rejectedBy  = currentUser.username;
+    req.rejectedAt  = new Date().toISOString();
+    req.seenByRequestor = false;
 
-  req.status      = 'rejected';
-  req.rejectedBy  = currentUser.username;
-  req.rejectedAt  = new Date().toISOString();
-  req.seenByRequestor = false;
+    if (sb && REQ_TABLE_OK !== false) {
+      try { await sb.from('supply_requests').update({ status: req.status, rejectedBy: req.rejectedBy, rejectedAt: req.rejectedAt, seenByRequestor: false }).eq('id', req.id); }
+      catch(e) { saveReqsLocal(); }
+    } else { saveReqsLocal(); }
 
-  if (sb && REQ_TABLE_OK !== false) {
-    try { await sb.from('supply_requests').update({ status: req.status, rejectedBy: req.rejectedBy, rejectedAt: req.rejectedAt, seenByRequestor: false }).eq('id', req.id); }
-    catch(e) { saveReqsLocal(); }
-  } else { saveReqsLocal(); }
-
-  logAudit('Request rejected', req.itemName + ' (requested by ' + req.requestedBy + ')');
-  closeModal('confirm-request-modal');
-  updateRequestBadge();
-  renderRequests();
+    logAudit('Request rejected', req.itemName + ' (requested by ' + req.requestedBy + ')');
+    closeModal('confirm-request-modal');
+    updateRequestBadge();
+    renderRequests();
+  }, { danger: true, confirmLabel: 'Reject' });
 }
 
 function renderRequests() {
@@ -4167,7 +4321,11 @@ alter publication supabase_realtime add table supply_requests;</pre>
   }
 
   function fmtDT(d) {
-    return d ? new Date(d).toLocaleDateString('en-PH', { month:'short', day:'numeric', year:'numeric' }) : '';
+    if (!d) return '';
+    var dt = new Date(d);
+    var date = dt.toLocaleDateString('en-PH', { month:'short', day:'numeric', year:'numeric' });
+    var time = dt.toLocaleTimeString('en-PH', { hour:'numeric', minute:'2-digit', hour12:true });
+    return date + ' · ' + time;
   }
 
   out += '<div class="req-list">';
@@ -4178,9 +4336,15 @@ alter publication supabase_realtime add table supply_requests;</pre>
     var prio = req.priority || 'normal';
     var prioLabel = prio === 'urgent' ? '🔴 Urgent' : prio === 'low' ? '🔵 Low' : 'Normal';
     var actionButtons = '';
+    var isOwnPending = !isAdmin && req.status === 'pending' && currentUser && req.requestedBy === currentUser.username;
     if (isAdmin && req.status === 'pending') {
       actionButtons = `<div class="req-card-actions">
         <button class="btn btn-primary" style="font-size:12px;padding:5px 12px" onclick="openConfirmModal('${req.id}')">Review & Confirm</button>
+      </div>`;
+    } else if (isOwnPending) {
+      actionButtons = `<div class="req-card-actions">
+        <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="openEditRequest('${req.id}')">✏️ Edit</button>
+        <button class="btn btn-danger" style="font-size:12px;padding:5px 12px" onclick="withdrawRequest('${req.id}')">✕ Withdraw</button>
       </div>`;
     } else if (req.status === 'confirmed') {
       actionButtons = `<div style="font-size:11px;color:var(--muted);margin-top:8px">Confirmed by ${esc(req.confirmedBy)} · ${fmtDT(req.confirmedAt)}</div>`;
@@ -4189,7 +4353,10 @@ alter publication supabase_realtime add table supply_requests;</pre>
     }
     out += `<div class="req-card ${cardCls}">
       <div class="req-card-header">
-        <span class="req-card-item">${esc(req.itemName)}</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${req.reqNumber ? `<span style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em;background:var(--surface2);padding:2px 8px;border-radius:99px;border:1px solid var(--border)">${esc(req.reqNumber)}</span>` : ''}
+          <span class="req-card-item">${esc(req.itemName)}</span>
+        </div>
         <div style="display:flex;align-items:center;gap:6px">
           <span class="req-priority-${prio}">${prioLabel}</span>
           <span class="req-badge ${badgeCls}">${badgeLabel}</span>
@@ -4477,46 +4644,45 @@ function show(id, visible) {
 
 async function confirmReset() {
   if (!can('reset') && currentRole !== 'admin') return;
-  if (!confirm('Reset inventory to last imported quantities and clear all usage logs, reorders, and supply requests?\n\nItems with no import history will keep their current count.\n\nThis cannot be undone.')) return;
-
-  // Revert each item qty to its last imported baseline (if set)
-  var itemsToUpdate = [];
-  db.items.forEach(function(item) {
-    if (item.baselineQty !== undefined && item.baselineQty !== null && item.qty !== item.baselineQty) {
-      item.qty = item.baselineQty;
-      item.updatedAt = new Date().toISOString();
-      itemsToUpdate.push(item);
-    }
-  });
-
-  // Clear transaction history
-  db.logs = [];
-  db.reorders = [];
-  db_reqs = [];
-  saveReqsLocal();
-  if (sb && REQ_TABLE_OK !== false) {
-    try { await sb.from('supply_requests').delete().neq('id', ''); } catch(e) {}
-  }
-  _sbClearLogsAndReorders();
-
-  // Persist reverted qtys to Supabase
-  if (sb && itemsToUpdate.length) {
-    try {
-      for (var i = 0; i < itemsToUpdate.length; i++) {
-        await sb.from('items').update({ qty: itemsToUpdate[i].qty, updatedAt: itemsToUpdate[i].updatedAt }).eq('id', itemsToUpdate[i].id);
+  showConfirm('Reset Inventory', 'Reset inventory to last imported quantities and clear all usage logs, reorders, and supply requests?\n\nItems with no import history will keep their current count.\n\nThis cannot be undone.', async function() {
+    // Revert each item qty to its last imported baseline (if set)
+    var itemsToUpdate = [];
+    db.items.forEach(function(item) {
+      if (item.baselineQty !== undefined && item.baselineQty !== null && item.qty !== item.baselineQty) {
+        item.qty = item.baselineQty;
+        item.updatedAt = new Date().toISOString();
+        itemsToUpdate.push(item);
       }
-    } catch(e) {}
-  }
+    });
 
-  logAudit('System reset', 'Qty reverted to last import baseline; logs, reorders, and requests cleared');
-  renderInventory();
-  renderLogs();
-  renderReorder();
-  renderRequests();
-  updateSummary();
-  updateRequestBadge();
-  if(currentRole) applyRoleUI();
-  alert('Reset complete. Inventory reverted to last imported quantities. Logs and requests cleared.');
+    // Clear transaction history
+    db.logs = [];
+    db.reorders = [];
+    db_reqs = [];
+    saveReqsLocal();
+    if (sb && REQ_TABLE_OK !== false) {
+      try { await sb.from('supply_requests').delete().neq('id', ''); } catch(e) {}
+    }
+    _sbClearLogsAndReorders();
+
+    // Persist reverted qtys to Supabase
+    if (sb && itemsToUpdate.length) {
+      try {
+        for (var i = 0; i < itemsToUpdate.length; i++) {
+          await sb.from('items').update({ qty: itemsToUpdate[i].qty, updatedAt: itemsToUpdate[i].updatedAt }).eq('id', itemsToUpdate[i].id);
+        }
+      } catch(e) {}
+    }
+
+    logAudit('System reset', 'Qty reverted to last import baseline; logs, reorders, and requests cleared');
+    renderInventory();
+    renderLogs();
+    renderReorder();
+    renderRequests();
+    updateSummary();
+    updateRequestBadge();
+    if(currentRole) applyRoleUI();
+  }, { danger: true, confirmLabel: 'Reset' });
 }
 
 const CONTACT_INFO_KEY = 'consumables_tracker_contact_info';
@@ -4653,17 +4819,18 @@ function saveChangePassword() {
 }
 
 function reconnectSupabase() {
-  if (!confirm('This will disconnect from Supabase and show the setup screen. Continue?')) return;
-  localStorage.removeItem(SUPABASE_URL_KEY);
-  localStorage.removeItem(SUPABASE_ANON_KEY);
-  sb = null;
-  closeModal('settings-modal');
-  currentRole = null;
-  document.getElementById('login-overlay').style.display = 'none';
-  document.getElementById('supa-url-input').value = '';
-  document.getElementById('supa-key-input').value = '';
-  document.getElementById('supa-setup-error').textContent = '';
-  document.getElementById('supa-setup-overlay').style.display = 'flex';
+  showConfirm('Reconnect Supabase', 'This will disconnect from Supabase and show the setup screen. Continue?', function() {
+    localStorage.removeItem(SUPABASE_URL_KEY);
+    localStorage.removeItem(SUPABASE_ANON_KEY);
+    sb = null;
+    closeModal('settings-modal');
+    currentRole = null;
+    document.getElementById('login-overlay').style.display = 'none';
+    document.getElementById('supa-url-input').value = '';
+    document.getElementById('supa-key-input').value = '';
+    document.getElementById('supa-setup-error').textContent = '';
+    document.getElementById('supa-setup-overlay').style.display = 'flex';
+  }, { danger: false, confirmLabel: 'Continue' });
 }
 
 // ─── ACCOUNT MANAGEMENT ──────────────────────────────────────────────────────────
@@ -4786,11 +4953,12 @@ function saveAccount() {
 function deleteAccount(id) {
   const a = db.accounts.find(x => x.id === id);
   if (!a) return;
-  if (!confirm('Delete account "' + a.username + '"? They will no longer be able to log in.')) return;
-  logAudit('Account deleted', db.accounts.find(a=>a.id===id)?.username || id);
-  db.accounts = db.accounts.filter(x => x.id !== id);
-  _sbDeleteAccount(id);
-  renderAccountsList();
+  showConfirm('Delete Account', 'Delete account "' + a.username + '"? They will no longer be able to log in.', function() {
+    logAudit('Account deleted', db.accounts.find(a=>a.id===id)?.username || id);
+    db.accounts = db.accounts.filter(x => x.id !== id);
+    _sbDeleteAccount(id);
+    renderAccountsList();
+  }, { danger: true, confirmLabel: 'Delete' });
 }
 
 // ─── INIT ────────────────────────────────────────────────────────────────────────
@@ -4880,8 +5048,7 @@ function clearLog() {
     ? 'Delete all log entries from ' + (fromVal || '—') + ' to ' + (toVal || 'now') + '?\n\nThis cannot be undone.'
     : 'Delete ALL log entries?\n\nThis will clear the entire usage history and cannot be undone.';
 
-  if (!confirm(msg)) return;
-
+  showConfirm('Clear Log', msg, function() {
   var from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
   var to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
 
@@ -4918,7 +5085,7 @@ function clearLog() {
   }
 
   renderLogs();
-  alert('✅ ' + removed + ' log entr' + (removed !== 1 ? 'ies' : 'y') + ' deleted.');
+  }, { danger: true, confirmLabel: 'Clear' });
 }
 
 function exportLogsCSV() {
