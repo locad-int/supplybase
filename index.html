@@ -459,6 +459,7 @@
       <label style="color:var(--muted);font-size:12px;font-weight:500;align-self:center;white-space:nowrap">To</label>
       <input type="date" id="rpt-to" style="width:150px;flex:0 0 auto" onchange="renderReport();renderVariance()">
       <select id="rpt-type" style="flex:0 0 auto;width:auto" onchange="renderReport()">
+        <option value="all">All Transactions</option>
         <option value="use,damage">Consumption (Use + Damage)</option>
         <option value="use">Use only</option>
         <option value="damage">Damage / Loss only</option>
@@ -2864,7 +2865,8 @@ function initReportDates() {
 function renderReport() {
   const fromVal = document.getElementById('rpt-from').value;
   const toVal = document.getElementById('rpt-to').value;
-  const types = document.getElementById('rpt-type').value.split(',');
+  const typeVal = document.getElementById('rpt-type').value;
+  const types = typeVal === 'all' ? ['use', 'damage', 'restock', 'adjust'] : typeVal.split(',');
   const cat = document.getElementById('rpt-cat').value;
 
   const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
@@ -2997,7 +2999,8 @@ function exportReportCSV() {
 function exportDetailedCSV() {
   const fromVal = document.getElementById('rpt-from').value;
   const toVal   = document.getElementById('rpt-to').value;
-  const types   = document.getElementById('rpt-type').value.split(',');
+  const typeVal = document.getElementById('rpt-type').value;
+  const types   = typeVal === 'all' ? ['use', 'damage', 'restock', 'adjust'] : typeVal.split(',');
   const cat     = document.getElementById('rpt-cat').value;
 
   const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
