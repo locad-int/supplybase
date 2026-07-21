@@ -2951,9 +2951,10 @@ function renderReport() {
     return true;
   });
 
-  // Aggregate by item + type
+  // Aggregate by item + type (adjustments excluded — they don't represent cost)
   const map = {};
   logs.forEach(l => {
+    if (l.type === 'adjust' || l.type === 'edit' || l.type === 'adjustment') return;
     const typeGroup = (l.type === 'restock') ? 'restock' : 'consumption';
     const key = l.itemId + '|' + typeGroup;
     if (!map[key]) {
