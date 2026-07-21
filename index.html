@@ -596,8 +596,13 @@
     <div class="dash-kpi-grid">
       <div class="dash-kpi">
         <div class="dash-kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
-        <div class="dash-kpi-label">Spend this period</div>
-        <div class="dash-kpi-value" id="dk-spend">₱0</div>
+        <div class="dash-kpi-label">Consumption cost</div>
+        <div class="dash-kpi-value" id="dk-spend" style="color:var(--danger)">₱0</div>
+      </div>
+      <div class="dash-kpi">
+        <div class="dash-kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></div>
+        <div class="dash-kpi-label">Restock cost</div>
+        <div class="dash-kpi-value" id="dk-restock" style="color:#2563eb">₱0</div>
       </div>
       <div class="dash-kpi">
         <div class="dash-kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg></div>
@@ -3301,9 +3306,21 @@ function renderDashboard() {
   const txnCount = spendLogs.length;
   const avgCost  = txnCount > 0 ? totalSpend / txnCount : 0;
 
-  document.getElementById('dk-spend').textContent = fmtPHP(totalSpend);
-  document.getElementById('dk-units').textContent = fmtInt(totalUnits);
-  document.getElementById('dk-avg').textContent   = fmtPHP(avgCost);
+  // KPI: Restock cost
+  const restockLogs = db.logs.filter(l => {
+    if (l.type !== 'restock') return false;
+    const d = new Date(l.date);
+    return d >= from && d <= to;
+  });
+  const totalRestockCost = restockLogs.reduce((s, l) => {
+    const item = db.items.find(i => i.id === l.itemId);
+    return s + (l.qty || 0) * (item?.cost || 0);
+  }, 0);
+
+  document.getElementById('dk-spend').textContent   = fmtPHP(totalSpend);
+  document.getElementById('dk-restock').textContent = fmtPHP(totalRestockCost);
+  document.getElementById('dk-units').textContent   = fmtInt(totalUnits);
+  document.getElementById('dk-avg').textContent     = fmtPHP(avgCost);
 
   // Trend subtitle
   const diffDays = Math.round((to - from) / 86400000) + 1;
