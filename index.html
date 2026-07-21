@@ -480,6 +480,10 @@
         <div class="value" id="rpt-total-cost" style="color:var(--danger)">₱0.00</div>
       </div>
       <div class="card">
+        <div class="label">Total Cost Restocked</div>
+        <div class="value" id="rpt-total-restock-cost" style="color:var(--ok)">₱0.00</div>
+      </div>
+      <div class="card">
         <div class="label">Total Units Consumed</div>
         <div class="value" id="rpt-total-qty">0</div>
       </div>
@@ -499,9 +503,10 @@
           <tr>
             <th onclick="sortReport('name')">Item <span class="sort-arrow" id="rsort-name">↕</span></th>
             <th onclick="sortReport('category')">Category <span class="sort-arrow" id="rsort-category">↕</span></th>
+            <th>Type</th>
             <th onclick="sortReport('unit')">Unit</th>
             <th onclick="sortReport('costPerUnit')">Cost / Unit <span class="sort-arrow" id="rsort-costPerUnit">↕</span></th>
-            <th onclick="sortReport('totalQty')">Qty Consumed <span class="sort-arrow" id="rsort-totalQty">↕</span></th>
+            <th onclick="sortReport('totalQty')">Qty <span class="sort-arrow" id="rsort-totalQty">↕</span></th>
             <th onclick="sortReport('totalCost')">Total Cost <span class="sort-arrow" id="rsort-totalCost">↕</span></th>
             <th onclick="sortReport('entries')">Log Entries <span class="sort-arrow" id="rsort-entries">↕</span></th>
             <th>% of Total Cost</th>
@@ -2889,30 +2894,35 @@ function renderReport() {
     return true;
   });
 
-  // Aggregate by item
+  // Aggregate by item + type
   const map = {};
   logs.forEach(l => {
-    if (!map[l.itemId]) {
+    const typeGroup = (l.type === 'restock') ? 'restock' : 'consumption';
+    const key = l.itemId + '|' + typeGroup;
+    if (!map[key]) {
       const item = db.items.find(i => i.id === l.itemId);
-      map[l.itemId] = {
+      map[key] = {
         itemId: l.itemId,
         name: item?.name || 'Deleted Item',
         category: item?.category || '',
         unit: item?.unit || '',
         costPerUnit: item?.cost || 0,
+        typeGroup: typeGroup,
         totalQty: 0,
         totalCost: 0,
         entries: 0,
       };
     }
-    map[l.itemId].totalQty += l.qty;
-    map[l.itemId].totalCost += l.qty * (map[l.itemId].costPerUnit);
-    map[l.itemId].entries++;
+    map[key].totalQty += l.qty;
+    map[key].totalCost += l.qty * (map[key].costPerUnit);
+    map[key].entries++;
   });
 
   let rows = Object.values(map);
   const grandTotal = rows.reduce((s, r) => s + r.totalCost, 0);
-  const grandQty = rows.reduce((s, r) => s + r.totalQty, 0);
+  const grandQty   = rows.filter(r => r.typeGroup === 'consumption').reduce((s, r) => s + r.totalQty, 0);
+  const restockTotal = rows.filter(r => r.typeGroup === 'restock').reduce((s, r) => s + r.totalCost, 0);
+  const consumeTotal = rows.filter(r => r.typeGroup === 'consumption').reduce((s, r) => s + r.totalCost, 0);
 
   rows.sort((a, b) => {
     let av = a[rptSortField] ?? '';
@@ -2923,9 +2933,10 @@ function renderReport() {
   });
 
   // Summary
-  document.getElementById('rpt-total-cost').textContent = fmtPHP(grandTotal);
+  document.getElementById('rpt-total-cost').textContent = fmtPHP(consumeTotal);
+  document.getElementById('rpt-total-restock-cost').textContent = fmtPHP(restockTotal);
   document.getElementById('rpt-total-qty').textContent = fmt(grandQty);
-  document.getElementById('rpt-unique').textContent = rows.length;
+  document.getElementById('rpt-unique').textContent = [...new Set(rows.map(r => r.itemId))].length;
   document.getElementById('rpt-entries').textContent = logs.length;
 
   const tbody = document.getElementById('rpt-tbody');
@@ -2939,13 +2950,19 @@ function renderReport() {
     const pct = grandTotal > 0 ? (r.totalCost / grandTotal * 100).toFixed(1) : 0;
     const barW = grandTotal > 0 ? Math.round(r.totalCost / grandTotal * 100) : 0;
     const tr = document.createElement('tr');
+    const isRestock = r.typeGroup === 'restock';
+    const typeBadge = isRestock
+      ? '<span class="badge" style="background:rgba(22,163,74,.12);color:#16a34a;border:1px solid rgba(22,163,74,.25)">Restock</span>'
+      : '<span class="badge" style="background:rgba(220,38,38,.10);color:#dc2626;border:1px solid rgba(220,38,38,.2)">Consumption</span>';
+    const costColor = isRestock ? 'var(--ok)' : 'var(--danger)';
     tr.innerHTML = `
       <td><strong>${esc(r.name)}</strong></td>
       <td>${r.category ? '<span class="badge badge-info">'+esc(r.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${typeBadge}</td>
       <td>${esc(r.unit||'—')}</td>
       <td>${r.costPerUnit ? fmtPHP(r.costPerUnit) : '<span style="color:var(--warn)">not set</span>'}</td>
       <td style="font-weight:600">${fmt(r.totalQty)}</td>
-      <td style="font-weight:700;color:var(--danger)">${r.costPerUnit ? fmtPHP(r.totalCost) : '—'}</td>
+      <td style="font-weight:700;color:${costColor}">${r.costPerUnit ? fmtPHP(r.totalCost) : '—'}</td>
       <td>${r.entries}</td>
       <td>
         <div class="stock-bar-wrap">
@@ -2960,9 +2977,9 @@ function renderReport() {
   const tfoot = document.createElement('tr');
   tfoot.style.cssText = 'background:var(--surface2);font-weight:700;border-top:2px solid var(--border)';
   tfoot.innerHTML = `
-    <td colspan="4" style="text-align:right;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em">TOTAL</td>
+    <td colspan="5" style="text-align:right;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em">TOTAL</td>
     <td>${fmt(grandQty)}</td>
-    <td style="color:var(--danger);font-size:1.05rem">${fmtPHP(grandTotal)}</td>
+    <td style="font-size:1.05rem"><span style="color:var(--danger)">${fmtPHP(consumeTotal)}</span> <span style="color:var(--muted);font-size:11px">consumed</span><br><span style="color:var(--ok)">${fmtPHP(restockTotal)}</span> <span style="color:var(--muted);font-size:11px">restocked</span></td>
     <td>${fmtInt(logs.length)}</td>
     <td>100%</td>`;
   tbody.appendChild(tfoot);
