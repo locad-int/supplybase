@@ -3350,7 +3350,11 @@ function renderDashboard() {
     }
     const total = spendLogs.filter(l => { const d = new Date(l.date); return d >= bFrom && d <= bTo; })
       .reduce((s, l) => { const item = db.items.find(i => i.id === l.itemId); return s + (l.qty||0)*(item?.cost||0); }, 0);
-    buckets.push({ label, total });
+    const restockTotal = db.logs.filter(l => {
+      if (l.type !== 'restock') return false;
+      const d = new Date(l.date); return d >= bFrom && d <= bTo;
+    }).reduce((s, l) => { const item = db.items.find(i => i.id === l.itemId); return s + (l.qty||0)*(item?.cost||0); }, 0);
+    buckets.push({ label, total, restockTotal });
   }
 
   // ── Category map ──
@@ -3379,19 +3383,21 @@ function renderDashboard() {
 
 function renderAreaChart(el, buckets) {
   if (!el) return;
-  if (!buckets.some(b => b.total > 0)) {
+  if (!buckets.some(b => b.total > 0 || b.restockTotal > 0)) {
     el.innerHTML = '<div class="dash-empty">No spend data for this period.</div>';
     return;
   }
-  const W = 560, H = 155;
-  const padL = 44, padR = 10, padT = 12, padB = 26;
+  const W = 560, H = 165;
+  const padL = 44, padR = 10, padT = 20, padB = 26;
   const cW = W - padL - padR, cH = H - padT - padB;
-  const maxVal = Math.max(...buckets.map(b => b.total), 1);
+  const maxVal = Math.max(...buckets.map(b => Math.max(b.total, b.restockTotal || 0)), 1);
   const n = buckets.length;
-  const pts = buckets.map((b, i) => [
-    padL + (n === 1 ? cW / 2 : (i / (n - 1)) * cW),
-    padT + cH - (b.total / maxVal) * cH
-  ]);
+
+  const xPos = (i) => padL + (n === 1 ? cW / 2 : (i / (n - 1)) * cW);
+  const yPos = (v) => padT + cH - (v / maxVal) * cH;
+
+  const consumePts  = buckets.map((b, i) => [xPos(i), yPos(b.total)]);
+  const restockPts  = buckets.map((b, i) => [xPos(i), yPos(b.restockTotal || 0)]);
 
   function smoothPath(p) {
     if (p.length === 1) return `M ${p[0][0]},${p[0][1]}`;
@@ -3403,9 +3409,10 @@ function renderAreaChart(el, buckets) {
     return d;
   }
 
-  const linePath = smoothPath(pts);
-  const last = pts[pts.length-1], first = pts[0];
-  const areaPath = linePath + ` L ${last[0]},${padT+cH} L ${first[0]},${padT+cH} Z`;
+  const consumeLine = smoothPath(consumePts);
+  const restockLine = smoothPath(restockPts);
+  const lastC = consumePts[consumePts.length-1], firstC = consumePts[0];
+  const consumeArea = consumeLine + ` L ${lastC[0]},${padT+cH} L ${firstC[0]},${padT+cH} Z`;
 
   const gridLines = [0.33, 0.67, 1.0].map(pct => {
     const y = padT + cH - pct * cH;
@@ -3414,25 +3421,34 @@ function renderAreaChart(el, buckets) {
   }).join('');
 
   const step = Math.ceil(n / 8);
-  const xLabels = pts.map((p, i) => {
+  const xLabels = consumePts.map((p, i) => {
     if (i % step !== 0 && i !== n - 1) return '';
     return `<text x="${p[0]}" y="${H-3}" fill="#9ca3af" font-size="9" text-anchor="middle" font-family="inherit">${esc(buckets[i].label)}</text>`;
   }).join('');
 
-  const lastNonZeroIdx = buckets.map(b => b.total).reduce((acc, v, i) => v > 0 ? i : acc, -1);
-  const dot = lastNonZeroIdx >= 0 ? `<circle cx="${pts[lastNonZeroIdx][0]}" cy="${pts[lastNonZeroIdx][1]}" r="4.5" fill="#16a34a" stroke="white" stroke-width="2"/>` : '';
+  const lastCIdx = buckets.map(b => b.total).reduce((acc, v, i) => v > 0 ? i : acc, -1);
+  const lastRIdx = buckets.map(b => b.restockTotal||0).reduce((acc, v, i) => v > 0 ? i : acc, -1);
+  const dotC = lastCIdx >= 0 ? `<circle cx="${consumePts[lastCIdx][0]}" cy="${consumePts[lastCIdx][1]}" r="4" fill="#16a34a" stroke="white" stroke-width="2"/>` : '';
+  const dotR = lastRIdx >= 0 ? `<circle cx="${restockPts[lastRIdx][0]}" cy="${restockPts[lastRIdx][1]}" r="4" fill="#2563eb" stroke="white" stroke-width="2"/>` : '';
+
+  // Legend
+  const legend = `
+    <text x="${padL}" y="11" fill="#16a34a" font-size="9" font-family="inherit" font-weight="600">● Consumption</text>
+    <text x="${padL+90}" y="11" fill="#2563eb" font-size="9" font-family="inherit" font-weight="600">● Restock</text>`;
 
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">
     <defs>
       <linearGradient id="dashAreaGrad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#16a34a" stop-opacity="0.20"/>
+        <stop offset="0%" stop-color="#16a34a" stop-opacity="0.15"/>
         <stop offset="100%" stop-color="#16a34a" stop-opacity="0.01"/>
       </linearGradient>
     </defs>
+    ${legend}
     ${gridLines}
-    <path d="${areaPath}" fill="url(#dashAreaGrad)"/>
-    <path d="${linePath}" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-    ${dot}
+    <path d="${consumeArea}" fill="url(#dashAreaGrad)"/>
+    <path d="${consumeLine}" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="${restockLine}" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5,3"/>
+    ${dotC}${dotR}
     ${xLabels}
   </svg>`;
 }
