@@ -1675,7 +1675,7 @@ function switchTab(name) {
   if (name === 'report') { renderReport(); renderVariance(); renderMonthlyReport(); renderUserReport(); }
   if (name === 'dashboard') renderDashboard();
   if (name === 'messages') renderMessages();
-  if (name === 'requests') renderRequests();
+  if (name === 'requests') { reqVisibleCount = REQ_PAGE_SIZE; renderRequests(); }
   if (name === 'audit') renderAuditLog();
 }
 
@@ -3949,10 +3949,19 @@ function renderMessages() {
 var currentReqFilter = 'all';
 var currentViewReqId = null;
 
+var REQ_PAGE_SIZE = 10;
+var reqVisibleCount = REQ_PAGE_SIZE;
+
 function setReqFilter(f) {
   currentReqFilter = f;
+  reqVisibleCount = REQ_PAGE_SIZE; // reset on filter change
   selectedReqIds.clear();
   document.querySelectorAll('[data-rf]').forEach(b => b.classList.toggle('active', b.dataset.rf === f));
+  renderRequests();
+}
+
+function showMoreRequests() {
+  reqVisibleCount += REQ_PAGE_SIZE;
   renderRequests();
 }
 
@@ -4455,6 +4464,11 @@ function renderRequests() {
     return pa - pb;
   });
 
+  var totalReqs = reqs.length;
+  var visibleReqs = reqs.slice(0, reqVisibleCount);
+  var remaining = totalReqs - visibleReqs.length;
+  reqs = visibleReqs;
+
   var out = '';
 
   // Setup warning (admin only, table missing)
@@ -4583,6 +4597,13 @@ alter publication supabase_realtime add table supply_requests;</pre>
     </div>`;
   });
   out += '</div>';
+  if (remaining > 0) {
+    out += `<div style="text-align:center;margin-top:12px">
+      <button class="btn btn-secondary" onclick="showMoreRequests()" style="font-size:13px;padding:7px 20px">
+        ↓ See more <span style="font-weight:700;color:var(--accent)">(${remaining} remaining)</span>
+      </button>
+    </div>`;
+  }
   el.innerHTML = out;
 }
 
