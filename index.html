@@ -3617,6 +3617,21 @@ async function loadRequests() {
       var localReqs = getReqsLocal();
       var localOnly = localReqs.filter(function(x){ return !sbIds.has(x.id); });
       db_reqs = sbData.concat(localOnly).sort(function(a,b){ return new Date(b.createdAt) - new Date(a.createdAt); });
+      // Backfill missing reqNumbers (requests created before the column was added)
+      var needsBackfill = db_reqs.filter(function(r) { return !r.reqNumber; });
+      if (needsBackfill.length) {
+        // Sort oldest-first so sequence numbers are chronologically consistent
+        var sorted = db_reqs.slice().sort(function(a,b){ return new Date(a.createdAt) - new Date(b.createdAt); });
+        sorted.forEach(function(r, idx) {
+          if (!r.reqNumber) {
+            var d = new Date(r.createdAt);
+            var yyyymm = d.getFullYear() + String(d.getMonth()+1).padStart(2,'0');
+            r.reqNumber = 'REQ-' + yyyymm + '-' + String(idx + 1).padStart(4, '0');
+            // Patch back to Supabase silently
+            sb.from('supply_requests').update({ reqNumber: r.reqNumber }).eq('id', r.id).then(function(){}).catch(function(){});
+          }
+        });
+      }
       saveReqsLocal(); // keep local cache in sync
     }
   } catch(e) { db_reqs = getReqsLocal(); REQ_TABLE_OK = false; }
@@ -4038,12 +4053,15 @@ async function submitRequest() {
   if (sb && REQ_TABLE_OK !== false) {
     try { await sb.from('supply_requests').insert([req]); REQ_TABLE_OK = true; }
     catch(e) {
-      // Retry without newer fields that may not exist in older Supabase schemas
+      // Retry stripping fields that may not exist in older schemas (priority, reqNumber)
       try {
         var baseReq = Object.assign({}, req);
         delete baseReq.priority;
+        delete baseReq.reqNumber;
         await sb.from('supply_requests').insert([baseReq]);
         REQ_TABLE_OK = true;
+        // Patch reqNumber back once insert succeeded (column may have just been missing)
+        sb.from('supply_requests').update({ reqNumber: req.reqNumber }).eq('id', req.id).then(function(){}).catch(function(){});
       } catch(e2) { REQ_TABLE_OK = false; }
     }
   }
