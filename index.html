@@ -312,9 +312,16 @@
     <div class="topbar-right" style="display:flex;align-items:center;gap:12px">
       <span id="last-refreshed" style="font-size:11px;color:var(--muted);display:none">Last refreshed: <span id="last-refreshed-time">—</span></span>
       <span id="realtime-dot" title="Realtime: connecting…" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;cursor:default"></span>
-      <span id="online-badge" onclick="switchTab('dashboard')" title="Who's online — click to view" style="display:none;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--ok);cursor:pointer;padding:3px 10px;border-radius:99px;background:rgba(22,163,74,.1);border:1px solid rgba(22,163,74,.25)">
+      <span id="online-badge" style="display:none;position:relative;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--ok);cursor:default;padding:3px 10px;border-radius:99px;background:rgba(22,163,74,.1);border:1px solid rgba(22,163,74,.25)"
+        onmouseenter="document.getElementById('online-popover').style.display='block'"
+        onmouseleave="document.getElementById('online-popover').style.display='none'">
         <span style="width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;animation:pulse-dot 2s infinite"></span>
         <span id="online-count">0</span> online
+        <div id="online-popover" style="display:none;position:absolute;top:calc(100% + 8px);right:0;min-width:260px;max-width:320px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:200;padding:10px;font-weight:400;color:var(--text)"
+          onmouseenter="this.style.display='block'" onmouseleave="this.style.display='none'">
+          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;padding:0 2px">Who's Online</div>
+          <div id="online-popover-list"></div>
+        </div>
       </span>
     </div>
   </header>
@@ -644,19 +651,6 @@
     <div class="dash-section" style="margin-top:16px">
       <div class="dash-section-title" style="margin-bottom:14px">Top items by cost</div>
       <div id="dash-top-items"></div>
-    </div>
-
-    <!-- Who's Online (superuser only) -->
-    <div class="dash-section" id="dash-online-section" style="margin-top:16px;display:none">
-      <div class="dash-section-header" style="margin-bottom:14px">
-        <div>
-          <div class="dash-section-title">Who's Online</div>
-          <div class="dash-section-sub" id="dash-online-sub" style="font-size:12px;color:var(--muted)">Live presence via Realtime</div>
-        </div>
-      </div>
-      <div id="dash-online-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">
-        <div style="color:var(--muted);font-size:13px">No users online yet.</div>
-      </div>
     </div>
 
   </div>
@@ -1517,9 +1511,7 @@ function renderOnlineUsers() {
   if (currentRole !== 'superuser') return;
   var badge = document.getElementById('online-badge');
   var countEl = document.getElementById('online-count');
-  var section = document.getElementById('dash-online-section');
-  var listEl = document.getElementById('dash-online-list');
-  var subEl = document.getElementById('dash-online-sub');
+  var listEl = document.getElementById('online-popover-list');
 
   var users = [];
   if (_realtimeChannel) {
@@ -1540,14 +1532,12 @@ function renderOnlineUsers() {
   });
 
   var count = users.length;
-  if (badge) { badge.style.display = count > 0 ? 'flex' : 'none'; }
+  if (badge) badge.style.display = count > 0 ? 'flex' : 'none';
   if (countEl) countEl.textContent = count;
-  if (section) section.style.display = '';
-  if (subEl) subEl.textContent = count + ' user' + (count !== 1 ? 's' : '') + ' currently active';
-
   if (!listEl) return;
+
   if (count === 0) {
-    listEl.innerHTML = '<div style="color:var(--muted);font-size:13px">No users online yet.</div>';
+    listEl.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:4px 2px">No users online.</div>';
     return;
   }
 
@@ -1556,27 +1546,24 @@ function renderOnlineUsers() {
     var isMe = currentUser && u.username === currentUser.username;
     var initials = u.username.slice(0, 2).toUpperCase();
     var roleColor = ROLE_COLORS[u.role] || 'var(--accent)';
-    var tabLabel = TAB_LABELS[u.tab] || (u.tab || 'Unknown');
+    var tabLabel = TAB_LABELS[u.tab] || (u.tab || '—');
     var elapsed = '';
     if (u.joinedAt) {
       var secs = Math.floor((now - new Date(u.joinedAt).getTime()) / 1000);
-      if (secs < 60) elapsed = secs + 's ago';
-      else if (secs < 3600) elapsed = Math.floor(secs/60) + 'm ago';
-      else elapsed = Math.floor(secs/3600) + 'h ' + Math.floor((secs%3600)/60) + 'm ago';
+      if (secs < 60) elapsed = secs + 's';
+      else if (secs < 3600) elapsed = Math.floor(secs/60) + 'm';
+      else elapsed = Math.floor(secs/3600) + 'h' + Math.floor((secs%3600)/60) + 'm';
     }
-    return '<div class="online-user-card">'
-      + '<div class="online-avatar" style="background:' + roleColor + '">' + initials + '</div>'
+    return '<div style="display:flex;align-items:center;gap:9px;padding:6px 4px;border-bottom:1px solid var(--border)">'
+      + '<div style="width:28px;height:28px;border-radius:50%;background:' + roleColor + ';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#fff;flex-shrink:0">' + initials + '</div>'
       + '<div style="flex:1;min-width:0">'
-      + '<div style="font-weight:600;font-size:13px">' + esc(u.username) + (isMe ? ' <span style="font-size:10px;color:var(--muted);font-weight:400">(you)</span>' : '') + '</div>'
-      + '<div style="font-size:11px;color:var(--muted);margin-top:2px">'
-      + '<span style="display:inline-block;padding:1px 7px;border-radius:99px;background:' + roleColor + '22;color:' + roleColor + ';font-weight:600;margin-right:6px">' + esc(u.role || '') + '</span>'
-      + '📍 ' + esc(tabLabel)
+      + '<div style="font-size:12px;font-weight:600">' + esc(u.username) + (isMe ? ' <span style="font-size:10px;color:var(--muted);font-weight:400">(you)</span>' : '') + '</div>'
+      + '<div style="font-size:11px;color:var(--muted)">'
+      + '<span style="padding:1px 6px;border-radius:99px;background:' + roleColor + '22;color:' + roleColor + ';font-weight:600;margin-right:5px">' + esc(u.role || '') + '</span>'
+      + esc(tabLabel)
       + '</div>'
       + '</div>'
-      + '<div style="font-size:11px;color:var(--muted);text-align:right;white-space:nowrap">'
-      + '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:4px;animation:pulse-dot 2s infinite"></span>'
-      + elapsed
-      + '</div>'
+      + '<div style="font-size:10px;color:var(--muted);white-space:nowrap">' + elapsed + '</div>'
       + '</div>';
   }).join('');
 }
@@ -1787,7 +1774,7 @@ function switchTab(name) {
   if (name === 'usage') { logVisibleCount = LOG_PAGE_SIZE; renderLogs(); }
   if (name === 'reorder') renderReorder();
   if (name === 'report') { renderReport(); renderVariance(); renderMonthlyReport(); renderUserReport(); }
-  if (name === 'dashboard') { renderDashboard(); renderOnlineUsers(); }
+  if (name === 'dashboard') renderDashboard();
   if (name === 'messages') renderMessages();
   if (name === 'requests') { reqVisibleCount = REQ_PAGE_SIZE; renderRequests(); }
   if (name === 'audit') renderAuditLog();
