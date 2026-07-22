@@ -1483,8 +1483,7 @@ function startRealtime() {
           _realtimeChannel.track({
             username: currentUser.username,
             role: currentRole,
-            tab: _currentPresenceTab || 'inventory',
-            joinedAt: new Date().toISOString()
+            joinedAt: _presenceJoinedAt || new Date().toISOString()
           });
         }
       });
@@ -1513,12 +1512,18 @@ function renderOnlineUsers() {
   var countEl = document.getElementById('online-count');
   var listEl = document.getElementById('online-popover-list');
 
+  var seen = {};
   var users = [];
   if (_realtimeChannel) {
     try {
       var state = _realtimeChannel.presenceState();
       Object.values(state).forEach(function(presences) {
-        presences.forEach(function(p) { if (p.username) users.push(p); });
+        presences.forEach(function(p) {
+          if (p.username && !seen[p.username.toLowerCase()]) {
+            seen[p.username.toLowerCase()] = true;
+            users.push(p);
+          }
+        });
       });
     } catch(e) {}
   }
@@ -1546,22 +1551,18 @@ function renderOnlineUsers() {
     var isMe = currentUser && u.username === currentUser.username;
     var initials = u.username.slice(0, 2).toUpperCase();
     var roleColor = ROLE_COLORS[u.role] || 'var(--accent)';
-    var tabLabel = TAB_LABELS[u.tab] || (u.tab || '—');
     var elapsed = '';
     if (u.joinedAt) {
       var secs = Math.floor((now - new Date(u.joinedAt).getTime()) / 1000);
       if (secs < 60) elapsed = secs + 's';
       else if (secs < 3600) elapsed = Math.floor(secs/60) + 'm';
-      else elapsed = Math.floor(secs/3600) + 'h' + Math.floor((secs%3600)/60) + 'm';
+      else elapsed = Math.floor(secs/3600) + 'h ' + Math.floor((secs%3600)/60) + 'm';
     }
-    return '<div style="display:flex;align-items:center;gap:9px;padding:6px 4px;border-bottom:1px solid var(--border)">'
+    return '<div style="display:flex;align-items:center;gap:9px;padding:7px 4px;border-bottom:1px solid var(--border)">'
       + '<div style="width:28px;height:28px;border-radius:50%;background:' + roleColor + ';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#fff;flex-shrink:0">' + initials + '</div>'
       + '<div style="flex:1;min-width:0">'
       + '<div style="font-size:12px;font-weight:600">' + esc(u.username) + (isMe ? ' <span style="font-size:10px;color:var(--muted);font-weight:400">(you)</span>' : '') + '</div>'
-      + '<div style="font-size:11px;color:var(--muted)">'
-      + '<span style="padding:1px 6px;border-radius:99px;background:' + roleColor + '22;color:' + roleColor + ';font-weight:600;margin-right:5px">' + esc(u.role || '') + '</span>'
-      + esc(tabLabel)
-      + '</div>'
+      + '<div style="font-size:11px;margin-top:1px"><span style="padding:1px 6px;border-radius:99px;background:' + roleColor + '22;color:' + roleColor + ';font-weight:600">' + esc(u.role || '') + '</span></div>'
       + '</div>'
       + '<div style="font-size:10px;color:var(--muted);white-space:nowrap">' + elapsed + '</div>'
       + '</div>';
@@ -1753,15 +1754,7 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 
 
 // ─── TABS ───────────────────────────────────────────────────────────────────────
-var _currentPresenceTab = 'inventory';
-
 function switchTab(name) {
-  _currentPresenceTab = name;
-  if (_realtimeChannel && currentUser) {
-    try {
-      _realtimeChannel.track({ username: currentUser.username, role: currentRole, tab: name, joinedAt: _presenceJoinedAt || new Date().toISOString() });
-    } catch(e) {}
-  }
   document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === name);
   });
@@ -4875,7 +4868,6 @@ function logout() {
   stopRealtime();
   stopSessionTimer();
   _presenceJoinedAt = null;
-  _currentPresenceTab = 'inventory';
   currentRole = null;
   currentUser = null;
   localStorage.removeItem(SESSION_ROLE_KEY);
