@@ -262,6 +262,9 @@
   .req-priority-urgent { font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(239,68,68,.12);color:#dc2626; }
   .req-priority-normal { font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(156,163,175,.12);color:var(--muted); }
   .req-priority-low    { font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(59,130,246,.12);color:#3b82f6; }
+  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .online-user-card { display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px; }
+  .online-avatar { width:34px;height:34px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0;text-transform:uppercase; }
 </style>
 </head>
 <body>
@@ -309,6 +312,10 @@
     <div class="topbar-right" style="display:flex;align-items:center;gap:12px">
       <span id="last-refreshed" style="font-size:11px;color:var(--muted);display:none">Last refreshed: <span id="last-refreshed-time">—</span></span>
       <span id="realtime-dot" title="Realtime: connecting…" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;cursor:default"></span>
+      <span id="online-badge" onclick="switchTab('dashboard')" title="Who's online — click to view" style="display:none;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--ok);cursor:pointer;padding:3px 10px;border-radius:99px;background:rgba(22,163,74,.1);border:1px solid rgba(22,163,74,.25)">
+        <span style="width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;animation:pulse-dot 2s infinite"></span>
+        <span id="online-count">0</span> online
+      </span>
     </div>
   </header>
   <main>
@@ -637,6 +644,19 @@
     <div class="dash-section" style="margin-top:16px">
       <div class="dash-section-title" style="margin-bottom:14px">Top items by cost</div>
       <div id="dash-top-items"></div>
+    </div>
+
+    <!-- Who's Online (superuser only) -->
+    <div class="dash-section" id="dash-online-section" style="margin-top:16px;display:none">
+      <div class="dash-section-header" style="margin-bottom:14px">
+        <div>
+          <div class="dash-section-title">Who's Online</div>
+          <div class="dash-section-sub" id="dash-online-sub" style="font-size:12px;color:var(--muted)">Live presence via Realtime</div>
+        </div>
+      </div>
+      <div id="dash-online-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">
+        <div style="color:var(--muted);font-size:13px">No users online yet.</div>
+      </div>
     </div>
 
   </div>
@@ -1456,11 +1476,22 @@ function startRealtime() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'supply_requests' }, function(payload) {
         handleRealtimeChange('supply_requests', payload);
       })
+      .on('presence', { event: 'sync' }, function() {
+        renderOnlineUsers();
+      })
       .subscribe(function(status) {
         var dot = document.getElementById('realtime-dot');
         if (dot) {
           dot.style.background = status === 'SUBSCRIBED' ? '#16a34a' : '#b45309';
           dot.title = 'Realtime: ' + status;
+        }
+        if (status === 'SUBSCRIBED' && currentUser) {
+          _realtimeChannel.track({
+            username: currentUser.username,
+            role: currentRole,
+            tab: _currentPresenceTab || 'inventory',
+            joinedAt: new Date().toISOString()
+          });
         }
       });
   } catch(e) { console.warn('Realtime failed to start:', e); }
@@ -1468,11 +1499,86 @@ function startRealtime() {
 
 function stopRealtime() {
   if (_realtimeChannel) {
+    try { _realtimeChannel.untrack(); } catch(e) {}
     try { sb.removeChannel(_realtimeChannel); } catch(e) {}
     _realtimeChannel = null;
   }
   var dot = document.getElementById('realtime-dot');
   if (dot) { dot.style.background = 'var(--muted)'; dot.title = 'Realtime: disconnected'; }
+  renderOnlineUsers();
+}
+
+var _presenceJoinedAt = null;
+
+var TAB_LABELS = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests', audit: 'Audit Log' };
+var ROLE_COLORS = { superuser: '#7c3aed', user: '#2563eb', viewer: '#16a34a', requestor: '#d97706', brand: '#db2777' };
+
+function renderOnlineUsers() {
+  if (currentRole !== 'superuser') return;
+  var badge = document.getElementById('online-badge');
+  var countEl = document.getElementById('online-count');
+  var section = document.getElementById('dash-online-section');
+  var listEl = document.getElementById('dash-online-list');
+  var subEl = document.getElementById('dash-online-sub');
+
+  var users = [];
+  if (_realtimeChannel) {
+    try {
+      var state = _realtimeChannel.presenceState();
+      Object.values(state).forEach(function(presences) {
+        presences.forEach(function(p) { if (p.username) users.push(p); });
+      });
+    } catch(e) {}
+  }
+
+  // Sort: self first, then others alphabetically
+  users.sort(function(a, b) {
+    var aMe = currentUser && a.username === currentUser.username ? 0 : 1;
+    var bMe = currentUser && b.username === currentUser.username ? 0 : 1;
+    if (aMe !== bMe) return aMe - bMe;
+    return a.username.localeCompare(b.username);
+  });
+
+  var count = users.length;
+  if (badge) { badge.style.display = count > 0 ? 'flex' : 'none'; }
+  if (countEl) countEl.textContent = count;
+  if (section) section.style.display = '';
+  if (subEl) subEl.textContent = count + ' user' + (count !== 1 ? 's' : '') + ' currently active';
+
+  if (!listEl) return;
+  if (count === 0) {
+    listEl.innerHTML = '<div style="color:var(--muted);font-size:13px">No users online yet.</div>';
+    return;
+  }
+
+  var now = Date.now();
+  listEl.innerHTML = users.map(function(u) {
+    var isMe = currentUser && u.username === currentUser.username;
+    var initials = u.username.slice(0, 2).toUpperCase();
+    var roleColor = ROLE_COLORS[u.role] || 'var(--accent)';
+    var tabLabel = TAB_LABELS[u.tab] || (u.tab || 'Unknown');
+    var elapsed = '';
+    if (u.joinedAt) {
+      var secs = Math.floor((now - new Date(u.joinedAt).getTime()) / 1000);
+      if (secs < 60) elapsed = secs + 's ago';
+      else if (secs < 3600) elapsed = Math.floor(secs/60) + 'm ago';
+      else elapsed = Math.floor(secs/3600) + 'h ' + Math.floor((secs%3600)/60) + 'm ago';
+    }
+    return '<div class="online-user-card">'
+      + '<div class="online-avatar" style="background:' + roleColor + '">' + initials + '</div>'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-weight:600;font-size:13px">' + esc(u.username) + (isMe ? ' <span style="font-size:10px;color:var(--muted);font-weight:400">(you)</span>' : '') + '</div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-top:2px">'
+      + '<span style="display:inline-block;padding:1px 7px;border-radius:99px;background:' + roleColor + '22;color:' + roleColor + ';font-weight:600;margin-right:6px">' + esc(u.role || '') + '</span>'
+      + '📍 ' + esc(tabLabel)
+      + '</div>'
+      + '</div>'
+      + '<div style="font-size:11px;color:var(--muted);text-align:right;white-space:nowrap">'
+      + '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:4px;animation:pulse-dot 2s infinite"></span>'
+      + elapsed
+      + '</div>'
+      + '</div>';
+  }).join('');
 }
 
 function handleRealtimeChange(table, payload) {
@@ -1660,7 +1766,15 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 
 
 // ─── TABS ───────────────────────────────────────────────────────────────────────
+var _currentPresenceTab = 'inventory';
+
 function switchTab(name) {
+  _currentPresenceTab = name;
+  if (_realtimeChannel && currentUser) {
+    try {
+      _realtimeChannel.track({ username: currentUser.username, role: currentRole, tab: name, joinedAt: _presenceJoinedAt || new Date().toISOString() });
+    } catch(e) {}
+  }
   document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === name);
   });
@@ -1673,7 +1787,7 @@ function switchTab(name) {
   if (name === 'usage') { logVisibleCount = LOG_PAGE_SIZE; renderLogs(); }
   if (name === 'reorder') renderReorder();
   if (name === 'report') { renderReport(); renderVariance(); renderMonthlyReport(); renderUserReport(); }
-  if (name === 'dashboard') renderDashboard();
+  if (name === 'dashboard') { renderDashboard(); renderOnlineUsers(); }
   if (name === 'messages') renderMessages();
   if (name === 'requests') { reqVisibleCount = REQ_PAGE_SIZE; renderRequests(); }
   if (name === 'audit') renderAuditLog();
@@ -4764,6 +4878,8 @@ function doLogin() {
   resetSessionTimer();
   loadGlobalSettings().then(function() { startAutoRefresh(); });
   loadRequests().then(function() { updateRequestBadge(); });
+  _presenceJoinedAt = new Date().toISOString();
+  _currentPresenceTab = 'inventory';
   startRealtime();
 }
 
@@ -4771,6 +4887,8 @@ function logout() {
   stopAutoRefresh();
   stopRealtime();
   stopSessionTimer();
+  _presenceJoinedAt = null;
+  _currentPresenceTab = 'inventory';
   currentRole = null;
   currentUser = null;
   localStorage.removeItem(SESSION_ROLE_KEY);
