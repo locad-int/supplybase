@@ -669,11 +669,23 @@
       <button id="btn-new-request" class="btn btn-primary" onclick="openNewRequestModal()" style="display:none">🛒 New Request</button>
     </div>
     <!-- Status filter chips -->
-    <div id="req-filter-row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    <div id="req-filter-row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <button class="status-chip active" data-rf="all"       onclick="setReqFilter('all')">All</button>
       <button class="status-chip" data-rf="pending"   onclick="setReqFilter('pending')"   style="border-color:#f59e0b;color:#f59e0b">Pending</button>
       <button class="status-chip" data-rf="confirmed" onclick="setReqFilter('confirmed')" style="border-color:var(--accent);color:var(--accent)">Confirmed</button>
       <button class="status-chip" data-rf="rejected"  onclick="setReqFilter('rejected')"  style="border-color:var(--danger);color:var(--danger)">Rejected</button>
+    </div>
+    <!-- Mass action bar (admin only, shown when pending requests exist) -->
+    <div id="req-mass-bar" style="display:none;align-items:center;gap:10px;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;font-weight:600;user-select:none">
+        <input type="checkbox" id="req-select-all-cb" onchange="toggleSelectAllReqs(this.checked)" style="width:15px;height:15px;cursor:pointer">
+        Select All
+      </label>
+      <span id="mass-select-count" style="font-size:12px;color:var(--accent);font-weight:600;min-width:60px"></span>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button id="btn-mass-confirm" class="btn btn-primary" style="font-size:12px;padding:5px 14px;opacity:.4;pointer-events:none" onclick="massConfirmRequests()">✓ Mass Confirm</button>
+        <button id="btn-mass-reject"  class="btn" style="font-size:12px;padding:5px 14px;background:var(--danger);color:#fff;opacity:.4;pointer-events:none" onclick="massRejectRequests()">✕ Mass Reject</button>
+      </div>
     </div>
     <div id="req-list-wrap"></div>
   </div>
@@ -3924,6 +3936,7 @@ var currentViewReqId = null;
 
 function setReqFilter(f) {
   currentReqFilter = f;
+  selectedReqIds.clear();
   document.querySelectorAll('[data-rf]').forEach(b => b.classList.toggle('active', b.dataset.rf === f));
   renderRequests();
 }
@@ -4163,6 +4176,9 @@ function openConfirmModal(reqId) {
 async function confirmIssuance() {
   var req = db_reqs.find(r => r.id === currentViewReqId);
   if (!req) return;
+  // Only superuser can confirm User-submitted requests
+  var requesterAcct = db.accounts.find(function(a) { return a.username === req.requestedBy; });
+  if (requesterAcct && requesterAcct.role === 'user' && currentRole !== 'superuser') { closeModal('confirm-request-modal'); return; }
   var issueQty = Math.max(1, parseInt(document.getElementById('crm-issue-qty').value) || req.qty);
 
   // Create usage log entry
@@ -4220,6 +4236,9 @@ async function confirmIssuance() {
 async function rejectRequest() {
   var req = db_reqs.find(r => r.id === currentViewReqId);
   if (!req) return;
+  // Only superuser can reject User-submitted requests
+  var requesterAcct = db.accounts.find(function(a) { return a.username === req.requestedBy; });
+  if (requesterAcct && requesterAcct.role === 'user' && currentRole !== 'superuser') return;
   showConfirm('Reject Request', 'Reject supply request from ' + req.requestedBy + '?', async function() {
     req.status      = 'rejected';
     req.rejectedBy  = currentUser.username;
@@ -4238,6 +4257,137 @@ async function rejectRequest() {
   }, { danger: true, confirmLabel: 'Reject' });
 }
 
+// ─── MASS SELECT / MASS ACTIONS ────────────────────────────────────────────────
+var selectedReqIds = new Set();
+
+function toggleReqSelect(id, checked) {
+  if (checked) selectedReqIds.add(id);
+  else selectedReqIds.delete(id);
+  updateMassActionBar();
+}
+
+function toggleSelectAllReqs(checked) {
+  document.querySelectorAll('.req-select-cb').forEach(function(cb) {
+    cb.checked = checked;
+    if (checked) selectedReqIds.add(cb.dataset.id);
+    else selectedReqIds.delete(cb.dataset.id);
+  });
+  updateMassActionBar();
+}
+
+function updateMassActionBar() {
+  var count = selectedReqIds.size;
+  var countEl = document.getElementById('mass-select-count');
+  if (countEl) countEl.textContent = count > 0 ? count + ' selected' : '';
+
+  ['btn-mass-confirm', 'btn-mass-reject'].forEach(function(btnId) {
+    var btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.style.opacity = count > 0 ? '1' : '.4';
+    btn.style.pointerEvents = count > 0 ? '' : 'none';
+  });
+
+  var selectAllCb = document.getElementById('req-select-all-cb');
+  if (selectAllCb) {
+    var allCbs = document.querySelectorAll('.req-select-cb');
+    var total = allCbs.length;
+    if (total === 0) { selectAllCb.checked = false; selectAllCb.indeterminate = false; return; }
+    var checkedCount = Array.from(allCbs).filter(function(cb) { return cb.checked; }).length;
+    selectAllCb.checked = checkedCount === total;
+    selectAllCb.indeterminate = checkedCount > 0 && checkedCount < total;
+  }
+}
+
+async function massConfirmRequests() {
+  var ids = Array.from(selectedReqIds).filter(function(id) {
+    var r = db_reqs.find(function(x) { return x.id === id; });
+    return r && r.status === 'pending';
+  });
+  if (ids.length === 0) return;
+  showConfirm(
+    'Mass Confirm Requests',
+    'Confirm ' + ids.length + ' supply request' + (ids.length !== 1 ? 's' : '') + '?\n\nEach will be issued at its requested quantity.',
+    async function() {
+      var now = new Date().toISOString();
+      for (var i = 0; i < ids.length; i++) {
+        var req = db_reqs.find(function(x) { return x.id === ids[i]; });
+        if (!req || req.status !== 'pending') continue;
+
+        var item = db.items.find(function(it) { return it.id === req.itemId; });
+        if (item) {
+          var newQty = Math.max(0, item.qty - req.qty);
+          var logEntry = {
+            id: uid(), itemId: req.itemId, type: 'use',
+            qty: req.qty, absQty: newQty,
+            by: currentUser.username, date: now, ref: req.reqNumber || '',
+            notes: 'Issued via ' + (req.reqNumber || 'request') + ' — by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
+          };
+          db.logs.push(logEntry);
+          item.qty = newQty;
+          item.updatedAt = now;
+          if (sb) {
+            try {
+              await sb.from('logs').insert([logEntry]);
+              await sb.from('items').update({ qty: item.qty, updatedAt: item.updatedAt }).eq('id', item.id);
+            } catch(e) {}
+          }
+        }
+
+        req.status = 'confirmed';
+        req.confirmedBy = currentUser.username;
+        req.confirmedAt = now;
+        req.issuedQty = req.qty;
+        req.seenByRequestor = false;
+
+        if (sb && REQ_TABLE_OK !== false) {
+          try { await sb.from('supply_requests').update({ status: 'confirmed', confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, issuedQty: req.qty, seenByRequestor: false }).eq('id', req.id); } catch(e) {}
+        }
+        logAudit('Request confirmed (mass)', req.itemName + ' x' + req.qty + ' → ' + req.requestedBy);
+      }
+      save();
+      saveReqsLocal();
+      selectedReqIds.clear();
+      updateSummary();
+      renderInventory();
+      renderRequests();
+      updateRequestBadge();
+    },
+    { danger: false, confirmLabel: 'Confirm ' + ids.length }
+  );
+}
+
+async function massRejectRequests() {
+  var ids = Array.from(selectedReqIds).filter(function(id) {
+    var r = db_reqs.find(function(x) { return x.id === id; });
+    return r && r.status === 'pending';
+  });
+  if (ids.length === 0) return;
+  showConfirm(
+    'Mass Reject Requests',
+    'Reject ' + ids.length + ' supply request' + (ids.length !== 1 ? 's' : '') + '?\n\nRequestors will be notified.',
+    async function() {
+      var now = new Date().toISOString();
+      for (var i = 0; i < ids.length; i++) {
+        var req = db_reqs.find(function(x) { return x.id === ids[i]; });
+        if (!req || req.status !== 'pending') continue;
+        req.status = 'rejected';
+        req.rejectedBy = currentUser.username;
+        req.rejectedAt = now;
+        req.seenByRequestor = false;
+        if (sb && REQ_TABLE_OK !== false) {
+          try { await sb.from('supply_requests').update({ status: 'rejected', rejectedBy: req.rejectedBy, rejectedAt: req.rejectedAt, seenByRequestor: false }).eq('id', req.id); } catch(e) {}
+        }
+        logAudit('Request rejected (mass)', req.itemName + ' — ' + req.requestedBy);
+      }
+      saveReqsLocal();
+      selectedReqIds.clear();
+      updateRequestBadge();
+      renderRequests();
+    },
+    { danger: true, confirmLabel: 'Reject ' + ids.length }
+  );
+}
+
 function renderRequests() {
   var el = document.getElementById('req-list-wrap');
   if (!el) return;
@@ -4247,7 +4397,15 @@ function renderRequests() {
   var subLabel = isAdmin ? 'Request history — all supply requests' : 'Your supply requests';
   document.getElementById('req-view-sub').textContent = subLabel;
   var newReqBtn = document.getElementById('btn-new-request');
-  if (newReqBtn) newReqBtn.style.display = currentRole === 'requestor' ? '' : 'none';
+  if (newReqBtn) newReqBtn.style.display = (currentRole === 'requestor' || currentRole === 'user') ? '' : 'none';
+
+  // Show/hide mass action bar (admin only)
+  var massBar = document.getElementById('req-mass-bar');
+  var pendingCount = db_reqs.filter(function(r) { return r.status === 'pending'; }).length;
+  if (massBar) massBar.style.display = (isAdmin && pendingCount > 0) ? 'flex' : 'none';
+  // Prune stale selections
+  selectedReqIds.forEach(function(id) { if (!db_reqs.find(function(r) { return r.id === id && r.status === 'pending'; })) selectedReqIds.delete(id); });
+  updateMassActionBar();
 
   // Mark requestor's resolved requests as seen
   if (currentRole === 'requestor' && currentUser) {
@@ -4348,12 +4506,24 @@ alter publication supabase_realtime add table supply_requests;</pre>
     var prio = req.priority || 'normal';
     var prioLabel = prio === 'urgent' ? '🔴 Urgent' : prio === 'low' ? '🔵 Low' : 'Normal';
     var actionButtons = '';
-    var isOwnPending = !isAdmin && req.status === 'pending' && currentUser && req.requestedBy === currentUser.username;
-    if (isAdmin && req.status === 'pending') {
+    var isOwnPending = req.status === 'pending' && currentUser && req.requestedBy === currentUser.username;
+    // Check if the requester is a User-role account (only superuser can confirm those)
+    var requesterAcct = db.accounts.find(function(a) { return a.username === req.requestedBy; });
+    var requesterIsUser = requesterAcct ? requesterAcct.role === 'user' : false;
+    var canConfirm = currentRole === 'superuser' || (currentRole === 'user' && !requesterIsUser);
+    if (isOwnPending && currentRole === 'user') {
+      // User viewing their own request: can edit/withdraw but NOT confirm their own
+      actionButtons = `<div class="req-card-actions">
+        <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="openEditRequest('${req.id}')">✏️ Edit</button>
+        <button class="btn btn-danger" style="font-size:12px;padding:5px 12px" onclick="withdrawRequest('${req.id}')">✕ Withdraw</button>
+      </div>`;
+    } else if (isAdmin && req.status === 'pending' && canConfirm) {
       actionButtons = `<div class="req-card-actions">
         <button class="btn btn-primary" style="font-size:12px;padding:5px 12px" onclick="openConfirmModal('${req.id}')">Review & Confirm</button>
       </div>`;
-    } else if (isOwnPending) {
+    } else if (isAdmin && req.status === 'pending' && !canConfirm) {
+      actionButtons = `<div style="font-size:11px;color:var(--muted);margin-top:8px;font-style:italic">Awaiting superuser approval</div>`;
+    } else if (!isAdmin && isOwnPending) {
       actionButtons = `<div class="req-card-actions">
         <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="openEditRequest('${req.id}')">✏️ Edit</button>
         <button class="btn btn-danger" style="font-size:12px;padding:5px 12px" onclick="withdrawRequest('${req.id}')">✕ Withdraw</button>
@@ -4363,9 +4533,11 @@ alter publication supabase_realtime add table supply_requests;</pre>
     } else if (req.status === 'rejected') {
       actionButtons = `<div style="font-size:11px;color:var(--danger);margin-top:8px">Rejected by ${esc(req.rejectedBy)} · ${fmtDT(req.rejectedAt)}</div>`;
     }
+    var isSelected = selectedReqIds.has(req.id);
     out += `<div class="req-card ${cardCls}">
       <div class="req-card-header">
         <div style="display:flex;align-items:center;gap:8px">
+          ${isAdmin && req.status === 'pending' && canConfirm && !isOwnPending ? `<input type="checkbox" class="req-select-cb" data-id="${req.id}" ${isSelected ? 'checked' : ''} onchange="toggleReqSelect('${req.id}', this.checked)" onclick="event.stopPropagation()" style="width:15px;height:15px;cursor:pointer;flex-shrink:0">` : ''}
           ${req.reqNumber ? `<span style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em;background:var(--surface2);padding:2px 8px;border-radius:99px;border:1px solid var(--border)">${esc(req.reqNumber)}</span>` : ''}
           <span class="req-card-item">${esc(req.itemName)}</span>
         </div>
