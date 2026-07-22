@@ -1698,8 +1698,19 @@ function filterInventory(status) {
 // ─── SUMMARY ────────────────────────────────────────────────────────────────────
 // ─── MAX-REF (peak stock reference for level bar — stored on item.maxRef in Supabase) ──
 function getMaxRef(item) {
-  // fall back to current qty if maxRef not yet set (seeds on first read)
-  return Math.max(item.maxRef || item.qty || 1, 1);
+  if (item.maxRef) return Math.max(item.maxRef, 1);
+  // maxRef not set — derive peak from log history (absQty = stock after each transaction)
+  var itemLogs = db.logs.filter(function(l) { return l.itemId === item.id && l.absQty != null; });
+  if (itemLogs.length) {
+    var peak = Math.max.apply(null, itemLogs.map(function(l) { return l.absQty || 0; }));
+    if (peak > 0) {
+      // Cache it so we don't recompute every render; also persist to Supabase
+      updateMaxRef(item, peak);
+      return Math.max(peak, 1);
+    }
+  }
+  // Final fallback: no logs yet, treat current qty as 100%
+  return Math.max(item.qty || 1, 1);
 }
 async function updateMaxRef(item, newQty) {
   if (!item) return;
