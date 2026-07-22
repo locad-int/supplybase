@@ -1424,19 +1424,22 @@ async function loadGlobalSettings() {
   try {
     var r = await sb.from('settings').select('key, value');
     if (r.error || !r.data) return;
-    r.data.forEach(function(row) {
-      if (row.key === 'refreshInterval') {
-        var v = parseInt(row.value);
-        if (!isNaN(v)) saveRefreshIntervalLocal(v);
-      }
-    });
+    // Deduplicate: last-written row wins for each key (pick last occurrence)
+    var settingsMap = {};
+    r.data.forEach(function(row) { if (row.key) settingsMap[row.key] = row.value; });
+    if (settingsMap['refreshInterval'] !== undefined) {
+      var v = parseInt(settingsMap['refreshInterval']);
+      if (!isNaN(v)) saveRefreshIntervalLocal(v);
+    }
   } catch(e) {} // settings table may not exist yet — silently ignore
 }
 async function saveRefreshIntervalGlobal(mins) {
   saveRefreshIntervalLocal(mins);
   if (!sb) return;
   try {
-    await sb.from('settings').upsert([{ key: 'refreshInterval', value: String(mins) }], { onConflict: 'key' });
+    // Delete all existing rows for this key first to avoid duplicates from missing UNIQUE constraint
+    await sb.from('settings').delete().eq('key', 'refreshInterval');
+    await sb.from('settings').insert([{ key: 'refreshInterval', value: String(mins) }]);
   } catch(e) {} // silently ignore if table not created yet
 }
 function startAutoRefresh() {
@@ -1469,6 +1472,13 @@ function startRealtime() {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'supply_requests' }, function(payload) {
         handleRealtimeChange('supply_requests', payload);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, function(payload) {
+        var row = payload.new || {};
+        if (row.key === 'refreshInterval') {
+          var v = parseInt(row.value);
+          if (!isNaN(v)) { saveRefreshIntervalLocal(v); startAutoRefresh(); }
+        }
       })
       .on('presence', { event: 'sync' }, function() {
         renderOnlineUsers();
@@ -4627,7 +4637,8 @@ alter table settings disable row level security;
 alter publication supabase_realtime add table items;
 alter publication supabase_realtime add table logs;
 alter publication supabase_realtime add table reorders;
-alter publication supabase_realtime add table supply_requests;</pre>
+alter publication supabase_realtime add table supply_requests;
+alter publication supabase_realtime add table settings;</pre>
     </div>`;
   }
 
