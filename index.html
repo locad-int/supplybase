@@ -345,11 +345,11 @@
       <div class="label">✓ Healthy</div>
       <div class="value" id="s-ok">0</div>
     </div>
-    <div class="card" onclick="switchTab('reorder')" style="cursor:pointer" title="Go to Reorder tab">
+    <div class="card" id="card-reorder" onclick="switchTab('reorder')" style="cursor:pointer" title="Go to Reorder tab">
       <div class="label">Reorders Pending</div>
       <div class="value" id="s-reorder">0</div>
     </div>
-    <div class="card" onclick="switchTab('report')" style="cursor:pointer" title="Go to Cost Report">
+    <div class="card" id="card-expenses" onclick="switchTab('report')" style="cursor:pointer" title="Go to Cost Report">
       <div class="label">📅 This Week's Expenses</div>
       <div class="value" id="s-value" style="font-size:1.2rem">₱0</div>
     </div>
@@ -1237,16 +1237,29 @@
       </div>
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
-    <div class="form-group full">
-      <label>Auto-refresh interval</label>
-      <select id="set-refresh-interval" style="width:100%">
-        <option value="1">Every 1 minute</option>
-        <option value="2">Every 2 minutes</option>
-        <option value="3">Every 3 minutes</option>
-        <option value="5">Every 5 minutes</option>
-        <option value="10">Every 10 minutes</option>
-        <option value="0">Disabled</option>
-      </select>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group full">
+        <label>Auto-refresh interval</label>
+        <select id="set-refresh-interval" style="width:100%">
+          <option value="1">Every 1 minute</option>
+          <option value="2">Every 2 minutes</option>
+          <option value="3">Every 3 minutes</option>
+          <option value="5">Every 5 minutes</option>
+          <option value="10">Every 10 minutes</option>
+          <option value="0">Disabled</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Low stock threshold</label>
+        <select id="set-low-stock-threshold" style="width:100%">
+          <option value="10">≤ 10%</option>
+          <option value="20">≤ 20%</option>
+          <option value="25">≤ 25%</option>
+          <option value="30">≤ 30%</option>
+          <option value="40">≤ 40%</option>
+          <option value="50">≤ 50%</option>
+        </select>
+      </div>
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
     <p style="color:var(--muted);font-size:13px;margin-bottom:12px">Contact info shown to users when they need help.</p>
@@ -1412,12 +1425,28 @@ async function refreshData() {
 
 var autoRefreshTimer = null;
 var REFRESH_INTERVAL_KEY = 'sb_refreshInterval';
+var LOW_STOCK_THRESHOLD_KEY = 'sb_lowStockThreshold';
 function getRefreshInterval() {
   var v = parseInt(localStorage.getItem(REFRESH_INTERVAL_KEY));
   return isNaN(v) ? 2 : v; // default 2 minutes
 }
 function saveRefreshIntervalLocal(mins) {
   localStorage.setItem(REFRESH_INTERVAL_KEY, mins);
+}
+function getLowStockThreshold() {
+  var v = parseInt(localStorage.getItem(LOW_STOCK_THRESHOLD_KEY));
+  return isNaN(v) ? 30 : v; // default 30%
+}
+function saveLowStockThresholdLocal(pct) {
+  localStorage.setItem(LOW_STOCK_THRESHOLD_KEY, pct);
+}
+async function saveLowStockThresholdGlobal(pct) {
+  saveLowStockThresholdLocal(pct);
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', 'lowStockThreshold');
+    await sb.from('settings').insert([{ key: 'lowStockThreshold', value: String(pct) }]);
+  } catch(e) {}
 }
 async function loadGlobalSettings() {
   if (!sb) return;
@@ -1430,6 +1459,10 @@ async function loadGlobalSettings() {
     if (settingsMap['refreshInterval'] !== undefined) {
       var v = parseInt(settingsMap['refreshInterval']);
       if (!isNaN(v)) saveRefreshIntervalLocal(v);
+    }
+    if (settingsMap['lowStockThreshold'] !== undefined) {
+      var t = parseInt(settingsMap['lowStockThreshold']);
+      if (!isNaN(t)) saveLowStockThresholdLocal(t);
     }
   } catch(e) {} // settings table may not exist yet — silently ignore
 }
@@ -1478,6 +1511,10 @@ function startRealtime() {
         if (row.key === 'refreshInterval') {
           var v = parseInt(row.value);
           if (!isNaN(v)) { saveRefreshIntervalLocal(v); startAutoRefresh(); }
+        }
+        if (row.key === 'lowStockThreshold') {
+          var t = parseInt(row.value);
+          if (!isNaN(t)) { saveLowStockThresholdLocal(t); renderInventory(); updateSummary(); }
         }
       })
       .on('presence', { event: 'sync' }, function() {
@@ -1849,14 +1886,19 @@ function stockStatus(item) {
   if (item.qty <= 0) return 'danger';
   var ref = getMaxRef(item);
   var pct = Math.round((item.qty / ref) * 100);
-  if (pct <= 30) return 'warn';
+  if (pct <= getLowStockThreshold()) return 'warn';
   return 'ok';
 }
 function updateSummary() {
-  const total = db.items.length;
-  const out = db.items.filter(i => i.qty <= 0).length;
-  const low = db.items.filter(i => stockStatus(i) === 'warn').length;
-  const ok  = db.items.filter(i => stockStatus(i) === 'ok').length;
+  const isBrand = currentRole === 'brand';
+  const brandName = isBrand ? getBrandName().toLowerCase() : '';
+  const visibleItems = isBrand
+    ? db.items.filter(i => brandName && i.name.toLowerCase().includes(brandName))
+    : db.items;
+  const total = visibleItems.length;
+  const out = visibleItems.filter(i => i.qty <= 0).length;
+  const low = visibleItems.filter(i => stockStatus(i) === 'warn').length;
+  const ok  = visibleItems.filter(i => stockStatus(i) === 'ok').length;
   const reorders = db.reorders.filter(r => r.status !== 'received').length;
   document.getElementById('s-total').textContent = fmtInt(total);
   document.getElementById('s-out').textContent = fmtInt(out);
@@ -1930,7 +1972,7 @@ function renderInventory() {
       <td><strong>${esc(item.name)}</strong></td>
       <td style="color:var(--muted);font-size:12px">${item.sku ? esc(item.sku) : '—'}</td>
       <td>${item.category ? '<span class="badge badge-info">'+esc(item.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
-      <td style="font-weight:700;font-size:1.05rem">${fmtInt(item.qty)} <span style="color:var(--muted);font-size:12px">${esc(item.unit||'')}</span></td>
+      <td style="font-weight:700;font-size:1.05rem" id="qty-cell-${item.id}">${can('adjust') ? `<span class="inline-qty-display" onclick="event.stopPropagation();startInlineQtyEdit('${item.id}')" title="Click to edit qty" style="cursor:text;border-bottom:1px dashed var(--muted)">${fmtInt(item.qty)}</span>` : fmtInt(item.qty)} <span style="color:var(--muted);font-size:12px">${esc(item.unit||'')}</span></td>
       <td>
         <div class="stock-bar-wrap">
           <div class="stock-bar"><div class="stock-bar-fill" style="width:${pct === 0 ? 4 : pct}%;background:${barColor}"></div></div>
@@ -2884,6 +2926,51 @@ function applyAdjust() {
   save();
   closeModal('adjust-modal');
   renderInventory();
+}
+
+// ─── INLINE QTY EDIT ─────────────────────────────────────────────────────────────
+function startInlineQtyEdit(itemId) {
+  var item = db.items.find(function(i) { return i.id === itemId; });
+  if (!item) return;
+  var cell = document.getElementById('qty-cell-' + itemId);
+  if (!cell || cell.querySelector('input')) return; // already editing
+  var unit = item.unit || '';
+  cell.innerHTML = '<input id="iqe-' + itemId + '" type="number" min="0" step="1" value="' + item.qty + '" '
+    + 'style="width:90px;font-weight:700;font-size:1rem;padding:2px 6px;border-radius:5px;border:1px solid var(--accent);background:var(--surface);color:var(--text);text-align:right" '
+    + 'onclick="event.stopPropagation()" '
+    + 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveInlineQty(\'' + itemId + '\');}if(event.key===\'Escape\'){renderInventory();}" '
+    + 'onblur="saveInlineQty(\'' + itemId + '\')" '
+    + '/> <span style="color:var(--muted);font-size:12px">' + esc(unit) + '</span>';
+  var inp = document.getElementById('iqe-' + itemId);
+  if (inp) { inp.focus(); inp.select(); }
+}
+
+function saveInlineQty(itemId) {
+  var inp = document.getElementById('iqe-' + itemId);
+  if (!inp) return; // blur fired after Enter already handled
+  var raw = inp.value;
+  inp.onblur = null; // prevent double-fire
+  var newQty = parseFloat(raw);
+  var item = db.items.find(function(i) { return i.id === itemId; });
+  if (!item || raw === '' || isNaN(newQty) || newQty < 0) { renderInventory(); return; }
+  newQty = Math.round(newQty);
+  if (newQty === item.qty) { renderInventory(); return; }
+  var oldQty = item.qty;
+  var diff = newQty - oldQty;
+  db.logs.push({
+    id: uid(), itemId: itemId, type: 'adjust',
+    qty: newQty, absQty: newQty, variance: diff, sysQty: oldQty,
+    varianceReason: 'Manual qty entry',
+    by: (currentUser && currentUser.username) || 'manual',
+    date: new Date().toISOString(),
+    notes: 'Manual qty: ' + oldQty + ' → ' + newQty, ref: ''
+  });
+  item.qty = newQty;
+  item.updatedAt = new Date().toISOString();
+  updateMaxRef(item, newQty);
+  save();
+  renderInventory();
+  updateSummary();
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────────
@@ -4959,11 +5046,16 @@ function applyRoleUI() {
   show('btn-create-reorder', can('reorder'));
 
   // Hide most nav tabs for brand users — inventory only
-  var navIds = ['nav-usage', 'nav-reorder', 'nav-requests', 'nav-messages', 'nav-report', 'nav-audit'];
+  var navIds = ['nav-usage', 'nav-reorder', 'nav-requests', 'nav-messages', 'nav-report', 'nav-audit', 'nav-dashboard'];
   navIds.forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = isBrand ? 'none' : '';
   });
+  // Hide reorder/expenses cards for brand users
+  var reorderCard = document.getElementById('card-reorder');
+  var expensesCard = document.getElementById('card-expenses');
+  if (reorderCard) reorderCard.style.display = isBrand ? 'none' : '';
+  if (expensesCard) expensesCard.style.display = isBrand ? 'none' : '';
 
   // Requests nav: visible to non-brand roles
   var reqNav = document.getElementById('nav-requests');
@@ -5055,6 +5147,7 @@ function openSettings() {
   document.getElementById('set-contact-phone').value = c.phone || '';
   document.getElementById('set-contact-note').value  = c.note  || '';
   document.getElementById('set-refresh-interval').value = String(getRefreshInterval());
+  document.getElementById('set-low-stock-threshold').value = String(getLowStockThreshold());
   openModal('settings-modal');
 }
 
@@ -5114,6 +5207,9 @@ function saveSettings() {
   // Save refresh interval globally and restart timer
   var refreshMins = parseInt(document.getElementById('set-refresh-interval').value) || 0;
   saveRefreshIntervalGlobal(refreshMins).then(function() { startAutoRefresh(); });
+  // Save low stock threshold globally
+  var lowPct = parseInt(document.getElementById('set-low-stock-threshold').value) || 30;
+  saveLowStockThresholdGlobal(lowPct).then(function() { renderInventory(); updateSummary(); });
 
   logAudit('Settings changed', 'Passwords/username updated');
   document.getElementById('settings-msg').textContent = 'Settings saved.';
