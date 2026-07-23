@@ -263,6 +263,9 @@
   .req-priority-normal { font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(156,163,175,.12);color:var(--muted); }
   .req-priority-low    { font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(59,130,246,.12);color:#3b82f6; }
   @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .inv-drag-row.drag-over-top { box-shadow: inset 0 2px 0 0 var(--accent); }
+  .inv-drag-row.drag-over-bot { box-shadow: inset 0 -2px 0 0 var(--accent); }
+  .inv-drag-row.dragging { opacity: .35; }
   .online-user-card { display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px; }
   .online-avatar { width:34px;height:34px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0;text-transform:uppercase; }
 </style>
@@ -1956,9 +1959,46 @@ function renderInventory() {
     const barColor = status === 'danger' ? 'var(--danger)' : status === 'warn' ? 'var(--warn)' : 'var(--ok)';
     const badgeClass = status === 'danger' ? 'badge-danger' : status === 'warn' ? 'badge-warn' : 'badge-ok';
     const badgeLabel = status === 'danger' ? '⛔ Out' : status === 'warn' ? '⚡ Low' : '✓ OK';
+    const canDrag = currentRole === 'superuser' && sortField === 'seq' && sortDir === 1;
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
     tr.title = 'Click to view details';
+    tr.dataset.itemId = item.id;
+    if (canDrag) {
+      tr.draggable = true;
+      tr.classList.add('inv-drag-row');
+      tr.addEventListener('dragstart', function(e) {
+        _dragSrcId = item.id;
+        e.dataTransfer.effectAllowed = 'move';
+        setTimeout(function() { tr.classList.add('dragging'); }, 0);
+      });
+      tr.addEventListener('dragend', function() {
+        tr.classList.remove('dragging');
+        document.querySelectorAll('.inv-drag-row').forEach(function(r) {
+          r.classList.remove('drag-over-top', 'drag-over-bot');
+        });
+      });
+      tr.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        document.querySelectorAll('.inv-drag-row').forEach(function(r) {
+          r.classList.remove('drag-over-top', 'drag-over-bot');
+        });
+        var rect = tr.getBoundingClientRect();
+        var mid = rect.top + rect.height / 2;
+        tr.classList.add(e.clientY < mid ? 'drag-over-top' : 'drag-over-bot');
+      });
+      tr.addEventListener('drop', function(e) {
+        e.preventDefault();
+        if (_dragSrcId && _dragSrcId !== item.id) {
+          var rect = tr.getBoundingClientRect();
+          var mid = rect.top + rect.height / 2;
+          var before = e.clientY < mid;
+          dropReorderItem(_dragSrcId, item.id, before);
+        }
+        tr.classList.remove('drag-over-top', 'drag-over-bot');
+      });
+    }
     tr.onclick = function() { openItemDetail(item.id); };
     var actionsHtml = '<div class="actions-cell">';
     actionsHtml += '<button class="btn btn-icon btn-sm" title="Item history" onclick="event.stopPropagation();openItemHistory(\'' + item.id + '\')">📋</button>';
@@ -1968,7 +2008,7 @@ function renderInventory() {
     if (currentRole === 'superuser') actionsHtml += '<button class="btn btn-icon btn-sm btn-danger" title="Delete" onclick="event.stopPropagation();deleteItem(\'' + item.id + '\')">🗑</button>';
     actionsHtml += '</div>';
     tr.innerHTML = `
-      <td style="color:var(--muted);font-size:12px;text-align:center">${i+1}</td>
+      <td style="color:var(--muted);font-size:12px;text-align:center;white-space:nowrap">${canDrag ? '<span style="cursor:grab;font-size:14px;margin-right:4px;opacity:.4" title="Drag to reorder">⠿</span>' : ''}${i+1}</td>
       <td><strong>${esc(item.name)}</strong></td>
       <td style="color:var(--muted);font-size:12px">${item.sku ? esc(item.sku) : '—'}</td>
       <td>${item.category ? '<span class="badge badge-info">'+esc(item.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
@@ -2926,6 +2966,31 @@ function applyAdjust() {
   save();
   closeModal('adjust-modal');
   renderInventory();
+}
+
+// ─── INVENTORY DRAG-REORDER ───────────────────────────────────────────────────────
+var _dragSrcId = null;
+
+function dropReorderItem(srcId, targetId, before) {
+  var srcIdx = db.items.findIndex(function(i) { return i.id === srcId; });
+  var tgtIdx = db.items.findIndex(function(i) { return i.id === targetId; });
+  if (srcIdx === -1 || tgtIdx === -1) return;
+
+  // Remove src from array and re-insert at new position
+  var moved = db.items.splice(srcIdx, 1)[0];
+  tgtIdx = db.items.findIndex(function(i) { return i.id === targetId; });
+  db.items.splice(before ? tgtIdx : tgtIdx + 1, 0, moved);
+
+  // Reassign seq to match new order
+  db.items.forEach(function(item, idx) { item.seq = idx + 1; });
+
+  renderInventory();
+
+  // Persist seq updates to Supabase in background
+  db.items.forEach(function(item) {
+    if (!sb) return;
+    sb.from('items').update({ seq: item.seq }).eq('id', item.id).then(function(){}).catch(function(){});
+  });
 }
 
 // ─── INLINE QTY EDIT ─────────────────────────────────────────────────────────────
