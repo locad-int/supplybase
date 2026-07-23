@@ -373,7 +373,7 @@
       <select id="inv-filter-cat" onchange="renderInventory()" style="max-width:220px;width:auto">
         <option value="">All Categories</option>
       </select>
-      <button class="btn btn-secondary" onclick="exportInventoryCSV()" style="font-size:12px">⬇ Export CSV</button>
+      <button id="btn-export-inv-csv" class="btn btn-secondary" onclick="exportInventoryCSV()" style="font-size:12px">⬇ Export CSV</button>
       <button class="btn btn-primary" onclick="openImportModal()" style="font-size:12px" id="btn-import-file">⬆ Import File</button>
       <input type="file" id="import-file-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
     </div>
@@ -5116,6 +5116,7 @@ function applyRoleUI() {
     var el = document.getElementById(id);
     if (el) el.style.display = isBrand ? 'none' : '';
   });
+  show('btn-export-inv-csv', !isBrand);
   // Hide reorder/expenses cards for brand users
   var reorderCard = document.getElementById('card-reorder');
   var expensesCard = document.getElementById('card-expenses');
