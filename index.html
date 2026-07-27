@@ -2216,6 +2216,7 @@ function renderLogs() {
       + '<div class="log-qty" style="color:' + typeColors[log.type] + '">' + qtySign + fmtInt(Math.abs(log.qty)) + ' ' + esc(item ? (item.unit||'') : '') + '</div>'
       + '<div style="color:var(--muted);font-size:11px;margin-top:2px">' + (log.absQty != null ? 'Stock: ' + log.absQty : '') + '</div>'
       + '<div style="margin-top:4px"><span class="badge ' + badgeClass + '">' + log.type + '</span></div>'
+      + (currentRole === 'superuser' ? '<div style="margin-top:6px"><button class="btn btn-icon btn-sm btn-danger" title="Delete log entry" onclick="event.stopPropagation();deleteLogEntry(\'' + log.id + '\')">🗑</button></div>' : '')
       + '</div>';
     list.appendChild(div);
   });
@@ -2231,6 +2232,21 @@ function renderLogs() {
   const sel = document.getElementById('log-filter-item');
   const cur = sel.value;
   sel.innerHTML = '<option value="">All Items</option>' + db.items.map(i => `<option value="${i.id}"${i.id===cur?' selected':''}>${esc(i.name)}</option>`).join('');
+}
+
+function deleteLogEntry(logId) {
+  var log = db.logs.find(function(l) { return l.id === logId; });
+  if (!log) return;
+  var item = db.items.find(function(i) { return i.id === log.itemId; });
+  var label = (item ? item.name : 'Deleted Item') + ' · ' + log.type + ' · ' + new Date(log.date).toLocaleDateString();
+  showConfirm('Delete Log Entry', 'Permanently delete this entry?\n\n' + label + '\n\nThis will affect cost reports. The stock level will NOT be automatically reversed — adjust manually if needed.', function() {
+    db.logs = db.logs.filter(function(l) { return l.id !== logId; });
+    if (sb) {
+      sb.from('logs').delete().eq('id', logId).then(function(){}).catch(function(){});
+    }
+    logAudit('Log deleted', label + ' (by ' + (currentUser && currentUser.username) + ')');
+    renderLogs();
+  }, { confirmLabel: 'Delete', danger: true });
 }
 
 function openLogDetail(logId) {
@@ -4495,7 +4511,7 @@ async function confirmIssuance() {
       qty:    issueQty,
       absQty: newQty,
       by:     currentUser.username,
-      date:   new Date().toISOString(),
+      date:   req.createdAt || new Date().toISOString(),
       ref:    '',
       notes:  'Requested ' + req.qty + (issueQty !== req.qty ? ', issued ' + issueQty : '') + ' — by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
     };
@@ -4622,7 +4638,7 @@ async function massConfirmRequests() {
           var logEntry = {
             id: uid(), itemId: req.itemId, type: 'use',
             qty: req.qty, absQty: newQty,
-            by: currentUser.username, date: now, ref: req.reqNumber || '',
+            by: currentUser.username, date: req.createdAt || now, ref: req.reqNumber || '',
             notes: 'Issued via ' + (req.reqNumber || 'request') + ' — by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
           };
           db.logs.push(logEntry);
