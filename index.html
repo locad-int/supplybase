@@ -330,6 +330,22 @@
   <button onclick="resetSessionTimer()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:13px">Stay logged in</button>
 </div>
 
+<!-- QC STATION MANAGEMENT MODAL -->
+<div class="modal-bg" id="qc-station-modal">
+  <div class="modal" style="max-width:420px;max-height:80vh;display:flex;flex-direction:column">
+    <h2>📦 Manage QC Pack Stations</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Add stations to anticipate scale-up. Changes are saved globally.</p>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-shrink:0">
+      <input type="text" id="qcs-new-input" placeholder="e.g. QC-51 or Station Name" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:13px" onkeydown="if(event.key==='Enter')addQcStation()">
+      <button class="btn btn-primary" onclick="addQcStation()" style="font-size:13px">Add</button>
+    </div>
+    <div id="qcs-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px"></div>
+    <div class="modal-actions" style="flex-shrink:0">
+      <button onclick="closeModal('qc-station-modal')">Done</button>
+    </div>
+  </div>
+</div>
+
 <!-- Mobile sidebar overlay -->
 <div id="sidebar-overlay" onclick="closeMobileSidebar()"></div>
 
@@ -445,7 +461,7 @@
             <th class="tbl-hide-mobile" onclick="sortBy('sku')">SKU <span class="sort-arrow" id="sort-sku">↕</span></th>
             <th onclick="sortBy('category')">Category <span class="sort-arrow" id="sort-category">↕</span></th>
             <th onclick="sortBy('qty')">Stock <span class="sort-arrow" id="sort-qty">↕</span></th>
-            <th>Level</th>
+            <th class="tbl-hide-mobile" title="Days of stock left at current 30-day usage rate">Runway</th>
             <th class="tbl-hide-mobile" onclick="sortBy('unit')">Unit <span class="sort-arrow" id="sort-unit">↕</span></th>
             <th class="inv-col-cost tbl-hide-mobile" onclick="sortBy('cost')">Cost/Unit <span class="sort-arrow" id="sort-cost">↕</span></th>
             <th>Status</th>
@@ -692,6 +708,12 @@
       </div>
     </div>
 
+    <!-- Station consumption section (rendered by JS if data exists) -->
+    <div class="dash-section" id="dash-station-section" style="margin-top:16px;display:none">
+      <div class="dash-section-title" style="margin-bottom:14px">📦 QC Pack Station Consumption</div>
+      <div id="dash-station-chart"></div>
+    </div>
+
     <!-- Charts row: area chart + donut -->
     <div class="dash-charts-row">
       <div class="dash-section" style="margin-bottom:0">
@@ -819,8 +841,14 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Notes / Location</label>
-          <input type="text" id="req-notes" placeholder="e.g. QC Pack Station 40">
+          <label>Notes</label>
+          <input type="text" id="req-notes" placeholder="Optional note">
+        </div>
+        <div class="form-group full" id="req-station-row" style="display:none">
+          <label>QC Pack Station <span style="color:var(--danger)">*</span></label>
+          <select id="req-station">
+            <option value="">— Select station —</option>
+          </select>
         </div>
       </div>
       <button class="btn btn-secondary" onclick="addToReqCart()" style="width:100%;margin-top:6px;font-size:13px">+ Add to Request</button>
@@ -1513,6 +1541,87 @@ async function refreshData() {
 var autoRefreshTimer = null;
 var REFRESH_INTERVAL_KEY = 'sb_refreshInterval';
 var LOW_STOCK_THRESHOLD_KEY = 'sb_lowStockThreshold';
+
+// ─── QC PACK STATION ─────────────────────────────────────────────────────────────
+var QC_STATION_USERS = ['aira.agellon','rodessa.orcena','reah.costales','mylene.failano','flonie.caramoan','ramon.sambrano','jayson.frivaldo'];
+var QC_STATIONS_KEY  = 'qcStations';
+var qcStations = (function() {
+  var def = [];
+  for (var i = 1; i <= 50; i++) def.push('QC-' + String(i).padStart(2,'0'));
+  return def;
+})();
+
+function isQcStationUser() {
+  return currentUser && QC_STATION_USERS.indexOf(currentUser.username) !== -1;
+}
+
+function getDefaultQcStations() {
+  var s = [];
+  for (var i = 1; i <= 50; i++) s.push('QC-' + String(i).padStart(2,'0'));
+  return s;
+}
+
+async function loadQcStations() {
+  if (!sb) return;
+  try {
+    var r = await sb.from('settings').select('*').eq('key', QC_STATIONS_KEY);
+    if (r.data && r.data.length > 0) {
+      var parsed = JSON.parse(r.data[0].value);
+      if (Array.isArray(parsed) && parsed.length > 0) qcStations = parsed;
+    }
+  } catch(e) {}
+}
+
+async function saveQcStations() {
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', QC_STATIONS_KEY);
+    await sb.from('settings').insert([{ key: QC_STATIONS_KEY, value: JSON.stringify(qcStations) }]);
+  } catch(e) {}
+}
+
+function populateStationDropdown() {
+  var sel = document.getElementById('req-station');
+  if (!sel) return;
+  var cur = sel.value;
+  sel.innerHTML = '<option value="">— Select station —</option>'
+    + qcStations.map(function(s) { return '<option value="' + esc(s) + '"' + (s === cur ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('');
+}
+
+function openQcStationModal() {
+  renderQcStationList();
+  openModal('qc-station-modal');
+}
+
+function renderQcStationList() {
+  var el = document.getElementById('qcs-list');
+  if (!el) return;
+  el.innerHTML = qcStations.map(function(s, idx) {
+    return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px">'
+      + '<span style="flex:1;font-size:13px">' + esc(s) + '</span>'
+      + (currentRole === 'superuser' ? '<button class="btn btn-icon btn-sm btn-danger" onclick="removeQcStation(' + idx + ')" title="Remove">✕</button>' : '')
+      + '</div>';
+  }).join('');
+}
+
+async function addQcStation() {
+  var input = document.getElementById('qcs-new-input');
+  var val = input.value.trim();
+  if (!val) return;
+  if (qcStations.indexOf(val) !== -1) { input.value = ''; return; }
+  qcStations.push(val);
+  input.value = '';
+  await saveQcStations();
+  populateStationDropdown();
+  renderQcStationList();
+}
+
+async function removeQcStation(idx) {
+  qcStations.splice(idx, 1);
+  await saveQcStations();
+  populateStationDropdown();
+  renderQcStationList();
+}
 function getRefreshInterval() {
   var v = parseInt(localStorage.getItem(REFRESH_INTERVAL_KEY));
   return isNaN(v) ? 2 : v; // default 2 minutes
@@ -1550,6 +1659,12 @@ async function loadGlobalSettings() {
     if (settingsMap['lowStockThreshold'] !== undefined) {
       var t = parseInt(settingsMap['lowStockThreshold']);
       if (!isNaN(t)) saveLowStockThresholdLocal(t);
+    }
+    if (settingsMap[QC_STATIONS_KEY] !== undefined) {
+      try {
+        var parsed = JSON.parse(settingsMap[QC_STATIONS_KEY]);
+        if (Array.isArray(parsed) && parsed.length > 0) qcStations = parsed;
+      } catch(e) {}
     }
   } catch(e) {} // settings table may not exist yet — silently ignore
 }
@@ -1979,6 +2094,30 @@ function stockStatus(item) {
   if (pct <= getLowStockThreshold()) return 'warn';
   return 'ok';
 }
+// ─── RUNWAY ─────────────────────────────────────────────────────────────────────
+// Returns { days, avgDaily } based on last 30 days of consumption logs,
+// or null if there is no usage history.
+function getRunway(item) {
+  var cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  var consumed = db.logs
+    .filter(function(l) { return l.itemId === item.id && (l.type === 'use' || l.type === 'damage') && new Date(l.date) >= cutoff; })
+    .reduce(function(s, l) { return s + Math.abs(l.qty || 0); }, 0);
+  if (consumed === 0) return null;
+  var avgDaily = consumed / 30;
+  if (item.qty <= 0) return { days: 0, avgDaily: avgDaily };
+  return { days: Math.round(item.qty / avgDaily), avgDaily: avgDaily };
+}
+
+function runwayHtml(item) {
+  var r = getRunway(item);
+  if (!r) return '<span style="color:var(--muted);font-size:12px">—</span>';
+  if (r.days === 0) return '<span style="color:#dc2626;font-weight:700;font-size:12px">⛔ 0 days</span>';
+  var color = r.days <= 7 ? '#dc2626' : r.days <= 14 ? '#b45309' : 'var(--muted)';
+  var icon  = r.days <= 7 ? '🔴 ' : r.days <= 14 ? '⚠️ ' : '';
+  return '<span style="color:' + color + ';font-size:12px;font-weight:' + (r.days <= 14 ? '700' : '500') + '">' + icon + '~' + r.days + ' days</span>';
+}
+
 function updateSummary() {
   const isBrand = currentRole === 'brand';
   const brandName = isBrand ? getBrandName().toLowerCase() : '';
@@ -2100,12 +2239,7 @@ function renderInventory() {
       <td class="tbl-hide-mobile" style="color:var(--muted);font-size:12px">${item.sku ? esc(item.sku) : '—'}</td>
       <td>${item.category ? '<span class="badge badge-info">'+esc(item.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
       <td style="font-weight:700;font-size:1.05rem" id="qty-cell-${item.id}">${can('adjust') ? `<span class="inline-qty-display" onclick="event.stopPropagation();startInlineQtyEdit('${item.id}')" title="Click to edit qty" style="cursor:text;border-bottom:1px dashed var(--muted)">${fmtInt(item.qty)}</span>` : fmtInt(item.qty)} <span style="color:var(--muted);font-size:12px">${esc(item.unit||'')}</span></td>
-      <td>
-        <div class="stock-bar-wrap">
-          <div class="stock-bar"><div class="stock-bar-fill" style="width:${pct === 0 ? 4 : pct}%;background:${barColor}"></div></div>
-          <span style="font-size:11px;color:var(--muted)">${pct}%</span>
-        </div>
-      </td>
+      <td class="tbl-hide-mobile">${runwayHtml(item)}</td>
       <td class="tbl-hide-mobile">${esc(item.unit||'—')}</td>
       <td class="inv-col-cost tbl-hide-mobile" style="${isBrand ? 'display:none' : ''}">${item.cost ? fmtPHP(item.cost) : '<span style="color:var(--muted)">—</span>'}</td>
       <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
@@ -2400,6 +2534,14 @@ function openItemDetail(itemId) {
     + row('Category', item.category ? `<span class="badge badge-info">${esc(item.category)}</span>` : '—')
     + row('Status', `<span class="badge ${badgeClass}">${badgeLabel}</span>`)
     + row('Current Stock', `<strong style="font-size:1.05rem">${fmtInt(item.qty)}</strong> <span style="color:var(--muted)">${esc(item.unit||'')}</span>`)
+    + (function() {
+        var r = getRunway(item);
+        if (!r) return row('Runway', '<span style="color:var(--muted)">— (no recent usage)</span>');
+        if (r.days === 0) return row('Runway', '<span style="color:#dc2626;font-weight:700">⛔ Out of stock</span>');
+        var color = r.days <= 7 ? '#dc2626' : r.days <= 14 ? '#b45309' : 'var(--ok)';
+        var avgFmt = r.avgDaily < 1 ? (r.avgDaily * 30).toFixed(1) + '/mo' : r.avgDaily.toFixed(1) + '/day';
+        return row('Runway', `<span style="color:${color};font-weight:700">~${r.days} days</span> <span style="color:var(--muted);font-size:11px">(avg ${avgFmt})</span>`);
+      })()
     + row('Unit', esc(item.unit||'—'))
     + row('Unit Cost', item.cost ? fmtPHP(item.cost) : '')
     + row('Supplier', item.supplier ? esc(item.supplier) : '')
@@ -3849,6 +3991,27 @@ function renderDashboard() {
   });
   const topItems = Object.values(itemMap).sort((a, b) => b.cost - a.cost).slice(0, 8);
   renderHbars(document.getElementById('dash-top-items'), topItems);
+
+  // ── Station consumption ──
+  var stationSection = document.getElementById('dash-station-section');
+  var stationChart   = document.getElementById('dash-station-chart');
+  var stationReqs = db_reqs.filter(function(r) {
+    if (!r.station || r.status !== 'confirmed' || !r.confirmedAt) return false;
+    var d = new Date(r.confirmedAt); return d >= from && d <= to;
+  });
+  if (stationReqs.length > 0) {
+    stationSection.style.display = '';
+    var stMap = {};
+    stationReqs.forEach(function(r) {
+      var item = db.items.find(function(i) { return i.id === r.itemId; });
+      var cost = (r.issuedQty || r.qty || 0) * (item ? item.cost || 0 : 0);
+      stMap[r.station] = (stMap[r.station] || 0) + cost;
+    });
+    var stList = Object.entries(stMap).sort(function(a, b) { return b[1] - a[1]; });
+    renderHbars(stationChart, stList.map(function(e) { return { name: e[0], cost: e[1] }; }));
+  } else {
+    stationSection.style.display = 'none';
+  }
 }
 
 function renderAreaChart(el, buckets) {
@@ -4350,17 +4513,24 @@ var reqSearchReady = false;
 var reqCart = [];
 
 function addToReqCart() {
-  var itemId = document.getElementById('req-item-id').value;
-  var qty    = parseInt(document.getElementById('req-qty').value);
-  var notes  = document.getElementById('req-notes').value.trim();
+  var itemId   = document.getElementById('req-item-id').value;
+  var qty      = parseInt(document.getElementById('req-qty').value);
+  var notes    = document.getElementById('req-notes').value.trim();
   var priority = document.getElementById('req-priority').value || 'normal';
-  var errEl  = document.getElementById('req-error');
+  var errEl    = document.getElementById('req-error');
   if (!itemId) { errEl.textContent = 'Please select an item.'; return; }
   if (!qty || qty < 1) { errEl.textContent = 'Quantity must be at least 1.'; return; }
+  // Station required for designated accounts
+  var stationRow = document.getElementById('req-station-row');
+  var station = '';
+  if (stationRow && stationRow.style.display !== 'none') {
+    station = document.getElementById('req-station').value;
+    if (!station) { errEl.textContent = 'Please select a QC Pack Station.'; document.getElementById('req-station').focus(); return; }
+  }
   // Prevent duplicate items in same cart
   if (reqCart.find(function(c) { return c.itemId === itemId; })) { errEl.textContent = 'This item is already in the request.'; return; }
   var item = db.items.find(function(i) { return i.id === itemId; });
-  reqCart.push({ itemId: itemId, itemName: item ? item.name : itemId, unit: item ? (item.unit||'') : '', qty: qty, priority: priority, notes: notes });
+  reqCart.push({ itemId: itemId, itemName: item ? item.name : itemId, unit: item ? (item.unit||'') : '', qty: qty, priority: priority, notes: notes, station: station });
   errEl.textContent = '';
   // Reset add form
   document.getElementById('req-item-id').value = '';
@@ -4369,6 +4539,7 @@ function addToReqCart() {
   document.getElementById('req-qty').value = '';
   document.getElementById('req-priority').value = 'normal';
   document.getElementById('req-notes').value = '';
+  document.getElementById('req-station').value = '';
   var oosEl = document.getElementById('req-oos-warning');
   if (oosEl) oosEl.style.display = 'none';
   renderReqCart();
@@ -4401,6 +4572,7 @@ function renderReqCart() {
       + '<div style="font-size:13px;font-weight:600">' + esc(c.itemName) + '</div>'
       + '<div style="font-size:11px;color:var(--muted);margin-top:1px">'
       + '<strong>' + fmtInt(c.qty) + ' ' + esc(c.unit) + '</strong>'
+      + (c.station ? ' · <span style="background:rgba(37,99,235,.1);color:#2563eb;padding:1px 6px;border-radius:4px;font-weight:600">📦 ' + esc(c.station) + '</span>' : '')
       + (c.priority !== 'normal' ? ' · ' + priorityLabels[c.priority] : '')
       + (c.notes ? ' · ' + esc(c.notes) : '')
       + '</div>'
@@ -4424,6 +4596,23 @@ function openNewRequestModal(preItemId) {
   document.getElementById('req-error').textContent = '';
   var oosEl = document.getElementById('req-oos-warning');
   if (oosEl) oosEl.style.display = 'none';
+  // Show/hide QC station row
+  var stationRow = document.getElementById('req-station-row');
+  if (stationRow) {
+    var showStation = isQcStationUser() || currentRole === 'superuser';
+    stationRow.style.display = showStation ? '' : 'none';
+    if (showStation) {
+      populateStationDropdown();
+      document.getElementById('req-station').value = '';
+      // Add "Manage stations" link for superuser
+      var lbl = stationRow.querySelector('label');
+      if (lbl && currentRole === 'superuser') {
+        lbl.innerHTML = 'QC Pack Station <span style="color:var(--danger)">*</span> <span style="font-weight:400;font-size:11px;color:var(--accent);cursor:pointer;margin-left:6px" onclick="event.stopPropagation();openQcStationModal()">⚙ Manage</span>';
+      } else if (lbl) {
+        lbl.innerHTML = 'QC Pack Station <span style="color:var(--danger)">*</span>';
+      }
+    }
+  }
   if (preItemId) {
     var item = db.items.find(function(i) { return i.id === preItemId; });
     if (item) { selectReqItem(item.id, item.name, item.unit || ''); }
@@ -4498,7 +4687,8 @@ async function submitRequest() {
       confirmedBy: null, confirmedAt: null,
       rejectedBy:  null, rejectedAt:  null,
       seenByRequestor: false,
-      batchId:     batchId
+      batchId:     batchId,
+      station:     cartItem.station || null
     };
     newReqs.push(req);
   });
@@ -4512,10 +4702,10 @@ async function submitRequest() {
       try { await sb.from('supply_requests').insert([req]); REQ_TABLE_OK = true; }
       catch(e) {
         try {
-          var base = Object.assign({}, req); delete base.priority; delete base.reqNumber; delete base.batchId;
+          var base = Object.assign({}, req); delete base.priority; delete base.reqNumber; delete base.batchId; delete base.station;
           await sb.from('supply_requests').insert([base]);
           REQ_TABLE_OK = true;
-          sb.from('supply_requests').update({ reqNumber: req.reqNumber, batchId: req.batchId }).eq('id', req.id).then(function(){}).catch(function(){});
+          sb.from('supply_requests').update({ reqNumber: req.reqNumber, batchId: req.batchId, station: req.station }).eq('id', req.id).then(function(){}).catch(function(){});
         } catch(e2) { REQ_TABLE_OK = false; }
       }
     }
@@ -5059,6 +5249,7 @@ alter table supply_requests add column if not exists priority text default 'norm
 alter table supply_requests add column if not exists "issuedQty" integer;
 alter table supply_requests add column if not exists "reqNumber" text;
 alter table supply_requests add column if not exists "batchId" text;
+alter table supply_requests add column if not exists "station" text;
 
 -- Required for level bar calibration (run once on your items table):
 alter table items add column if not exists "maxRef" integer;
@@ -5186,7 +5377,7 @@ alter publication supabase_realtime add table settings;</pre>
           </div>
         </div>
         ${stockRow}
-        <div class="req-card-meta">${req.issuedQty && req.issuedQty !== req.qty ? `Requested: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong> · Issued: <strong style="color:var(--accent)">${fmtInt(req.issuedQty)} ${esc(req.unit)}</strong>` : `Qty: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong>`} · Requested by: <strong>${esc(req.requestedBy)}</strong> · ${fmtDT(req.createdAt)}</div>
+        <div class="req-card-meta">${req.issuedQty && req.issuedQty !== req.qty ? `Requested: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong> · Issued: <strong style="color:var(--accent)">${fmtInt(req.issuedQty)} ${esc(req.unit)}</strong>` : `Qty: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong>`} · Requested by: <strong>${esc(req.requestedBy)}</strong> · ${fmtDT(req.createdAt)}${req.station ? ` · <span style="background:rgba(37,99,235,.1);color:#2563eb;padding:1px 6px;border-radius:4px;font-weight:600;font-size:11px">📦 ${esc(req.station)}</span>` : ''}</div>
         ${req.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-wrap">${esc(req.notes)}</div>` : ''}
         ${actionButtons}
       </div>`;
@@ -5437,7 +5628,7 @@ function doLogin() {
 }
 
 function showCriticalStockAlert() {
-  if (currentRole !== 'user' && currentRole !== 'requestor') return;
+  if (currentRole !== 'user' && currentRole !== 'superuser') return;
   var danger = db.items.filter(function(i) { return i.qty <= 0; });
   var warn   = db.items.filter(function(i) { return stockStatus(i) === 'warn'; });
   if (!danger.length && !warn.length) return;
