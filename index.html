@@ -2311,6 +2311,13 @@ function openMobileMoreMenu() {
   if (currentRole === 'superuser' || can('add_item')) {
     html += '<div class="mm-item mm-item-accent" onclick="openItemModal();closeMobileMoreMenu()">+ Add Item</div>';
   }
+  // Inventory-specific actions
+  if (currentTab === 'inventory') {
+    html += '<div class="mm-item" onclick="exportInventoryCSV();closeMobileMoreMenu()">⬇ Export CSV</div>';
+    if (currentRole === 'superuser' || can('adjust')) {
+      html += '<div class="mm-item" onclick="openImportModal();closeMobileMoreMenu()">⬆ Import File</div>';
+    }
+  }
   html += '<div class="mm-item" onclick="openSettings();closeMobileMoreMenu()">⚙ Settings</div>';
   html += '<div class="mm-item" onclick="openChangePassword();closeMobileMoreMenu()">🔑 Change Password</div>';
   html += '<div class="mm-item" onclick="logout()" style="border-top:1px solid var(--sidebar-border)"><span class="mm-item-danger">Sign out</span></div>';
@@ -6053,6 +6060,27 @@ async function isBiometricAvailable() {
   catch(e) { return false; }
 }
 
+// ── Biometric icon SVGs (Apple-style) ───────────────────────────────────────
+var BIO_ICON_FACEID = '<svg width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle">'
+  + '<path d="M3 9V5a2 2 0 012-2h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+  + '<path d="M23 9V5a2 2 0 00-2-2h-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+  + '<path d="M3 17v4a2 2 0 002 2h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+  + '<path d="M23 17v4a2 2 0 01-2 2h-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+  + '<circle cx="9.5" cy="11" r="1.1" fill="currentColor"/>'
+  + '<circle cx="16.5" cy="11" r="1.1" fill="currentColor"/>'
+  + '<path d="M13 11v2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>'
+  + '<path d="M10 16.5q3 2.5 6 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>'
+  + '</svg>';
+
+var BIO_ICON_FINGERPRINT = '<svg width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle">'
+  + '<circle cx="13" cy="13" r="1" fill="currentColor"/>'
+  + '<path d="M10.5 13 A2.5 2.5 0 1 1 15.5 13 Q15.5 15.5 13 17" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>'
+  + '<path d="M8 13 A5 5 0 1 1 18 13 Q18 17.5 15 20 Q13.5 21 12 20.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>'
+  + '<path d="M5.5 13 A7.5 7.5 0 1 1 20.5 13 Q20.5 19 17 22 Q15 23 12.5 22.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>'
+  + '<path d="M9 4.5 Q4.5 5.5 3.5 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>'
+  + '<path d="M9 4.5 Q13 3 17 4.5 Q22 6.5 22.5 13 Q22.5 19.5 18.5 22.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>'
+  + '</svg>';
+
 async function initBiometricLoginCheck() {
   var creds = getBioCreds();
   if (!creds.length) return;
@@ -6069,8 +6097,7 @@ async function initBiometricLoginCheck() {
   var isIOS = /iPhone|iPad/i.test(navigator.userAgent);
   var isFaceID = isIOS && (/iPhone1[2-9]|iPhone[2-9]\d/i.test(navigator.userAgent) || /iPad Pro/i.test(navigator.userAgent));
   var bioType = isFaceID ? 'Face ID' : (isIOS ? 'Touch ID' : 'Fingerprint');
-  var bioEmoji = isFaceID ? '👤' : '👆';
-  if (icon) icon.textContent = bioEmoji;
+  if (icon) icon.innerHTML = isFaceID ? BIO_ICON_FACEID : BIO_ICON_FINGERPRINT;
   btn.style.display = 'flex';
   if (divider) divider.style.display = 'block';
 }
@@ -6154,11 +6181,10 @@ async function offerBiometricRegistration(username) {
   var isIOS = /iPhone|iPad/i.test(navigator.userAgent);
   var isFaceID = isIOS && (/iPhone1[2-9]|iPhone[2-9]\d/i.test(navigator.userAgent) || /iPad Pro/i.test(navigator.userAgent));
   var bioType = isFaceID ? 'Face ID' : (isIOS ? 'Touch ID' : 'fingerprint');
-  var icon = isFaceID ? '👤' : '👆';
   var offerIcon = document.getElementById('bio-offer-icon');
   var offerText = document.getElementById('bio-offer-text');
   var banner = document.getElementById('bio-offer-banner');
-  if (offerIcon) offerIcon.textContent = icon;
+  if (offerIcon) offerIcon.innerHTML = isFaceID ? BIO_ICON_FACEID : BIO_ICON_FINGERPRINT;
   if (offerText) offerText.textContent = 'Sign in faster next time with ' + bioType + '?';
   _bioPendingUsername = username;
   if (banner) banner.style.display = 'block';
@@ -7618,7 +7644,7 @@ function renderAuditLog() {
     <div id="login-card" style="background:#fff;border:1px solid #e2e4e9;border-radius:12px;padding:28px;box-shadow:0 4px 24px rgba(0,0,0,.06)">
       <!-- Biometric quick-login button (shown only when a credential is saved) -->
       <button id="bio-login-btn" onclick="doBiometricLogin()">
-        <span class="bio-icon" id="bio-btn-icon">🔒</span>
+        <span class="bio-icon" id="bio-btn-icon" style="display:flex;align-items:center"></span>
         <span id="bio-btn-label">Biometric Log-In</span>
       </button>
       <div id="bio-divider" style="display:none;text-align:center;font-size:12px;color:var(--muted);margin-bottom:14px;position:relative">
@@ -7657,7 +7683,7 @@ function renderAuditLog() {
 <!-- BIOMETRIC OFFER BANNER -->
 <div id="bio-offer-banner">
   <div class="bio-offer-row">
-    <span style="font-size:28px" id="bio-offer-icon">🔒</span>
+    <span id="bio-offer-icon" style="display:flex;align-items:center;color:#fff"></span>
     <span class="bio-offer-text" id="bio-offer-text">Sign in faster next time with Face ID or Touch ID?</span>
   </div>
   <div class="bio-offer-actions">
