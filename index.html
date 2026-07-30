@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Locad SupplyBase</title>
+<!-- PWA / Install to Home Screen -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SupplyBase">
+<meta name="theme-color" content="#0f172a">
+<meta name="description" content="Warehouse Consumables Tracker">
+<link rel="apple-touch-icon" id="pwa-apple-icon" href="">
+<link rel="manifest" id="pwa-manifest" href="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -396,6 +405,7 @@
       <button id="btn-contact-admin" class="sidebar-action-btn" onclick="openContactAdmin()">📞 Contact Admin</button>
       <button id="btn-refresh" class="sidebar-action-btn" onclick="refreshData()">↻ Refresh</button>
       <button id="btn-reset" class="sidebar-action-btn sidebar-action-danger" onclick="confirmReset()">↺ Reset</button>
+      <button id="btn-install-app" class="sidebar-action-btn" onclick="openInstallModal()" style="display:none;color:#38bdf8">📲 Install App</button>
       <button class="sidebar-action-btn sidebar-action-signout" onclick="logout()">Sign out</button>
     </div>
   </div>
@@ -6358,7 +6368,159 @@ initReportDates();
   }
 })();
 
-document.addEventListener('DOMContentLoaded', function() { load(); });
+document.addEventListener('DOMContentLoaded', function() { load(); initPWA(); });
+
+// ─── PWA / INSTALL TO HOME SCREEN ───────────────────────────────────────────────
+var _pwaInstallPrompt = null;
+var _isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) && !window.MSStream;
+var _isAndroid = /Android/i.test(navigator.userAgent);
+var _isInStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+
+// Capture Android install prompt
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault();
+  _pwaInstallPrompt = e;
+  var btn = document.getElementById('btn-install-app');
+  if (btn) btn.style.display = '';
+});
+
+// Hide install button if already installed
+window.addEventListener('appinstalled', function() {
+  var btn = document.getElementById('btn-install-app');
+  if (btn) btn.style.display = 'none';
+  _pwaInstallPrompt = null;
+});
+
+function initPWA() {
+  // Generate app icon via canvas
+  var icon192 = generatePWAIcon(192);
+  var icon512 = generatePWAIcon(512);
+
+  // Set apple-touch-icon
+  var appleIcon = document.getElementById('pwa-apple-icon');
+  if (appleIcon) appleIcon.href = icon192;
+
+  // Inject manifest via blob URL
+  var manifest = {
+    name: 'SupplyBase',
+    short_name: 'SupplyBase',
+    description: 'Warehouse Consumables Tracker',
+    start_url: window.location.href.split('?')[0].split('#')[0],
+    display: 'standalone',
+    background_color: '#f4f5f7',
+    theme_color: '#0f172a',
+    orientation: 'portrait-primary',
+    icons: [
+      { src: icon192, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: icon512, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+    ]
+  };
+  var manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+  var manifestEl = document.getElementById('pwa-manifest');
+  if (manifestEl) manifestEl.href = URL.createObjectURL(manifestBlob);
+
+  // Register service worker (enables installability on Android + offline fallback)
+  if ('serviceWorker' in navigator) {
+    var swCode = [
+      "var CACHE='supplybase-v1';",
+      "self.addEventListener('install',function(e){self.skipWaiting();});",
+      "self.addEventListener('activate',function(e){e.waitUntil(clients.claim());});",
+      "self.addEventListener('fetch',function(e){",
+      "  if(e.request.method!=='GET')return;",
+      "  e.respondWith(fetch(e.request).catch(function(){return caches.match(e.request);}));",
+      "});"
+    ].join('');
+    var swBlob = new Blob([swCode], { type: 'text/javascript' });
+    var swUrl = URL.createObjectURL(swBlob);
+    navigator.serviceWorker.register(swUrl, { scope: './' }).catch(function(){});
+  }
+
+  // Show install button on iOS even without beforeinstallprompt
+  if (_isIOS && !_isInStandalone) {
+    var btn = document.getElementById('btn-install-app');
+    if (btn) btn.style.display = '';
+  }
+}
+
+function generatePWAIcon(size) {
+  try {
+    var c = document.createElement('canvas');
+    c.width = c.height = size;
+    var ctx = c.getContext('2d');
+    var r = size * 0.18;
+    // Background
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    if (ctx.roundRect) { ctx.roundRect(0, 0, size, size, r); }
+    else {
+      ctx.moveTo(r, 0); ctx.lineTo(size-r, 0); ctx.quadraticCurveTo(size, 0, size, r);
+      ctx.lineTo(size, size-r); ctx.quadraticCurveTo(size, size, size-r, size);
+      ctx.lineTo(r, size); ctx.quadraticCurveTo(0, size, 0, size-r);
+      ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+    }
+    ctx.closePath(); ctx.fill();
+    // Box icon
+    var s = size * 0.45, x = (size-s)/2, y = size*0.18;
+    ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = size*0.045; ctx.lineJoin = 'round';
+    ctx.strokeRect(x, y, s, s);
+    ctx.beginPath(); ctx.moveTo(x, y + s*0.38); ctx.lineTo(x+s, y + s*0.38); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + s*0.36, y); ctx.lineTo(x + s*0.36, y + s*0.38); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + s*0.64, y); ctx.lineTo(x + s*0.64, y + s*0.38); ctx.stroke();
+    // "SB" text
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.round(size*0.22) + 'px Arial, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('SB', size/2, size*0.78);
+    return c.toDataURL('image/png');
+  } catch(e) {
+    return 'data:image/png;base64,iVBORw0KGgo='; // fallback empty
+  }
+}
+
+function openInstallModal() {
+  var body = document.getElementById('pwa-modal-body');
+  var installBtn = document.getElementById('pwa-install-btn');
+  if (_pwaInstallPrompt) {
+    // Android with native install prompt available
+    body.innerHTML = '<p style="font-size:14px;color:var(--muted);margin-bottom:16px">Install SupplyBase on your home screen for quick access — works like a native app, no App Store needed.</p>'
+      + '<ul style="font-size:13px;color:var(--text);line-height:2;padding-left:18px">'
+      + '<li>Opens full-screen, no browser bar</li>'
+      + '<li>Works on both WiFi and mobile data</li>'
+      + '<li>Fast access from your home screen</li>'
+      + '</ul>';
+    installBtn.style.display = '';
+  } else if (_isIOS) {
+    // iOS — manual instructions
+    body.innerHTML = '<p style="font-size:14px;color:var(--muted);margin-bottom:16px">To install on your iPhone/iPad:</p>'
+      + '<div style="display:flex;flex-direction:column;gap:12px">'
+      + '<div style="display:flex;align-items:flex-start;gap:12px"><span style="font-size:24px;flex-shrink:0">1️⃣</span><span style="font-size:13px">Tap the <strong>Share</strong> button at the bottom of Safari <span style="font-size:16px">⬆️</span></span></div>'
+      + '<div style="display:flex;align-items:flex-start;gap:12px"><span style="font-size:24px;flex-shrink:0">2️⃣</span><span style="font-size:13px">Scroll down and tap <strong>"Add to Home Screen"</strong></span></div>'
+      + '<div style="display:flex;align-items:flex-start;gap:12px"><span style="font-size:24px;flex-shrink:0">3️⃣</span><span style="font-size:13px">Tap <strong>"Add"</strong> in the top right</span></div>'
+      + '</div>'
+      + '<p style="font-size:12px;color:var(--muted);margin-top:16px">SupplyBase will appear on your home screen and open full-screen without a browser bar.</p>';
+    installBtn.style.display = 'none';
+  } else {
+    // Android without prompt, or desktop
+    body.innerHTML = '<p style="font-size:14px;color:var(--muted);margin-bottom:16px">To install on Android (Chrome):</p>'
+      + '<div style="display:flex;flex-direction:column;gap:12px">'
+      + '<div style="display:flex;align-items:flex-start;gap:12px"><span style="font-size:24px;flex-shrink:0">1️⃣</span><span style="font-size:13px">Tap the <strong>⋮</strong> menu in Chrome (top right)</span></div>'
+      + '<div style="display:flex;align-items:flex-start;gap:12px"><span style="font-size:24px;flex-shrink:0">2️⃣</span><span style="font-size:13px">Tap <strong>"Add to Home Screen"</strong> or <strong>"Install App"</strong></span></div>'
+      + '<div style="display:flex;align-items:flex-start;gap:12px"><span style="font-size:24px;flex-shrink:0">3️⃣</span><span style="font-size:13px">Tap <strong>"Install"</strong> to confirm</span></div>'
+      + '</div>';
+    installBtn.style.display = 'none';
+  }
+  openModal('pwa-install-modal');
+}
+
+async function triggerPwaInstall() {
+  if (!_pwaInstallPrompt) return;
+  _pwaInstallPrompt.prompt();
+  var result = await _pwaInstallPrompt.userChoice;
+  _pwaInstallPrompt = null;
+  var btn = document.getElementById('btn-install-app');
+  if (btn) btn.style.display = 'none';
+  closeModal('pwa-install-modal');
+}
 // Firebase setup or login is triggered by load()
 
 // ─── SESSION TIMEOUT ────────────────────────────────────────────────────────────
@@ -6976,6 +7138,17 @@ function renderAuditLog() {
   </div>
 </div>
 
+<!-- PWA INSTALL MODAL -->
+<div class="modal-bg" id="pwa-install-modal">
+  <div class="modal" style="max-width:380px">
+    <h2 id="pwa-modal-title">📲 Install SupplyBase</h2>
+    <div id="pwa-modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('pwa-install-modal')">Close</button>
+      <button id="pwa-install-btn" class="btn btn-primary" style="display:none" onclick="triggerPwaInstall()">Install Now</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
