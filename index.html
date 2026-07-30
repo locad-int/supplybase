@@ -281,6 +281,7 @@
   /* ─── COLUMN VISIBILITY ─────────────────────────────────────────────────── */
   #inv-table.hide-col-sku      th.col-sku,      #inv-table.hide-col-sku      td.col-sku      { display:none !important; }
   #inv-table.hide-col-category th.col-category, #inv-table.hide-col-category td.col-category { display:none !important; }
+  #inv-table.hide-col-reorder  th.col-reorder,  #inv-table.hide-col-reorder  td.col-reorder  { display:none !important; }
   #inv-table.hide-col-runway   th.col-runway,   #inv-table.hide-col-runway   td.col-runway   { display:none !important; }
   #inv-table.hide-col-unit     th.col-unit,     #inv-table.hide-col-unit     td.col-unit     { display:none !important; }
   #inv-table.hide-col-cost     th.col-cost,     #inv-table.hide-col-cost     td.col-cost     { display:none !important; }
@@ -488,7 +489,8 @@
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px">Show / Hide Columns</div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-sku"      onchange="toggleInvCol('sku',this.checked)"><label for="ctog-sku">SKU</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-category" onchange="toggleInvCol('category',this.checked)"><label for="ctog-category">Category</label></div>
-          <div class="col-toggle-row"><input type="checkbox" id="ctog-runway"   onchange="toggleInvCol('runway',this.checked)"><label for="ctog-runway">Runway</label></div>
+          <div class="col-toggle-row"><input type="checkbox" id="ctog-reorder"  onchange="toggleInvCol('reorder',this.checked)"><label for="ctog-reorder">Reorder Pt</label></div>
+    <div class="col-toggle-row"><input type="checkbox" id="ctog-runway"   onchange="toggleInvCol('runway',this.checked)"><label for="ctog-runway">Runway</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-unit"     onchange="toggleInvCol('unit',this.checked)"><label for="ctog-unit">Unit</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-cost"     onchange="toggleInvCol('cost',this.checked)"><label for="ctog-cost">Cost/Unit</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-status"   onchange="toggleInvCol('status',this.checked)"><label for="ctog-status">Status</label></div>
@@ -506,6 +508,7 @@
             <th class="col-sku tbl-hide-mobile" onclick="sortBy('sku')">SKU <span class="sort-arrow" id="sort-sku">↕</span></th>
             <th class="col-category" onclick="sortBy('category')">Category <span class="sort-arrow" id="sort-category">↕</span></th>
             <th onclick="sortBy('qty')">Stock <span class="sort-arrow" id="sort-qty">↕</span></th>
+            <th class="col-reorder tbl-hide-mobile" onclick="sortBy('minQty')" title="Low stock alert triggers at or below this qty">Reorder Pt <span class="sort-arrow" id="sort-minQty">↕</span></th>
             <th class="col-runway tbl-hide-mobile" title="Days of stock left at current 30-day usage rate">Runway</th>
             <th class="col-unit tbl-hide-mobile" onclick="sortBy('unit')">Unit <span class="sort-arrow" id="sort-unit">↕</span></th>
             <th class="col-cost inv-col-cost tbl-hide-mobile" onclick="sortBy('cost')">Cost/Unit <span class="sort-arrow" id="sort-cost">↕</span></th>
@@ -2363,6 +2366,7 @@ function renderInventory() {
       <td class="col-sku tbl-hide-mobile" style="color:var(--muted);font-size:12px">${item.sku ? esc(item.sku) : '—'}</td>
       <td class="col-category">${item.category ? '<span class="badge badge-info">'+esc(item.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
       <td style="font-weight:700;font-size:1.05rem" id="qty-cell-${item.id}">${can('adjust') ? `<span class="inline-qty-display" onclick="event.stopPropagation();startInlineQtyEdit('${item.id}')" title="Click to edit qty" style="cursor:text;border-bottom:1px dashed var(--muted)">${fmtInt(item.qty)}</span>` : fmtInt(item.qty)} <span style="color:var(--muted);font-size:12px">${esc(item.unit||'')}</span></td>
+      <td class="col-reorder tbl-hide-mobile" style="font-size:12px">${item.minQty > 0 ? '<span style="color:var(--muted)">' + fmtInt(item.minQty) + ' <span style="font-size:10px">' + esc(item.unit||'') + '</span></span>' : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="col-runway tbl-hide-mobile">${runwayHtml(item)}</td>
       <td class="col-unit tbl-hide-mobile">${esc(item.unit||'—')}</td>
       <td class="col-cost inv-col-cost tbl-hide-mobile" style="${isBrand ? 'display:none' : ''}">${item.cost ? fmtPHP(item.cost) : '<span style="color:var(--muted)">—</span>'}</td>
@@ -5626,7 +5630,7 @@ async function saveUserPermissions() {
 function applyInvColVisibility() {
   var table = document.getElementById('inv-table');
   if (!table) return;
-  var allCols = ['sku','category','runway','unit','cost','status','location'];
+  var allCols = ['sku','category','reorder','runway','unit','cost','status','location'];
   allCols.forEach(function(col) {
     table.classList.toggle('hide-col-' + col, invHiddenCols.indexOf(col) !== -1);
   });
@@ -6447,33 +6451,67 @@ function generatePWAIcon(size) {
     var c = document.createElement('canvas');
     c.width = c.height = size;
     var ctx = c.getContext('2d');
-    var r = size * 0.18;
-    // Background
+
+    // White background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size, size);
+
+    // ── LOCAD "O" — black rounded square with white upward arrow ──────────────
+    var boxSize = size * 0.52;
+    var boxX    = (size - boxSize) / 2;
+    var boxY    = size * 0.10;
+    var boxR    = boxSize * 0.20;
+
+    // Black rounded square
     ctx.fillStyle = '#0f172a';
     ctx.beginPath();
-    if (ctx.roundRect) { ctx.roundRect(0, 0, size, size, r); }
-    else {
-      ctx.moveTo(r, 0); ctx.lineTo(size-r, 0); ctx.quadraticCurveTo(size, 0, size, r);
-      ctx.lineTo(size, size-r); ctx.quadraticCurveTo(size, size, size-r, size);
-      ctx.lineTo(r, size); ctx.quadraticCurveTo(0, size, 0, size-r);
-      ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+    if (ctx.roundRect) {
+      ctx.roundRect(boxX, boxY, boxSize, boxSize, boxR);
+    } else {
+      ctx.moveTo(boxX + boxR, boxY);
+      ctx.lineTo(boxX + boxSize - boxR, boxY); ctx.quadraticCurveTo(boxX + boxSize, boxY, boxX + boxSize, boxY + boxR);
+      ctx.lineTo(boxX + boxSize, boxY + boxSize - boxR); ctx.quadraticCurveTo(boxX + boxSize, boxY + boxSize, boxX + boxSize - boxR, boxY + boxSize);
+      ctx.lineTo(boxX + boxR, boxY + boxSize); ctx.quadraticCurveTo(boxX, boxY + boxSize, boxX, boxY + boxSize - boxR);
+      ctx.lineTo(boxX, boxY + boxR); ctx.quadraticCurveTo(boxX, boxY, boxX + boxR, boxY);
     }
-    ctx.closePath(); ctx.fill();
-    // Box icon
-    var s = size * 0.45, x = (size-s)/2, y = size*0.18;
-    ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = size*0.045; ctx.lineJoin = 'round';
-    ctx.strokeRect(x, y, s, s);
-    ctx.beginPath(); ctx.moveTo(x, y + s*0.38); ctx.lineTo(x+s, y + s*0.38); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x + s*0.36, y); ctx.lineTo(x + s*0.36, y + s*0.38); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x + s*0.64, y); ctx.lineTo(x + s*0.64, y + s*0.38); ctx.stroke();
-    // "SB" text
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold ' + Math.round(size*0.22) + 'px Arial, sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('SB', size/2, size*0.78);
+    ctx.closePath();
+    ctx.fill();
+
+    // White upward arrow inside the square (matching LOCAD logo style)
+    var cx   = size / 2;
+    var cy   = boxY + boxSize * 0.50;   // vertical center of box
+    var aw   = boxSize * 0.38;          // arrow total width
+    var ah   = boxSize * 0.55;          // arrow total height
+    var sw   = aw * 0.36;               // shaft width
+    var hh   = ah * 0.48;               // head height (triangle portion)
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    // Arrowhead (triangle)
+    ctx.moveTo(cx,          cy - ah/2);           // top point
+    ctx.lineTo(cx + aw/2,   cy - ah/2 + hh);      // right of head
+    ctx.lineTo(cx + sw/2,   cy - ah/2 + hh);      // step in to shaft
+    // Shaft right side down
+    ctx.lineTo(cx + sw/2,   cy + ah/2);
+    ctx.lineTo(cx - sw/2,   cy + ah/2);
+    // Shaft left side up
+    ctx.lineTo(cx - sw/2,   cy - ah/2 + hh);
+    ctx.lineTo(cx - aw/2,   cy - ah/2 + hh);      // step out to head
+    ctx.closePath();
+    ctx.fill();
+
+    // ── "SupplyBase" text below the box ───────────────────────────────────────
+    var textY  = boxY + boxSize + (size - boxY - boxSize) * 0.52;
+    var fontSize = Math.round(size * 0.105);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '700 ' + fontSize + 'px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SupplyBase', size / 2, textY);
+
     return c.toDataURL('image/png');
   } catch(e) {
-    return 'data:image/png;base64,iVBORw0KGgo='; // fallback empty
+    return 'data:image/png;base64,iVBORw0KGgo=';
   }
 }
 
