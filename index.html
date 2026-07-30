@@ -352,6 +352,140 @@
     /* Hide seq number column on very small screens */
     .tbl-seq { display: none !important; }
   }
+
+  /* ─── GLOBAL MOBILE FEEL ──────────────────────────────────────────────────── */
+  html { -webkit-tap-highlight-color: transparent; }
+  button, .nav-item, .card[onclick], .req-card, .msg-card, .log-entry { -webkit-tap-highlight-color: transparent; }
+
+  /* ─── BOTTOM NAV BAR ─────────────────────────────────────────────────────── */
+  #bottom-nav {
+    display: none;
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+    background: var(--sidebar-bg);
+    border-top: 1px solid var(--sidebar-border);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .bn-item {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 8px 2px; gap: 3px;
+    color: var(--sidebar-muted); background: none; border: none; cursor: pointer;
+    font-size: 10px; font-weight: 600; min-height: 54px; position: relative;
+    transition: color .15s; letter-spacing: .01em;
+  }
+  .bn-item.active { color: var(--sidebar-active-text); }
+  .bn-icon { font-size: 21px; line-height: 1; }
+  .bn-badge {
+    position: absolute; top: 6px; left: calc(50% + 6px);
+    background: var(--danger); color: #fff;
+    font-size: 9px; font-weight: 800; padding: 1px 4px;
+    border-radius: 99px; min-width: 14px; text-align: center;
+  }
+
+  /* ─── MOBILE MORE SHEET ──────────────────────────────────────────────────── */
+  #mobile-more-sheet {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 91;
+    background: var(--sidebar-bg); border-radius: 20px 20px 0 0;
+    padding: 0 0 calc(env(safe-area-inset-bottom, 0px));
+    transform: translateY(100%); transition: transform .28s cubic-bezier(.4,0,.2,1);
+  }
+  #mobile-more-sheet.open { transform: translateY(0); }
+  .mm-handle { width: 36px; height: 4px; background: #444; border-radius: 99px; margin: 14px auto 10px; }
+  .mm-item {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 20px; cursor: pointer; font-size: 15px;
+    color: var(--sidebar-text); min-height: 52px; border-bottom: 1px solid var(--sidebar-border);
+    transition: background .12s;
+  }
+  .mm-item:last-child { border-bottom: none; }
+  .mm-item:active { background: var(--sidebar-hover); }
+  .mm-item-danger { color: #f87171 !important; }
+  .mm-item-accent { color: #22c55e !important; font-weight: 700; }
+
+  /* ─── MOBILE INVENTORY CARDS ─────────────────────────────────────────────── */
+  .inv-mobile-cards { display: flex; flex-direction: column; gap: 8px; }
+  .inv-mobile-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 14px 10px;
+    cursor: pointer; border-left: 3px solid var(--border); transition: background .1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .inv-mobile-card.s-danger { border-left-color: var(--danger); }
+  .inv-mobile-card.s-warn   { border-left-color: var(--warn);   }
+  .inv-mobile-card.s-ok     { border-left-color: var(--accent); }
+  .inv-mobile-card:active   { background: var(--surface2); }
+  .inv-mc-top  { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .inv-mc-name { font-size: 15px; font-weight: 700; color: var(--text); flex: 1; line-height: 1.3; }
+  .inv-mc-row  { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+  .inv-mc-qty  { font-size: 1.5rem; font-weight: 800; color: var(--text); }
+  .inv-mc-unit { font-size: 12px; color: var(--muted); }
+  .inv-mc-reorder { font-size: 11px; color: var(--muted); background: var(--surface2); padding: 2px 8px; border-radius: 99px; }
+  .inv-mc-actions { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .inv-mc-actions .btn { flex: 1; justify-content: center; min-height: 40px; font-size: 13px; border-radius: 8px; }
+
+  /* ─── TOUCH TARGETS & SPACING ────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    /* Show bottom nav, hide sidebar */
+    #bottom-nav { display: flex; }
+    /* Push main content above bottom nav */
+    .main-wrap { padding-bottom: calc(54px + env(safe-area-inset-bottom, 0px)); }
+    /* Top safe area */
+    .topbar { padding-top: max(12px, env(safe-area-inset-top, 12px)); }
+    /* Larger touch targets */
+    .btn { min-height: 42px; padding: 9px 16px; }
+    .btn-sm { min-height: 36px; padding: 6px 12px; }
+    .btn-icon { min-height: 38px; min-width: 38px; }
+    #hamburger-btn { min-width: 44px; min-height: 44px; }
+    /* Scrollable filter chips — no wrap */
+    .filters { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 4px; }
+    .filters::-webkit-scrollbar { display: none; }
+    #inv-status-chips { flex-wrap: nowrap; }
+    .status-chip { white-space: nowrap; min-height: 36px; }
+    /* Bigger summary cards */
+    .card .value { font-size: 1.5rem; }
+    /* Summary: always 2 col */
+    .summary { grid-template-columns: 1fr 1fr; }
+    /* Hide desktop table, show cards */
+    #inv-table-wrap { display: none !important; }
+    #inv-mobile-card-list { display: flex !important; }
+    /* Pull-to-refresh indicator */
+    #ptr-indicator { display: flex; }
+  }
+
+  /* ─── PULL-TO-REFRESH ────────────────────────────────────────────────────── */
+  #ptr-indicator {
+    display: none; align-items: center; justify-content: center;
+    gap: 8px; padding: 12px 0; color: var(--muted); font-size: 13px; font-weight: 500;
+    overflow: hidden; height: 0; transition: height .2s;
+  }
+  #ptr-indicator.ptr-visible { height: 48px; }
+  #ptr-indicator.ptr-loading { color: var(--accent); }
+  .ptr-spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── BIOMETRIC LOGIN BUTTON ─────────────────────────────────────────────── */
+  #bio-login-btn {
+    display: none; width: 100%; justify-content: center; align-items: center; gap: 10px;
+    padding: 13px; border-radius: 10px; border: 1.5px solid var(--border);
+    background: var(--surface); color: var(--text); font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: border-color .15s, background .15s; margin-bottom: 14px;
+  }
+  #bio-login-btn:hover { border-color: var(--accent); background: var(--surface2); }
+  #bio-login-btn .bio-icon { font-size: 22px; }
+
+  /* ─── BIOMETRIC OFFER BANNER ─────────────────────────────────────────────── */
+  #bio-offer-banner {
+    display: none; position: fixed; bottom: calc(60px + env(safe-area-inset-bottom,0px));
+    left: 12px; right: 12px; z-index: 200;
+    background: var(--text); color: #fff; border-radius: 14px;
+    padding: 14px 16px; box-shadow: 0 8px 32px rgba(0,0,0,.25);
+    animation: slideUpBanner .3s ease;
+  }
+  @keyframes slideUpBanner { from { transform: translateY(20px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+  .bio-offer-row { display: flex; align-items: center; gap: 10px; }
+  .bio-offer-text { flex: 1; font-size: 13px; font-weight: 500; line-height: 1.4; }
+  .bio-offer-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .bio-offer-yes { flex: 1; padding: 9px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .bio-offer-no  { flex: 1; padding: 9px; border-radius: 8px; border: none; background: rgba(255,255,255,.15); color: #fff; font-size: 13px; font-weight: 500; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -499,7 +633,8 @@
         </div>
       </div>
     </div>
-    <div class="table-wrap">
+    <div id="inv-mobile-card-list" class="inv-mobile-cards" style="display:none"></div>
+    <div id="inv-table-wrap" class="table-wrap">
       <table id="inv-table">
         <thead>
           <tr>
@@ -2144,8 +2279,43 @@ function switchTab(name) {
   if (name === 'messages') renderMessages();
   if (name === 'requests') { reqVisibleCount = REQ_PAGE_SIZE; renderRequests(); }
   if (name === 'audit') renderAuditLog();
-  // Close sidebar on mobile after navigation
-  if (window.innerWidth <= 768) closeMobileSidebar();
+  // Sync bottom nav active state
+  ['inventory','usage','requests','messages'].forEach(function(t) {
+    var btn = document.getElementById('bn-' + t);
+    if (btn) btn.classList.toggle('active', t === name);
+  });
+  var moreBtn = document.getElementById('bn-more');
+  if (moreBtn) moreBtn.classList.toggle('active', !['inventory','usage','requests','messages'].includes(name));
+  // Close sidebar and more menu on mobile after navigation
+  if (window.innerWidth <= 768) { closeMobileSidebar(); closeMobileMoreMenu(); }
+}
+
+function openMobileMoreMenu() {
+  var moreItems = [
+    { tab:'reorder',   icon:'🔄', label:'Reorder' },
+    { tab:'report',    icon:'💰', label:'Cost Report' },
+    { tab:'dashboard', icon:'📊', label:'Dashboard' },
+    { tab:'audit',     icon:'📋', label:'Audit Log' }
+  ];
+  var html = moreItems.map(function(it) {
+    return '<div class="mm-item" onclick="switchTab(\''+it.tab+'\')">' + it.icon + ' ' + it.label + '</div>';
+  }).join('');
+  html += '<div class="mm-item" onclick="refreshData();closeMobileMoreMenu()">↻ Refresh</div>';
+  if (currentRole === 'superuser' || can('add_item')) {
+    html += '<div class="mm-item mm-item-accent" onclick="openItemModal();closeMobileMoreMenu()">+ Add Item</div>';
+  }
+  html += '<div class="mm-item" onclick="openSettings();closeMobileMoreMenu()">⚙ Settings</div>';
+  html += '<div class="mm-item" onclick="openChangePassword();closeMobileMoreMenu()">🔑 Change Password</div>';
+  html += '<div class="mm-item" onclick="logout()" style="border-top:1px solid var(--sidebar-border)"><span class="mm-item-danger">Sign out</span></div>';
+  document.getElementById('mobile-more-items').innerHTML = html;
+  document.getElementById('mobile-more-bg').style.display = 'block';
+  document.getElementById('mobile-more-sheet').classList.add('open');
+}
+
+function closeMobileMoreMenu() {
+  document.getElementById('mobile-more-bg').style.display = 'none';
+  var sheet = document.getElementById('mobile-more-sheet');
+  if (sheet) sheet.classList.remove('open');
 }
 
 function toggleStatusChip(val) {
@@ -2302,6 +2472,43 @@ function renderInventory() {
   const tbody = document.getElementById('inv-tbody');
   const empty = document.getElementById('inv-empty');
   tbody.innerHTML = '';
+
+  // ── Mobile card view ──────────────────────────────────────────────────────
+  var mobileList = document.getElementById('inv-mobile-card-list');
+  if (window.innerWidth <= 768 && mobileList) {
+    mobileList.innerHTML = '';
+    if (items.length === 0) { empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    items.forEach(function(item) {
+      var status = stockStatus(item);
+      var badgeClass = status === 'danger' ? 'badge-danger' : status === 'warn' ? 'badge-warn' : 'badge-ok';
+      var badgeLabel = status === 'danger' ? '⛔ Out of stock' : status === 'warn' ? '⚡ Low stock' : '✓ In stock';
+      var card = document.createElement('div');
+      card.className = 'inv-mobile-card s-' + status;
+      card.onclick = function() { openItemDetail(item.id); };
+      var actBtns = '';
+      if (can('log'))    actBtns += '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();openLogForItem(\''+item.id+'\')">📝 Log</button>';
+      if (can('adjust')) actBtns += '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();openAdjust(\''+item.id+'\')">⚖ Adjust</button>';
+      if (currentRole === 'superuser') actBtns += '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();openItemModal(\''+item.id+'\')">✏️ Edit</button>';
+      actBtns += '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();openItemHistory(\''+item.id+'\')">📋</button>';
+      card.innerHTML = '<div class="inv-mc-top">'
+        + '<div class="inv-mc-name">' + esc(item.name) + '</div>'
+        + '<span class="badge ' + badgeClass + '">' + badgeLabel + '</span>'
+        + '</div>'
+        + '<div class="inv-mc-row">'
+        + '<span class="inv-mc-qty">' + fmtInt(item.qty) + '</span>'
+        + '<span class="inv-mc-unit">' + esc(item.unit||'') + '</span>'
+        + (item.category ? '<span class="badge badge-info">' + esc(item.category) + '</span>' : '')
+        + (item.minQty > 0 ? '<span class="inv-mc-reorder">Reorder @ ' + fmtInt(item.minQty) + '</span>' : '')
+        + '</div>'
+        + (actBtns ? '<div class="inv-mc-actions">' + actBtns + '</div>' : '');
+      mobileList.appendChild(card);
+    });
+    return; // skip table render on mobile
+  }
+  // ── Desktop table view ────────────────────────────────────────────────────
+  if (mobileList) mobileList.innerHTML = '';
+
   if (items.length === 0) { empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
 
@@ -4318,6 +4525,8 @@ function updateRequestBadge() {
   }
   var badge = document.getElementById('req-nav-badge');
   if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none'; }
+  var bnBadge = document.getElementById('bn-req-badge');
+  if (bnBadge) { bnBadge.textContent = count; bnBadge.style.display = count > 0 ? 'inline' : 'none'; }
 }
 
 // ─── MESSAGES ────────────────────────────────────────────────────────────────────
@@ -4356,6 +4565,8 @@ function updateMsgBadge() {
   }
   var badge = document.getElementById('msg-nav-badge');
   if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none'; }
+  var bnBadge = document.getElementById('bn-msg-badge');
+  if (bnBadge) { bnBadge.textContent = count; bnBadge.style.display = count > 0 ? 'inline' : 'none'; }
 }
 
 function setMsgFilter(f) {
@@ -5830,6 +6041,193 @@ function doLogin() {
   _currentPresenceTab = 'inventory';
   startRealtime();
   setTimeout(showCriticalStockAlert, 800);
+  // Offer biometric registration after successful password login
+  setTimeout(function() { offerBiometricRegistration(username); }, 1200);
+}
+
+// ─── BIOMETRIC LOGIN (WebAuthn / Face ID / Touch ID) ─────────────────────────
+var BIO_CREDS_KEY = 'sb_bio_creds';
+var _bioPendingUsername = null;
+
+function getBioCreds() {
+  try { return JSON.parse(localStorage.getItem(BIO_CREDS_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveBioCreds(arr) { localStorage.setItem(BIO_CREDS_KEY, JSON.stringify(arr)); }
+
+async function isBiometricAvailable() {
+  if (!window.PublicKeyCredential) return false;
+  try { return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
+  catch(e) { return false; }
+}
+
+async function initBiometricLoginCheck() {
+  var creds = getBioCreds();
+  if (!creds.length) return;
+  var available = await isBiometricAvailable();
+  if (!available) return;
+  // Show biometric button with the most recently used username
+  var latest = creds[creds.length - 1];
+  var btn = document.getElementById('bio-login-btn');
+  var divider = document.getElementById('bio-divider');
+  var icon = document.getElementById('bio-btn-icon');
+  var label = document.getElementById('bio-btn-label');
+  if (!btn) return;
+  // Detect Face ID vs Touch ID (rough heuristic: Face ID on Face ID-capable devices)
+  var isIOS = /iPhone|iPad/i.test(navigator.userAgent);
+  var isFaceID = isIOS && (/iPhone1[2-9]|iPhone[2-9]\d/i.test(navigator.userAgent) || /iPad Pro/i.test(navigator.userAgent));
+  var bioType = isFaceID ? 'Face ID' : (isIOS ? 'Touch ID' : 'Fingerprint');
+  var bioEmoji = isFaceID ? '👤' : '👆';
+  if (icon) icon.textContent = bioEmoji;
+  if (label) label.textContent = 'Sign in as ' + latest.username + ' with ' + bioType;
+  btn.style.display = 'flex';
+  if (divider) divider.style.display = 'block';
+  // Pre-fill username field
+  var usernameEl = document.getElementById('login-username');
+  if (usernameEl && !usernameEl.value) usernameEl.value = latest.username;
+}
+
+async function doBiometricLogin() {
+  var creds = getBioCreds();
+  if (!creds.length) return;
+  var latest = creds[creds.length - 1];
+  var btn = document.getElementById('bio-login-btn');
+  var origLabel = document.getElementById('bio-btn-label').textContent;
+  if (btn) btn.disabled = true;
+  document.getElementById('bio-btn-label').textContent = 'Verifying…';
+  try {
+    var credIdBytes = Uint8Array.from(atob(latest.credId), function(c) { return c.charCodeAt(0); });
+    var challenge = crypto.getRandomValues(new Uint8Array(32));
+    var assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: challenge,
+        rpId: window.location.hostname || 'localhost',
+        allowCredentials: [{ id: credIdBytes, type: 'public-key' }],
+        userVerification: 'required',
+        timeout: 60000
+      }
+    });
+    if (assertion) {
+      // Biometric verified — perform login as stored username
+      document.getElementById('login-username').value = latest.username;
+      document.getElementById('login-pass').value = '__bio__'; // sentinel, skipped in doLogin
+      _bioPendingUsername = latest.username;
+      performLoginForUser(latest.username);
+    }
+  } catch(e) {
+    document.getElementById('bio-btn-label').textContent = origLabel;
+    if (btn) btn.disabled = false;
+    if (e.name !== 'NotAllowedError') {
+      document.getElementById('login-error').textContent = 'Biometric failed. Enter password instead.';
+    }
+  }
+  _bioPendingUsername = null;
+}
+
+function performLoginForUser(username) {
+  // Look up role without checking password (already authenticated via biometric)
+  var acct = db.accounts.find(function(a) { return a.username.toLowerCase() === username.toLowerCase(); });
+  var role, brand = '';
+  if (acct) {
+    role = acct.role; brand = acct.brand || '';
+  } else if (username.toLowerCase() === getAdminUsername().toLowerCase()) {
+    role = 'superuser';
+  } else {
+    document.getElementById('login-error').textContent = 'Account not found. Try password login.';
+    return;
+  }
+  currentRole = role;
+  currentUser = { username: username, role: role, brand: brand };
+  addRecentLogin(username);
+  localStorage.setItem(SESSION_ROLE_KEY, role);
+  localStorage.setItem(SESSION_USER_KEY, JSON.stringify(currentUser));
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('login-error').textContent = '';
+  applyRoleUI();
+  switchTab('inventory');
+  renderLogs(); renderReorder(); updateSummary();
+  resetSessionTimer();
+  loadGlobalSettings().then(function() { startAutoRefresh(); });
+  loadRequests().then(function() { updateRequestBadge(); });
+  _presenceJoinedAt = new Date().toISOString();
+  _currentPresenceTab = 'inventory';
+  startRealtime();
+  setTimeout(showCriticalStockAlert, 800);
+}
+
+async function offerBiometricRegistration(username) {
+  var available = await isBiometricAvailable();
+  if (!available) return;
+  var creds = getBioCreds();
+  // Don't offer if already registered for this user
+  if (creds.find(function(c) { return c.username === username; })) return;
+  // Don't offer on desktop
+  if (window.innerWidth > 768 && !(/Mobi|Android/i.test(navigator.userAgent))) return;
+  var isIOS = /iPhone|iPad/i.test(navigator.userAgent);
+  var isFaceID = isIOS && (/iPhone1[2-9]|iPhone[2-9]\d/i.test(navigator.userAgent) || /iPad Pro/i.test(navigator.userAgent));
+  var bioType = isFaceID ? 'Face ID' : (isIOS ? 'Touch ID' : 'fingerprint');
+  var icon = isFaceID ? '👤' : '👆';
+  var offerIcon = document.getElementById('bio-offer-icon');
+  var offerText = document.getElementById('bio-offer-text');
+  var banner = document.getElementById('bio-offer-banner');
+  if (offerIcon) offerIcon.textContent = icon;
+  if (offerText) offerText.textContent = 'Sign in faster next time with ' + bioType + '?';
+  _bioPendingUsername = username;
+  if (banner) banner.style.display = 'block';
+  // Auto-dismiss after 15s
+  setTimeout(dismissBiometricOffer, 15000);
+}
+
+async function acceptBiometricOffer() {
+  dismissBiometricOffer();
+  if (!_bioPendingUsername) return;
+  var username = _bioPendingUsername;
+  try {
+    var encoder = new TextEncoder();
+    var challenge = crypto.getRandomValues(new Uint8Array(32));
+    var hostname = window.location.hostname || 'localhost';
+    var credential = await navigator.credentials.create({
+      publicKey: {
+        challenge: challenge,
+        rp: { name: 'SupplyBase', id: hostname },
+        user: {
+          id: encoder.encode(username),
+          name: username,
+          displayName: username
+        },
+        pubKeyCredParams: [
+          { alg: -7,   type: 'public-key' },  // ES256
+          { alg: -257, type: 'public-key' }   // RS256
+        ],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+          residentKey: 'preferred'
+        },
+        timeout: 60000
+      }
+    });
+    if (credential) {
+      var credId = btoa(String.fromCharCode.apply(null, new Uint8Array(credential.rawId)));
+      var creds = getBioCreds().filter(function(c) { return c.username !== username; });
+      creds.push({ username: username, credId: credId });
+      saveBioCreds(creds);
+      // Brief success toast
+      var banner = document.getElementById('bio-offer-banner');
+      if (banner) {
+        banner.innerHTML = '<div style="text-align:center;padding:4px 0;font-size:14px;font-weight:600">✅ Biometric login enabled!</div>';
+        banner.style.display = 'block';
+        setTimeout(function() { banner.style.display = 'none'; banner.innerHTML = ''; }, 2000);
+      }
+    }
+  } catch(e) {
+    // User cancelled or not supported — silently ignore
+  }
+}
+
+function dismissBiometricOffer() {
+  var banner = document.getElementById('bio-offer-banner');
+  if (banner) banner.style.display = 'none';
+  _bioPendingUsername = null;
 }
 
 function showCriticalStockAlert() {
@@ -6372,7 +6770,56 @@ initReportDates();
   }
 })();
 
-document.addEventListener('DOMContentLoaded', function() { load(); initPWA(); });
+document.addEventListener('DOMContentLoaded', function() {
+  load();
+  initPWA();
+  initPullToRefresh();
+  initBiometricLoginCheck();
+  // Re-render inventory on resize (desktop ↔ mobile switch)
+  window.addEventListener('resize', function() {
+    if (document.getElementById('tab-inventory').classList.contains('active')) renderInventory();
+  });
+});
+
+// ─── PULL-TO-REFRESH ─────────────────────────────────────────────────────────
+function initPullToRefresh() {
+  var el = document.querySelector('.main-wrap');
+  if (!el) return;
+  var startY = 0, pulling = false, threshold = 72;
+  var indicator = document.getElementById('ptr-indicator');
+  var label = document.getElementById('ptr-label');
+  el.addEventListener('touchstart', function(e) {
+    if (el.scrollTop === 0) startY = e.touches[0].clientY;
+  }, { passive: true });
+  el.addEventListener('touchmove', function(e) {
+    if (!startY) return;
+    var dist = e.touches[0].clientY - startY;
+    if (dist > 10 && el.scrollTop === 0) {
+      pulling = true;
+      var progress = Math.min(dist / threshold, 1);
+      indicator.style.height = (progress * 48) + 'px';
+      indicator.classList.toggle('ptr-visible', dist > 20);
+      if (label) label.textContent = dist >= threshold ? 'Release to refresh' : 'Pull to refresh';
+    }
+  }, { passive: true });
+  el.addEventListener('touchend', function() {
+    if (pulling && indicator.classList.contains('ptr-visible')) {
+      var dist = parseFloat(indicator.style.height || '0');
+      if (dist >= threshold * 0.7) {
+        indicator.classList.add('ptr-loading');
+        if (label) label.textContent = 'Refreshing…';
+        refreshData().finally(function() {
+          indicator.style.height = '0';
+          indicator.classList.remove('ptr-visible', 'ptr-loading');
+        });
+      } else {
+        indicator.style.height = '0';
+        indicator.classList.remove('ptr-visible');
+      }
+    }
+    startY = 0; pulling = false;
+  }, { passive: true });
+}
 
 // ─── PWA / INSTALL TO HOME SCREEN ───────────────────────────────────────────────
 var _pwaInstallPrompt = null;
@@ -7180,6 +7627,15 @@ function renderAuditLog() {
     </div>
 
     <div id="login-card" style="background:#fff;border:1px solid #e2e4e9;border-radius:12px;padding:28px;box-shadow:0 4px 24px rgba(0,0,0,.06)">
+      <!-- Biometric quick-login button (shown only when a credential is saved) -->
+      <button id="bio-login-btn" onclick="doBiometricLogin()">
+        <span class="bio-icon" id="bio-btn-icon">🔒</span>
+        <span id="bio-btn-label">Sign in with Face ID</span>
+      </button>
+      <div id="bio-divider" style="display:none;text-align:center;font-size:12px;color:var(--muted);margin-bottom:14px;position:relative">
+        <span style="background:#fff;padding:0 10px;position:relative;z-index:1">or enter credentials</span>
+        <div style="position:absolute;top:50%;left:0;right:0;height:1px;background:var(--border);z-index:0"></div>
+      </div>
       <div class="form-group" style="margin-bottom:14px">
         <label>Username</label>
         <input type="text" id="login-username" placeholder="Enter username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
@@ -7189,7 +7645,7 @@ function renderAuditLog() {
         <input type="password" id="login-pass" placeholder="Enter password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" onkeydown="if(event.key==='Enter')doLogin()">
       </div>
       <p id="login-error" style="color:var(--danger);font-size:12px;min-height:18px;margin:6px 0 14px"></p>
-      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Sign in</button>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:15px" onclick="doLogin()">Sign in</button>
     </div>
   </div>
 </div>
@@ -7205,6 +7661,54 @@ function renderAuditLog() {
     </div>
   </div>
 </div>
+
+<!-- PULL-TO-REFRESH INDICATOR -->
+<div id="ptr-indicator"><div class="ptr-spinner"></div><span id="ptr-label">Pull to refresh</span></div>
+
+<!-- BIOMETRIC OFFER BANNER -->
+<div id="bio-offer-banner">
+  <div class="bio-offer-row">
+    <span style="font-size:28px" id="bio-offer-icon">🔒</span>
+    <span class="bio-offer-text" id="bio-offer-text">Sign in faster next time with Face ID or Touch ID?</span>
+  </div>
+  <div class="bio-offer-actions">
+    <button class="bio-offer-yes" onclick="acceptBiometricOffer()">Enable</button>
+    <button class="bio-offer-no"  onclick="dismissBiometricOffer()">Not now</button>
+  </div>
+</div>
+
+<!-- MOBILE MORE OVERLAY -->
+<div id="mobile-more-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:90" onclick="closeMobileMoreMenu()"></div>
+<div id="mobile-more-sheet">
+  <div class="mm-handle"></div>
+  <div id="mobile-more-items"></div>
+</div>
+
+<!-- MOBILE BOTTOM NAV -->
+<nav id="bottom-nav">
+  <button class="bn-item active" id="bn-inventory" onclick="switchTab('inventory')">
+    <span class="bn-icon">📋</span>
+    <span>Inventory</span>
+  </button>
+  <button class="bn-item" id="bn-usage" onclick="switchTab('usage')">
+    <span class="bn-icon">📝</span>
+    <span>Log</span>
+  </button>
+  <button class="bn-item" id="bn-requests" onclick="switchTab('requests')">
+    <span class="bn-icon">🛒</span>
+    <span>Requests</span>
+    <span id="bn-req-badge" class="bn-badge" style="display:none">0</span>
+  </button>
+  <button class="bn-item" id="bn-messages" onclick="switchTab('messages')">
+    <span class="bn-icon">📬</span>
+    <span>Messages</span>
+    <span id="bn-msg-badge" class="bn-badge" style="display:none">0</span>
+  </button>
+  <button class="bn-item" id="bn-more" onclick="openMobileMoreMenu()">
+    <span class="bn-icon">⋯</span>
+    <span>More</span>
+  </button>
+</nav>
 
 </body>
 </html>
