@@ -269,6 +269,21 @@
   .online-user-card { display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px; }
   .online-avatar { width:34px;height:34px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0;text-transform:uppercase; }
 
+  /* ─── COLUMN VISIBILITY ─────────────────────────────────────────────────── */
+  #inv-table.hide-col-sku      th.col-sku,      #inv-table.hide-col-sku      td.col-sku      { display:none !important; }
+  #inv-table.hide-col-category th.col-category, #inv-table.hide-col-category td.col-category { display:none !important; }
+  #inv-table.hide-col-runway   th.col-runway,   #inv-table.hide-col-runway   td.col-runway   { display:none !important; }
+  #inv-table.hide-col-unit     th.col-unit,     #inv-table.hide-col-unit     td.col-unit     { display:none !important; }
+  #inv-table.hide-col-cost     th.col-cost,     #inv-table.hide-col-cost     td.col-cost     { display:none !important; }
+  #inv-table.hide-col-status   th.col-status,   #inv-table.hide-col-status   td.col-status   { display:none !important; }
+  #inv-table.hide-col-location th.col-location, #inv-table.hide-col-location td.col-location { display:none !important; }
+  /* Columns popover */
+  #col-toggle-popover { display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:12px;min-width:180px; }
+  #col-toggle-popover.open { display:block; }
+  .col-toggle-row { display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;user-select:none; }
+  .col-toggle-row input { width:14px;height:14px;cursor:pointer; }
+  .col-toggle-row label { font-size:13px;cursor:pointer;flex:1; }
+
   /* ─── MOBILE ─────────────────────────────────────────────────────────────── */
   #hamburger-btn { display:none; background:none; border:none; cursor:pointer; padding:6px; color:var(--text); }
   #hamburger-btn svg { display:block; }
@@ -451,21 +466,35 @@
       <button id="btn-export-inv-csv" class="btn btn-secondary" onclick="exportInventoryCSV()" style="font-size:12px">⬇ Export CSV</button>
       <button class="btn btn-primary" onclick="openImportModal()" style="font-size:12px" id="btn-import-file">⬆ Import File</button>
       <input type="file" id="import-file-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
+      <div id="btn-col-toggle-wrap" style="position:relative;display:none">
+        <button class="btn btn-secondary" onclick="toggleColPopover()" style="font-size:12px">⊞ Columns</button>
+        <div id="col-toggle-popover">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px">Show / Hide Columns</div>
+          <div class="col-toggle-row"><input type="checkbox" id="ctog-sku"      onchange="toggleInvCol('sku',this.checked)"><label for="ctog-sku">SKU</label></div>
+          <div class="col-toggle-row"><input type="checkbox" id="ctog-category" onchange="toggleInvCol('category',this.checked)"><label for="ctog-category">Category</label></div>
+          <div class="col-toggle-row"><input type="checkbox" id="ctog-runway"   onchange="toggleInvCol('runway',this.checked)"><label for="ctog-runway">Runway</label></div>
+          <div class="col-toggle-row"><input type="checkbox" id="ctog-unit"     onchange="toggleInvCol('unit',this.checked)"><label for="ctog-unit">Unit</label></div>
+          <div class="col-toggle-row"><input type="checkbox" id="ctog-cost"     onchange="toggleInvCol('cost',this.checked)"><label for="ctog-cost">Cost/Unit</label></div>
+          <div class="col-toggle-row"><input type="checkbox" id="ctog-status"   onchange="toggleInvCol('status',this.checked)"><label for="ctog-status">Status</label></div>
+          <div class="col-toggle-row"><input type="checkbox" id="ctog-location" onchange="toggleInvCol('location',this.checked)"><label for="ctog-location">Location</label></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">Changes apply to all users.</div>
+        </div>
+      </div>
     </div>
     <div class="table-wrap">
-      <table>
+      <table id="inv-table">
         <thead>
           <tr>
             <th class="tbl-seq" onclick="sortBy('seq')" title="Master List order"># <span class="sort-arrow active" id="sort-seq">↑</span></th>
             <th onclick="sortBy('name')">Item <span class="sort-arrow" id="sort-name">↕</span></th>
-            <th class="tbl-hide-mobile" onclick="sortBy('sku')">SKU <span class="sort-arrow" id="sort-sku">↕</span></th>
-            <th onclick="sortBy('category')">Category <span class="sort-arrow" id="sort-category">↕</span></th>
+            <th class="col-sku tbl-hide-mobile" onclick="sortBy('sku')">SKU <span class="sort-arrow" id="sort-sku">↕</span></th>
+            <th class="col-category" onclick="sortBy('category')">Category <span class="sort-arrow" id="sort-category">↕</span></th>
             <th onclick="sortBy('qty')">Stock <span class="sort-arrow" id="sort-qty">↕</span></th>
-            <th class="tbl-hide-mobile" title="Days of stock left at current 30-day usage rate">Runway</th>
-            <th class="tbl-hide-mobile" onclick="sortBy('unit')">Unit <span class="sort-arrow" id="sort-unit">↕</span></th>
-            <th class="inv-col-cost tbl-hide-mobile" onclick="sortBy('cost')">Cost/Unit <span class="sort-arrow" id="sort-cost">↕</span></th>
-            <th>Status</th>
-            <th class="tbl-hide-mobile">Location</th>
+            <th class="col-runway tbl-hide-mobile" title="Days of stock left at current 30-day usage rate">Runway</th>
+            <th class="col-unit tbl-hide-mobile" onclick="sortBy('unit')">Unit <span class="sort-arrow" id="sort-unit">↕</span></th>
+            <th class="col-cost inv-col-cost tbl-hide-mobile" onclick="sortBy('cost')">Cost/Unit <span class="sort-arrow" id="sort-cost">↕</span></th>
+            <th class="col-status">Status</th>
+            <th class="col-location tbl-hide-mobile">Location</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -1666,6 +1695,12 @@ async function loadGlobalSettings() {
         if (Array.isArray(parsed) && parsed.length > 0) qcStations = parsed;
       } catch(e) {}
     }
+    if (settingsMap[INV_COLS_KEY] !== undefined) {
+      try {
+        var hiddenParsed = JSON.parse(settingsMap[INV_COLS_KEY]);
+        if (Array.isArray(hiddenParsed)) { invHiddenCols = hiddenParsed; applyInvColVisibility(); }
+      } catch(e) {}
+    }
   } catch(e) {} // settings table may not exist yet — silently ignore
 }
 async function saveRefreshIntervalGlobal(mins) {
@@ -1717,6 +1752,12 @@ function startRealtime() {
         if (row.key === 'lowStockThreshold') {
           var t = parseInt(row.value);
           if (!isNaN(t)) { saveLowStockThresholdLocal(t); renderInventory(); updateSummary(); }
+        }
+        if (row.key === INV_COLS_KEY) {
+          try {
+            var hiddenParsed = JSON.parse(row.value);
+            if (Array.isArray(hiddenParsed)) { invHiddenCols = hiddenParsed; applyInvColVisibility(); }
+          } catch(e) {}
         }
       })
       .on('presence', { event: 'sync' }, function() {
@@ -2236,14 +2277,14 @@ function renderInventory() {
     tr.innerHTML = `
       <td class="tbl-seq" style="color:var(--muted);font-size:12px;text-align:center;white-space:nowrap">${canDrag ? '<span style="cursor:grab;font-size:14px;margin-right:4px;opacity:.4" title="Drag to reorder">⠿</span>' : ''}${i+1}</td>
       <td><strong>${esc(item.name)}</strong></td>
-      <td class="tbl-hide-mobile" style="color:var(--muted);font-size:12px">${item.sku ? esc(item.sku) : '—'}</td>
-      <td>${item.category ? '<span class="badge badge-info">'+esc(item.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
+      <td class="col-sku tbl-hide-mobile" style="color:var(--muted);font-size:12px">${item.sku ? esc(item.sku) : '—'}</td>
+      <td class="col-category">${item.category ? '<span class="badge badge-info">'+esc(item.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
       <td style="font-weight:700;font-size:1.05rem" id="qty-cell-${item.id}">${can('adjust') ? `<span class="inline-qty-display" onclick="event.stopPropagation();startInlineQtyEdit('${item.id}')" title="Click to edit qty" style="cursor:text;border-bottom:1px dashed var(--muted)">${fmtInt(item.qty)}</span>` : fmtInt(item.qty)} <span style="color:var(--muted);font-size:12px">${esc(item.unit||'')}</span></td>
-      <td class="tbl-hide-mobile">${runwayHtml(item)}</td>
-      <td class="tbl-hide-mobile">${esc(item.unit||'—')}</td>
-      <td class="inv-col-cost tbl-hide-mobile" style="${isBrand ? 'display:none' : ''}">${item.cost ? fmtPHP(item.cost) : '<span style="color:var(--muted)">—</span>'}</td>
-      <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
-      <td class="tbl-hide-mobile">${esc(item.location||'—')}</td>
+      <td class="col-runway tbl-hide-mobile">${runwayHtml(item)}</td>
+      <td class="col-unit tbl-hide-mobile">${esc(item.unit||'—')}</td>
+      <td class="col-cost inv-col-cost tbl-hide-mobile" style="${isBrand ? 'display:none' : ''}">${item.cost ? fmtPHP(item.cost) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td class="col-status"><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+      <td class="col-location tbl-hide-mobile">${esc(item.location||'—')}</td>
       <td>${actionsHtml}</td>`;
     tbody.appendChild(tr);
   });
@@ -5466,6 +5507,70 @@ alter publication supabase_realtime add table settings;</pre>
   el.innerHTML = out;
 }
 
+// ─── INVENTORY COLUMN VISIBILITY ─────────────────────────────────────────────────
+var INV_COLS_KEY = 'invHiddenCols';
+var invHiddenCols = []; // array of col names that are hidden, e.g. ['runway','sku']
+
+async function loadInvHiddenCols() {
+  if (!sb) return;
+  try {
+    var r = await sb.from('settings').select('*').eq('key', INV_COLS_KEY);
+    if (r.data && r.data.length > 0) {
+      var parsed = JSON.parse(r.data[0].value);
+      if (Array.isArray(parsed)) invHiddenCols = parsed;
+    }
+  } catch(e) {}
+  applyInvColVisibility();
+}
+
+async function saveInvHiddenCols() {
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', INV_COLS_KEY);
+    await sb.from('settings').insert([{ key: INV_COLS_KEY, value: JSON.stringify(invHiddenCols) }]);
+  } catch(e) {}
+}
+
+function applyInvColVisibility() {
+  var table = document.getElementById('inv-table');
+  if (!table) return;
+  var allCols = ['sku','category','runway','unit','cost','status','location'];
+  allCols.forEach(function(col) {
+    table.classList.toggle('hide-col-' + col, invHiddenCols.indexOf(col) !== -1);
+  });
+  // Sync checkboxes
+  allCols.forEach(function(col) {
+    var cb = document.getElementById('ctog-' + col);
+    if (cb) cb.checked = invHiddenCols.indexOf(col) === -1; // checked = visible
+  });
+}
+
+async function toggleInvCol(col, visible) {
+  if (currentRole !== 'superuser') return;
+  if (visible) {
+    invHiddenCols = invHiddenCols.filter(function(c) { return c !== col; });
+  } else {
+    if (invHiddenCols.indexOf(col) === -1) invHiddenCols.push(col);
+  }
+  applyInvColVisibility();
+  await saveInvHiddenCols();
+}
+
+function toggleColPopover() {
+  var pop = document.getElementById('col-toggle-popover');
+  if (!pop) return;
+  pop.classList.toggle('open');
+}
+
+// Close popover when clicking outside
+document.addEventListener('click', function(e) {
+  var wrap = document.getElementById('btn-col-toggle-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    var pop = document.getElementById('col-toggle-popover');
+    if (pop) pop.classList.remove('open');
+  }
+});
+
 // ─── MOBILE SIDEBAR ──────────────────────────────────────────────────────────────
 function toggleMobileSidebar() {
   var sidebar = document.getElementById('sidebar');
@@ -5775,6 +5880,10 @@ function applyRoleUI() {
   // Import button: superuser and user (write roles) only
   show('btn-import-file', currentRole === 'superuser' || currentRole === 'user');
   show('btn-clear-log', currentRole === 'superuser');
+  // Columns button: superuser only
+  var colWrap = document.getElementById('btn-col-toggle-wrap');
+  if (colWrap) colWrap.style.display = currentRole === 'superuser' ? '' : 'none';
+  applyInvColVisibility();
 
   // Cost/unit column: hide from brand users
   var costHeaders = document.querySelectorAll('.inv-col-cost');
