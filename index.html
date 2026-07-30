@@ -46,7 +46,8 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   button { cursor: pointer; }
-  body { background: var(--bg); color: var(--text); font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif; font-size: 14px; display: flex; min-height: 100vh; overflow-x: hidden; }
+  html { overflow-x: clip; }
+  body { background: var(--bg); color: var(--text); font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif; font-size: 14px; display: flex; min-height: 100vh; }
   h1 { font-size: 1.4rem; font-weight: 700; }
   h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
 
@@ -372,6 +373,7 @@
     color: var(--muted); background: none; border: none; cursor: pointer;
     font-size: 10px; font-weight: 600; min-height: 54px; position: relative;
     transition: color .15s; letter-spacing: .01em;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   .bn-item.active { color: var(--accent); }
   .bn-icon { font-size: 21px; line-height: 1; }
@@ -6093,9 +6095,12 @@ async function initBiometricLoginCheck() {
   var icon = document.getElementById('bio-btn-icon');
   var label = document.getElementById('bio-btn-label');
   if (!btn) return;
-  // Detect Face ID vs Touch ID (rough heuristic: Face ID on Face ID-capable devices)
+  // Detect Face ID vs Touch ID via screen aspect ratio.
+  // Face ID iPhones (X onward, excl. SE) have ratio >= 2.0; SE models are ~1.78.
   var isIOS = /iPhone|iPad/i.test(navigator.userAgent);
-  var isFaceID = isIOS && (/iPhone1[2-9]|iPhone[2-9]\d/i.test(navigator.userAgent) || /iPad Pro/i.test(navigator.userAgent));
+  var isIPad = /iPad/i.test(navigator.userAgent);
+  var screenRatio = Math.max(screen.width, screen.height) / Math.min(screen.width, screen.height);
+  var isFaceID = isIOS && !isIPad && screenRatio >= 2.0;
   var bioType = isFaceID ? 'Face ID' : (isIOS ? 'Touch ID' : 'Fingerprint');
   if (icon) icon.innerHTML = isFaceID ? BIO_ICON_FACEID : BIO_ICON_FINGERPRINT;
   btn.style.display = 'flex';
@@ -6179,7 +6184,9 @@ async function offerBiometricRegistration(username) {
   // Don't offer on desktop
   if (window.innerWidth > 768 && !(/Mobi|Android/i.test(navigator.userAgent))) return;
   var isIOS = /iPhone|iPad/i.test(navigator.userAgent);
-  var isFaceID = isIOS && (/iPhone1[2-9]|iPhone[2-9]\d/i.test(navigator.userAgent) || /iPad Pro/i.test(navigator.userAgent));
+  var isIPad = /iPad/i.test(navigator.userAgent);
+  var screenRatio = Math.max(screen.width, screen.height) / Math.min(screen.width, screen.height);
+  var isFaceID = isIOS && !isIPad && screenRatio >= 2.0;
   var bioType = isFaceID ? 'Face ID' : (isIOS ? 'Touch ID' : 'fingerprint');
   var offerIcon = document.getElementById('bio-offer-icon');
   var offerText = document.getElementById('bio-offer-text');
