@@ -6456,53 +6456,71 @@ function generatePWAIcon(size) {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, size, size);
 
-    // ── LOCAD "O" — black rounded square with white upward arrow ──────────────
-    var boxSize = size * 0.52;
+    // ── LOCAD "O" — black rounded rect, proportions from golocad.com SVG ─────
+    // SVG "O" box: x 52.89→111.53 (w=58.64), y 0→59; corner radius ~9.73/58.64
+    var boxSize = size * 0.62;
     var boxX    = (size - boxSize) / 2;
-    var boxY    = size * 0.10;
-    var boxR    = boxSize * 0.20;
+    var boxY    = size * 0.06;
+    var boxR    = boxSize * 0.167; // ~9.73/58.64 from actual SVG
 
-    // Black rounded square
     ctx.fillStyle = '#0f172a';
     ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(boxX, boxY, boxSize, boxSize, boxR);
-    } else {
-      ctx.moveTo(boxX + boxR, boxY);
-      ctx.lineTo(boxX + boxSize - boxR, boxY); ctx.quadraticCurveTo(boxX + boxSize, boxY, boxX + boxSize, boxY + boxR);
-      ctx.lineTo(boxX + boxSize, boxY + boxSize - boxR); ctx.quadraticCurveTo(boxX + boxSize, boxY + boxSize, boxX + boxSize - boxR, boxY + boxSize);
-      ctx.lineTo(boxX + boxR, boxY + boxSize); ctx.quadraticCurveTo(boxX, boxY + boxSize, boxX, boxY + boxSize - boxR);
-      ctx.lineTo(boxX, boxY + boxR); ctx.quadraticCurveTo(boxX, boxY, boxX + boxR, boxY);
-    }
+    ctx.moveTo(boxX + boxR, boxY);
+    ctx.lineTo(boxX + boxSize - boxR, boxY);
+    ctx.arcTo(boxX + boxSize, boxY, boxX + boxSize, boxY + boxR, boxR);
+    ctx.lineTo(boxX + boxSize, boxY + boxSize - boxR);
+    ctx.arcTo(boxX + boxSize, boxY + boxSize, boxX + boxSize - boxR, boxY + boxSize, boxR);
+    ctx.lineTo(boxX + boxR, boxY + boxSize);
+    ctx.arcTo(boxX, boxY + boxSize, boxX, boxY + boxSize - boxR, boxR);
+    ctx.lineTo(boxX, boxY + boxR);
+    ctx.arcTo(boxX, boxY, boxX + boxR, boxY, boxR);
     ctx.closePath();
     ctx.fill();
 
-    // White upward arrow inside the square (matching LOCAD logo style)
-    var cx   = size / 2;
-    var cy   = boxY + boxSize * 0.50;   // vertical center of box
-    var aw   = boxSize * 0.38;          // arrow total width
-    var ah   = boxSize * 0.55;          // arrow total height
-    var sw   = aw * 0.36;               // shaft width
-    var hh   = ah * 0.48;               // head height (triangle portion)
+    // ── Segmented upward arrow — exact proportions from LOCAD SVG paths ───────
+    // The "O" has a white arrow cutout with 3 segments (dashed shaft + arrowhead)
+    var bW = boxSize, bH = boxSize;
+    var bL = boxX,    bT = boxY;
+
+    // X positions (ratio of box width, measured from SVG)
+    var shL  = bL + bW * 0.357; // shaft left
+    var shR  = bL + bW * 0.642; // shaft right
+    var hdL  = bL + bW * 0.276; // arrowhead triangle left
+    var hdR  = bL + bW * 0.724; // arrowhead triangle right
+    var tipX = bL + bW * 0.500; // arrowhead tip (center)
+
+    // Y positions (ratio of box height, measured from SVG)
+    var tipY    = bT + bH * 0.248; // arrowhead tip
+    var hdBaseY = bT + bH * 0.460; // arrowhead base / upper-shaft top
+    var shTop   = bT + bH * 0.563; // upper-shaft bottom (gap starts here)
+    var s2T     = bT + bH * 0.586; // mid-shaft top
+    var s2B     = bT + bH * 0.667; // mid-shaft bottom
+    var s3T     = bT + bH * 0.688; // bottom-shaft top
+    var s3B     = bT + bH * 0.729; // bottom-shaft bottom
 
     ctx.fillStyle = '#ffffff';
+
+    // Segment 1: arrowhead triangle + upper shaft
     ctx.beginPath();
-    // Arrowhead (triangle)
-    ctx.moveTo(cx,          cy - ah/2);           // top point
-    ctx.lineTo(cx + aw/2,   cy - ah/2 + hh);      // right of head
-    ctx.lineTo(cx + sw/2,   cy - ah/2 + hh);      // step in to shaft
-    // Shaft right side down
-    ctx.lineTo(cx + sw/2,   cy + ah/2);
-    ctx.lineTo(cx - sw/2,   cy + ah/2);
-    // Shaft left side up
-    ctx.lineTo(cx - sw/2,   cy - ah/2 + hh);
-    ctx.lineTo(cx - aw/2,   cy - ah/2 + hh);      // step out to head
+    ctx.moveTo(shR, hdBaseY);
+    ctx.lineTo(shR, shTop);
+    ctx.lineTo(shL, shTop);
+    ctx.lineTo(shL, hdBaseY);
+    ctx.lineTo(hdL, hdBaseY);
+    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(hdR, hdBaseY);
     ctx.closePath();
     ctx.fill();
 
+    // Segment 2: middle shaft dash
+    ctx.fillRect(shL, s2T, shR - shL, s2B - s2T);
+
+    // Segment 3: bottom shaft dash
+    ctx.fillRect(shL, s3T, shR - shL, s3B - s3T);
+
     // ── "SupplyBase" text below the box ───────────────────────────────────────
-    var textY  = boxY + boxSize + (size - boxY - boxSize) * 0.52;
-    var fontSize = Math.round(size * 0.105);
+    var textY    = boxY + boxSize + size * 0.085;
+    var fontSize = Math.round(size * 0.088);
     ctx.fillStyle = '#0f172a';
     ctx.font = '700 ' + fontSize + 'px Arial, sans-serif';
     ctx.textAlign = 'center';
