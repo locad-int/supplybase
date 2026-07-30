@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SupplyBase">
 <meta name="theme-color" content="#0f172a">
-<meta name="description" content="Warehouse Consumables Tracker">
+<meta name="description" content="Consumables Management System">
 <link rel="apple-touch-icon" id="pwa-apple-icon" href="">
 <link rel="manifest" id="pwa-manifest" href="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -46,7 +46,7 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   button { cursor: pointer; }
-  body { background: var(--bg); color: var(--text); font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif; font-size: 14px; display: flex; min-height: 100vh; }
+  body { background: var(--bg); color: var(--text); font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif; font-size: 14px; display: flex; min-height: 100vh; overflow-x: hidden; }
   h1 { font-size: 1.4rem; font-weight: 700; }
   h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
 
@@ -361,18 +361,19 @@
   #bottom-nav {
     display: none;
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
-    background: var(--sidebar-bg);
-    border-top: 1px solid var(--sidebar-border);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -2px 12px rgba(0,0,0,.07);
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .bn-item {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: 8px 2px; gap: 3px;
-    color: var(--sidebar-muted); background: none; border: none; cursor: pointer;
+    color: var(--muted); background: none; border: none; cursor: pointer;
     font-size: 10px; font-weight: 600; min-height: 54px; position: relative;
     transition: color .15s; letter-spacing: .01em;
   }
-  .bn-item.active { color: var(--sidebar-active-text); }
+  .bn-item.active { color: var(--accent); }
   .bn-icon { font-size: 21px; line-height: 1; }
   .bn-badge {
     position: absolute; top: 6px; left: calc(50% + 6px);
@@ -414,7 +415,7 @@
   .inv-mobile-card.s-ok     { border-left-color: var(--accent); }
   .inv-mobile-card:active   { background: var(--surface2); }
   .inv-mc-top  { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-  .inv-mc-name { font-size: 15px; font-weight: 700; color: var(--text); flex: 1; line-height: 1.3; }
+  .inv-mc-name { font-size: 15px; font-weight: 700; color: var(--text); flex: 1; line-height: 1.3; min-width: 0; word-break: break-word; }
   .inv-mc-row  { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
   .inv-mc-qty  { font-size: 1.5rem; font-weight: 800; color: var(--text); }
   .inv-mc-unit { font-size: 12px; color: var(--muted); }
@@ -465,11 +466,12 @@
   /* ─── BIOMETRIC LOGIN BUTTON ─────────────────────────────────────────────── */
   #bio-login-btn {
     display: none; width: 100%; justify-content: center; align-items: center; gap: 10px;
-    padding: 13px; border-radius: 10px; border: 1.5px solid var(--border);
-    background: var(--surface); color: var(--text); font-size: 15px; font-weight: 600;
-    cursor: pointer; transition: border-color .15s, background .15s; margin-bottom: 14px;
+    padding: 13px; border-radius: 10px; border: none;
+    background: var(--accent); color: #fff; font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: opacity .15s; margin-bottom: 14px;
   }
-  #bio-login-btn:hover { border-color: var(--accent); background: var(--surface2); }
+  #bio-login-btn:hover { opacity: .88; }
+  #bio-login-btn:active { opacity: .75; }
   #bio-login-btn .bio-icon { font-size: 22px; }
 
   /* ─── BIOMETRIC OFFER BANNER ─────────────────────────────────────────────── */
@@ -528,7 +530,6 @@
     <div id="nav-dashboard" class="nav-item" data-tab="dashboard" draggable="true" onclick="switchTab('dashboard')">📊 <span>Dashboard</span><span class="nav-drag-handle">⠿</span></div>
     <div id="nav-messages" class="nav-item" data-tab="messages" draggable="true" onclick="switchTab('messages')">📬 <span>Messages</span><span class="nav-drag-handle">⠿</span><span id="msg-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
     <div id="nav-requests" class="nav-item" data-tab="requests" draggable="true" onclick="switchTab('requests')">🛒 <span>Requests</span><span class="nav-drag-handle">⠿</span><span id="req-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
-    <div id="nav-floor" class="nav-item" data-tab="floor" draggable="true" onclick="switchTab('floor')">📦 <span>Floor Stock</span><span class="nav-drag-handle">⠿</span></div>
     <div id="nav-audit" class="nav-item" data-tab="audit" draggable="true" onclick="switchTab('audit')">📋 <span>Audit Log</span><span class="nav-drag-handle">⠿</span></div>
     <div class="reorder-hint" id="reorder-hint" style="display:none">Drag to reorder</div>
   </nav>
@@ -972,39 +973,6 @@
     <div id="req-list-wrap"></div>
   </div>
 
-  <!-- FLOOR STOCK TAB -->
-  <div class="tab-panel" id="tab-floor">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-      <div>
-        <div style="font-size:18px;font-weight:700;color:var(--text)">📦 Floor Stock</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">Items issued from main inventory — available for packing stations. Deducted when team leaders log to a station.</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-secondary" onclick="openStationQRModal()" id="btn-show-qr" style="font-size:12px">🖨 Station QR Codes</button>
-        <button class="btn btn-primary" onclick="openStationLogModal(null)" id="btn-log-to-station" style="font-size:12px">✏️ Log to Station</button>
-      </div>
-    </div>
-
-    <!-- Floor stock summary -->
-    <div id="floor-stock-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px"></div>
-
-    <!-- Floor stock table -->
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px">
-      <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Current Floor Stock</div>
-      <div id="floor-stock-list" style="min-height:80px"></div>
-    </div>
-
-    <!-- Station consumption log -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:14px;font-weight:700">Station Consumption Log</div>
-      <div style="display:flex;gap:8px">
-        <select id="slog-filter-station" onchange="renderStationLogs()" style="width:auto;font-size:12px"><option value="">All Stations</option></select>
-        <select id="slog-filter-item" onchange="renderStationLogs()" style="width:auto;font-size:12px"><option value="">All Items</option></select>
-      </div>
-    </div>
-    <div id="station-log-list"></div>
-  </div>
-
   <!-- AUDIT LOG TAB -->
   <div class="tab-panel" id="tab-audit">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
@@ -1099,7 +1067,7 @@
     <div class="modal-actions">
       <button id="crm-btn-reject" class="btn" style="background:var(--danger);color:#fff;margin-right:auto" onclick="rejectRequest()">✕ Reject</button>
       <button class="btn btn-secondary" onclick="closeModal('confirm-request-modal')">Cancel</button>
-      <button id="crm-btn-confirm" class="btn btn-primary" onclick="confirmIssuance()">📦 Issue to Floor</button>
+      <button id="crm-btn-confirm" class="btn btn-primary" onclick="confirmIssuance()">✓ Confirm Issuance</button>
     </div>
   </div>
 </div>
@@ -1763,8 +1731,6 @@ async function refreshData() {
     if (r4.data) db.accounts = r4.data;
     await loadMessages();
     await loadRequests();
-    await loadFloorStock();
-    await loadStationLogs();
     updateSummary();
     renderInventory(); renderLogs(); renderReorder(); renderRequests(); updateRequestBadge();
   } catch(e) { console.error('Refresh failed:', e); }
@@ -2252,8 +2218,6 @@ async function load() {
     await loadGlobalSettings();
     await loadMessages(); // graceful — won't throw if table missing
     await loadRequests();
-    await loadFloorStock();
-    await loadStationLogs();
     db_audit = getAuditLocal();
     // First time — seed from Master List
     if (db.items.length === 0) {
@@ -5328,7 +5292,6 @@ function openConfirmModal(reqId) {
 }
 
 async function confirmIssuance() {
-  // ── NEW FLOW: Issue to Floor Stock (not direct deduction to log) ──────────
   var req = db_reqs.find(r => r.id === currentViewReqId);
   if (!req) return;
   var requesterAcct = db.accounts.find(function(a) { return a.username === req.requestedBy; });
@@ -5337,31 +5300,22 @@ async function confirmIssuance() {
 
   var item = db.items.find(i => i.id === req.itemId);
   if (item) {
-    // 1. Deduct from main inventory
     var newQty = Math.max(0, item.qty - issueQty);
     item.qty = newQty;
     item.updatedAt = new Date().toISOString();
-    if (sb) {
-      try { await sb.from('items').update({ qty: item.qty, updatedAt: item.updatedAt }).eq('id', item.id); } catch(e) {}
-    }
-    save();
-
-    // 2. Add to floor stock (intermediate location)
-    await floorStockAdd(req.itemId, issueQty);
-
-    // 3. Record in audit/log as "issued to floor"
     var logEntry = {
-      id: uid(), itemId: req.itemId, type: 'adjust', qty: issueQty, absQty: newQty,
-      by: currentUser.username, date: new Date().toISOString(), ref: '',
-      notes: 'Issued to Floor Stock — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
+      id: uid(), itemId: req.itemId, type: 'use', qty: issueQty, absQty: newQty,
+      by: currentUser.username, date: new Date().toISOString(), ref: req.reqNumber || '',
+      notes: 'Confirmed — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
     };
     db.logs.push(logEntry);
-    if (sb) { try { await sb.from('logs').insert([logEntry]); } catch(e) {} }
+    if (sb) {
+      try { await sb.from('logs').insert([logEntry]); await sb.from('items').update({ qty: item.qty, updatedAt: item.updatedAt }).eq('id', item.id); } catch(e) {}
+    }
+    save();
   }
 
-  // 4. Update request status to 'issued' (new status)
-  req.status      = 'confirmed'; // keep 'confirmed' for compatibility; issuedToFloor flag added
-  req.issuedToFloor = true;
+  req.status      = 'confirmed';
   req.confirmedBy = currentUser.username;
   req.confirmedAt = new Date().toISOString();
   req.seenByRequestor = false;
@@ -5373,19 +5327,17 @@ async function confirmIssuance() {
     catch(e) { try { await sb.from('supply_requests').update({ status: 'confirmed', confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, seenByRequestor: false }).eq('id', req.id); } catch(e2) {} }
   }
 
-  logAudit('Issued to Floor', req.itemName + ' ×' + issueQty + ' → Floor Stock (req by ' + req.requestedBy + ')');
+  logAudit('Issuance confirmed', req.itemName + ' ×' + issueQty + ' (req by ' + req.requestedBy + ')');
   closeModal('confirm-request-modal');
   updateRequestBadge();
   renderRequests();
   updateSummary();
   renderInventory();
-  // Prompt to switch to Floor Stock tab
   var t = document.createElement('div');
-  t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 20px;border-radius:99px;font-size:13px;font-weight:600;z-index:999;cursor:pointer;white-space:nowrap';
-  t.innerHTML = '📦 Issued to Floor Stock — <u>View</u>';
-  t.onclick = function() { switchTab('floor'); t.remove(); };
+  t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 20px;border-radius:99px;font-size:13px;font-weight:600;z-index:999;white-space:nowrap';
+  t.textContent = '✓ Issuance confirmed';
   document.body.appendChild(t);
-  setTimeout(function(){ if (t.parentNode) t.remove(); }, 4000);
+  setTimeout(function(){ if (t.parentNode) t.remove(); }, 2500);
 }
 
 async function rejectRequest() {
@@ -5460,8 +5412,8 @@ async function massConfirmRequests() {
   });
   if (ids.length === 0) return;
   showConfirm(
-    'Issue to Floor Stock',
-    'Issue ' + ids.length + ' request' + (ids.length !== 1 ? 's' : '') + ' to Floor Stock?\n\nItems will move from main inventory → Floor Stock. Team leaders log to stations from there.',
+    'Mass Confirm Requests',
+    'Confirm ' + ids.length + ' request' + (ids.length !== 1 ? 's' : '') + '?\n\nItems will be deducted from inventory and usage logged.',
     async function() {
       var now = new Date().toISOString();
       for (var i = 0; i < ids.length; i++) {
@@ -5473,24 +5425,19 @@ async function massConfirmRequests() {
           var newQty = Math.max(0, item.qty - req.qty);
           item.qty = newQty;
           item.updatedAt = now;
-          if (sb) {
-            try { await sb.from('items').update({ qty: item.qty, updatedAt: item.updatedAt }).eq('id', item.id); } catch(e) {}
-          }
-          // Move to floor stock
-          await floorStockAdd(req.itemId, req.qty);
-          // Audit log entry
           var logEntry = {
-            id: uid(), itemId: req.itemId, type: 'adjust',
+            id: uid(), itemId: req.itemId, type: 'use',
             qty: req.qty, absQty: newQty,
             by: currentUser.username, date: now, ref: req.reqNumber || '',
-            notes: 'Issued to Floor Stock — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
+            notes: 'Confirmed — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
           };
           db.logs.push(logEntry);
-          if (sb) { try { await sb.from('logs').insert([logEntry]); } catch(e) {} }
+          if (sb) {
+            try { await sb.from('logs').insert([logEntry]); await sb.from('items').update({ qty: item.qty, updatedAt: item.updatedAt }).eq('id', item.id); } catch(e) {}
+          }
         }
 
         req.status = 'confirmed';
-        req.issuedToFloor = true;
         req.confirmedBy = currentUser.username;
         req.confirmedAt = now;
         req.issuedQty = req.qty;
@@ -5499,7 +5446,7 @@ async function massConfirmRequests() {
         if (sb && REQ_TABLE_OK !== false) {
           try { await sb.from('supply_requests').update({ status: 'confirmed', confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, issuedQty: req.qty, seenByRequestor: false }).eq('id', req.id); } catch(e) {}
         }
-        logAudit('Issued to Floor (mass)', req.itemName + ' ×' + req.qty + ' → Floor Stock');
+        logAudit('Issuance confirmed (mass)', req.itemName + ' ×' + req.qty + ' (req by ' + req.requestedBy + ')');
       }
       save();
       saveReqsLocal();
@@ -5509,7 +5456,7 @@ async function massConfirmRequests() {
       renderRequests();
       updateRequestBadge();
     },
-    { danger: false, confirmLabel: '📦 Issue ' + ids.length + ' to Floor' }
+    { danger: false, confirmLabel: '✓ Mass Confirm' }
   );
 }
 
@@ -6119,12 +6066,8 @@ async function initBiometricLoginCheck() {
   var bioType = isFaceID ? 'Face ID' : (isIOS ? 'Touch ID' : 'Fingerprint');
   var bioEmoji = isFaceID ? '👤' : '👆';
   if (icon) icon.textContent = bioEmoji;
-  if (label) label.textContent = 'Sign in as ' + latest.username + ' with ' + bioType;
   btn.style.display = 'flex';
   if (divider) divider.style.display = 'block';
-  // Pre-fill username field
-  var usernameEl = document.getElementById('login-username');
-  if (usernameEl && !usernameEl.value) usernameEl.value = latest.username;
 }
 
 async function doBiometricLogin() {
@@ -6811,459 +6754,11 @@ initReportDates();
   }
 })();
 
-// ══════════════════════════════════════════════════════════════════════════════
-// FLOOR STOCK — data layer
-// ══════════════════════════════════════════════════════════════════════════════
-var db_floor = [];      // [{id, itemId, qty, updatedAt}]  — one row per item
-var db_slogs = [];      // [{id, stationId, stationName, items:[{itemId,itemName,qty,unit}], loggedBy, loggedAt, notes}]
-var FS_LS_KEY   = 'sb_floor_stock';
-var SLOG_LS_KEY = 'sb_station_logs';
-
-function getFloorLocal()  { try { return JSON.parse(localStorage.getItem(FS_LS_KEY)   || '[]'); } catch(e) { return []; } }
-function getSlogsLocal()  { try { return JSON.parse(localStorage.getItem(SLOG_LS_KEY) || '[]'); } catch(e) { return []; } }
-function saveFloorLocal() { localStorage.setItem(FS_LS_KEY,   JSON.stringify(db_floor)); }
-function saveSlogsLocal() { localStorage.setItem(SLOG_LS_KEY, JSON.stringify(db_slogs)); }
-
-async function loadFloorStock() {
-  if (!sb) { db_floor = getFloorLocal(); return; }
-  try {
-    var r = await sb.from('floor_stock').select('*');
-    if (r.error || !r.data) { db_floor = getFloorLocal(); return; }
-    db_floor = r.data;
-    saveFloorLocal();
-  } catch(e) { db_floor = getFloorLocal(); }
-}
-
-async function loadStationLogs() {
-  if (!sb) { db_slogs = getSlogsLocal(); return; }
-  try {
-    var r = await sb.from('station_logs').select('*').order('loggedAt', { ascending: false });
-    if (r.error || !r.data) { db_slogs = getSlogsLocal(); return; }
-    db_slogs = r.data;
-    saveSlogsLocal();
-  } catch(e) { db_slogs = getSlogsLocal(); }
-}
-
-// Add qty to a floor stock item (called when supplies issues)
-async function floorStockAdd(itemId, qty) {
-  var existing = db_floor.find(function(f) { return f.itemId === itemId; });
-  if (existing) {
-    existing.qty = (existing.qty || 0) + qty;
-    existing.updatedAt = new Date().toISOString();
-  } else {
-    existing = { id: 'fs_' + Date.now() + '_' + Math.random().toString(36).slice(2), itemId: itemId, qty: qty, updatedAt: new Date().toISOString() };
-    db_floor.push(existing);
-  }
-  saveFloorLocal();
-  if (sb) {
-    try {
-      // upsert by itemId
-      await sb.from('floor_stock').upsert([{ itemId: itemId, qty: existing.qty, updatedAt: existing.updatedAt }], { onConflict: 'itemId' });
-    } catch(e) {}
-  }
-}
-
-// Deduct qty from floor stock (called when team leader logs to station)
-async function floorStockDeduct(itemId, qty) {
-  var existing = db_floor.find(function(f) { return f.itemId === itemId; });
-  if (!existing) return false;
-  if (existing.qty < qty) return false; // insufficient
-  existing.qty = existing.qty - qty;
-  existing.updatedAt = new Date().toISOString();
-  saveFloorLocal();
-  if (sb) {
-    try {
-      await sb.from('floor_stock').upsert([{ itemId: itemId, qty: existing.qty, updatedAt: existing.updatedAt }], { onConflict: 'itemId' });
-    } catch(e) {}
-  }
-  return true;
-}
-
-// ── RENDER FLOOR STOCK TAB ──────────────────────────────────────────────────
-function renderFloorStock() {
-  renderFloorSummary();
-  renderFloorList();
-  renderStationLogs();
-  populateStationLogSelects();
-}
-
-function renderFloorSummary() {
-  var el = document.getElementById('floor-stock-summary');
-  if (!el) return;
-  var total = db_floor.reduce(function(s, f) { return s + (f.qty || 0); }, 0);
-  var itemCount = db_floor.filter(function(f) { return f.qty > 0; }).length;
-  var lowItems  = db_floor.filter(function(f) { return f.qty > 0 && f.qty <= 5; }).length;
-  el.innerHTML =
-    '<div class="card"><div class="label">Items on Floor</div><div class="value">' + itemCount + '</div></div>'
-  + '<div class="card"><div class="label">Total Units</div><div class="value">' + fmtInt(total) + '</div></div>'
-  + '<div class="card' + (lowItems ? ' warn' : '') + '"><div class="label">⚡ Running Low</div><div class="value">' + lowItems + '</div></div>'
-  + '<div class="card"><div class="label">Station Logs Today</div><div class="value">' + db_slogs.filter(function(l){ var d=new Date(l.loggedAt); var n=new Date(); return d.toDateString()===n.toDateString(); }).length + '</div></div>';
-}
-
-function renderFloorList() {
-  var el = document.getElementById('floor-stock-list');
-  if (!el) return;
-  var active = db_floor.filter(function(f) { return f.qty > 0; });
-  if (!active.length) {
-    el.innerHTML = '<div class="empty" style="padding:32px 24px"><div class="icon">📦</div><p>No items on the floor yet. Items appear here when supplies issues a request.</p></div>';
-    return;
-  }
-  var html = '<table style="width:100%;border-collapse:collapse">'
-    + '<thead><tr>'
-    + '<th style="background:var(--surface2);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:9px 14px;text-align:left;border-bottom:1px solid var(--border)">Item</th>'
-    + '<th style="background:var(--surface2);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:9px 14px;text-align:left;border-bottom:1px solid var(--border)">Available on Floor</th>'
-    + '<th style="background:var(--surface2);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:9px 14px;text-align:left;border-bottom:1px solid var(--border)">Main Inventory</th>'
-    + '<th style="background:var(--surface2);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:9px 14px;text-align:left;border-bottom:1px solid var(--border)">Last Updated</th>'
-    + '</tr></thead><tbody>';
-  active.forEach(function(f) {
-    var item = db.items.find(function(i) { return i.id === f.itemId; });
-    var name = item ? esc(item.name) : '<span style="color:var(--muted)">Unknown item</span>';
-    var unit = item ? esc(item.unit || '') : '';
-    var mainQty = item ? fmtInt(item.qty) : '—';
-    var lowWarn = f.qty <= 5 ? ' style="color:var(--warn);font-weight:700"' : '';
-    var updated = f.updatedAt ? new Date(f.updatedAt).toLocaleString() : '—';
-    html += '<tr style="border-bottom:1px solid var(--border)">'
-      + '<td style="padding:10px 14px;font-size:13px;font-weight:600">' + name + '</td>'
-      + '<td style="padding:10px 14px;font-size:13px"' + lowWarn + '>' + fmtInt(f.qty) + ' <span style="color:var(--muted);font-size:11px">' + unit + '</span>'
-      + (f.qty <= 5 ? ' <span style="font-size:11px;color:var(--warn)">⚡ Low</span>' : '') + '</td>'
-      + '<td style="padding:10px 14px;font-size:13px;color:var(--muted)">' + mainQty + ' ' + unit + '</td>'
-      + '<td style="padding:10px 14px;font-size:11px;color:var(--muted)">' + updated + '</td>'
-      + '</tr>';
-  });
-  html += '</tbody></table>';
-  el.innerHTML = html;
-}
-
-function renderStationLogs() {
-  var el = document.getElementById('station-log-list');
-  if (!el) return;
-  var filterStation = (document.getElementById('slog-filter-station') || {}).value || '';
-  var filterItem    = (document.getElementById('slog-filter-item')    || {}).value || '';
-  var logs = db_slogs.filter(function(l) {
-    if (filterStation && l.stationId !== filterStation) return false;
-    if (filterItem && !l.items.some(function(i){ return i.itemId === filterItem; })) return false;
-    return true;
-  });
-  if (!logs.length) {
-    el.innerHTML = '<div class="empty" style="padding:24px"><div class="icon">📋</div><p>No station logs yet.</p></div>';
-    return;
-  }
-  el.innerHTML = logs.slice(0, 60).map(function(l) {
-    var itemLines = (l.items || []).map(function(it) {
-      return '<span style="font-size:12px;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:2px 9px;margin-right:4px">'
-        + esc(it.itemName) + ' × ' + fmtInt(it.qty) + ' ' + esc(it.unit || '') + '</span>';
-    }).join('');
-    return '<div class="log-entry" style="grid-template-columns:auto 1fr auto">'
-      + '<div style="width:36px;height:36px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">📍</div>'
-      + '<div><div style="font-size:13px;font-weight:700">' + esc(l.stationName || l.stationId) + '</div>'
-      + '<div style="margin:4px 0">' + itemLines + '</div>'
-      + '<div class="log-meta">by ' + esc(l.loggedBy || '—') + (l.notes ? ' · ' + esc(l.notes) : '') + '</div></div>'
-      + '<div style="font-size:11px;color:var(--muted);white-space:nowrap">' + (l.loggedAt ? new Date(l.loggedAt).toLocaleString() : '—') + '</div>'
-      + '</div>';
-  }).join('');
-}
-
-function populateStationLogSelects() {
-  var stations = [...new Set(db_slogs.map(function(l){ return l.stationId; }))].sort();
-  var sSel = document.getElementById('slog-filter-station');
-  if (sSel) {
-    var cur = sSel.value;
-    sSel.innerHTML = '<option value="">All Stations</option>' + stations.map(function(s){ return '<option value="'+esc(s)+'"'+( s===cur?' selected':'')+'>'+esc(s)+'</option>'; }).join('');
-  }
-  var items = [...new Set(db_floor.filter(function(f){ return f.qty>0;}).map(function(f){ return f.itemId; }))];
-  var iSel = document.getElementById('slog-filter-item');
-  if (iSel) {
-    var cur2 = iSel.value;
-    iSel.innerHTML = '<option value="">All Items</option>' + items.map(function(id){
-      var it = db.items.find(function(i){ return i.id===id; });
-      return '<option value="'+id+'"'+(id===cur2?' selected':'')+'>'+esc(it?it.name:id)+'</option>';
-    }).join('');
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// LOG TO STATION — modal logic
-// ══════════════════════════════════════════════════════════════════════════════
-var _slogItems = []; // [{itemId, qty}]
-
-function openStationLogModal(prefilledStationId) {
-  _slogItems = [];
-  document.getElementById('slog-items-wrap').innerHTML = '';
-  document.getElementById('slog-notes').value = '';
-  document.getElementById('slog-error').textContent = '';
-  document.getElementById('slog-scan-status').textContent = '';
-  // Populate station dropdown from QC stations
-  var sel = document.getElementById('slog-station-sel');
-  var stations = getQcStations();
-  sel.innerHTML = '<option value="">— Select station —</option>'
-    + stations.map(function(s){ return '<option value="'+esc(s)+'"'+(s===prefilledStationId?' selected':'')+'>'+esc(s)+'</option>'; }).join('');
-  addStationLogItem(); // start with one row
-  document.getElementById('station-log-modal').classList.add('open');
-}
-
-function addStationLogItem() {
-  var idx = _slogItems.length;
-  _slogItems.push({ itemId: '', qty: 1 });
-  var wrap = document.getElementById('slog-items-wrap');
-  var row = document.createElement('div');
-  row.id = 'slog-item-row-' + idx;
-  row.style.cssText = 'display:flex;gap:8px;align-items:center';
-  var floorItems = db_floor.filter(function(f){ return f.qty > 0; });
-  var itemOptions = floorItems.map(function(f) {
-    var it = db.items.find(function(i){ return i.id === f.itemId; });
-    if (!it) return '';
-    return '<option value="'+it.id+'">'+esc(it.name)+' ('+fmtInt(f.qty)+' available)</option>';
-  }).join('');
-  if (!itemOptions) {
-    document.getElementById('slog-error').textContent = 'No items on the floor yet. Have supplies issue a request first.';
-    return;
-  }
-  row.innerHTML = '<select style="flex:1;font-size:13px" onchange="_slogItems['+idx+'].itemId=this.value"><option value="">— Item —</option>'+itemOptions+'</select>'
-    + '<input type="number" min="1" value="1" style="width:72px;font-size:13px;text-align:center" placeholder="Qty" oninput="_slogItems['+idx+'].qty=+this.value||1">'
-    + (idx > 0 ? '<button class="btn btn-icon btn-sm" onclick="removeStationLogItem('+idx+')" title="Remove" style="flex-shrink:0">✕</button>' : '<div style="width:34px"></div>');
-  wrap.appendChild(row);
-}
-
-function removeStationLogItem(idx) {
-  _slogItems.splice(idx, 1);
-  // Re-render all rows
-  var wrap = document.getElementById('slog-items-wrap');
-  wrap.innerHTML = '';
-  var tmp = _slogItems.slice();
-  _slogItems = [];
-  tmp.forEach(function() { addStationLogItem(); });
-}
-
-async function submitStationLog() {
-  var stationId = document.getElementById('slog-station-sel').value;
-  var notes = document.getElementById('slog-notes').value.trim();
-  var errEl = document.getElementById('slog-error');
-  errEl.textContent = '';
-
-  if (!stationId) { errEl.textContent = 'Select or scan a packing station.'; return; }
-  var validItems = _slogItems.filter(function(r){ return r.itemId && r.qty > 0; });
-  if (!validItems.length) { errEl.textContent = 'Add at least one item.'; return; }
-
-  // Check floor stock availability
-  for (var i = 0; i < validItems.length; i++) {
-    var r = validItems[i];
-    var fs = db_floor.find(function(f){ return f.itemId === r.itemId; });
-    var it = db.items.find(function(i){ return i.id === r.itemId; });
-    if (!fs || fs.qty < r.qty) {
-      errEl.textContent = 'Insufficient floor stock for ' + (it ? it.name : r.itemId) + '. Available: ' + (fs ? fmtInt(fs.qty) : 0);
-      return;
-    }
-  }
-
-  // Deduct from floor stock
-  for (var j = 0; j < validItems.length; j++) {
-    await floorStockDeduct(validItems[j].itemId, validItems[j].qty);
-  }
-
-  // Build log entry
-  var itemDetails = validItems.map(function(r) {
-    var it = db.items.find(function(i){ return i.id === r.itemId; });
-    return { itemId: r.itemId, itemName: it ? it.name : r.itemId, qty: r.qty, unit: it ? (it.unit || '') : '' };
-  });
-  var entry = {
-    id: 'sl_' + Date.now() + '_' + Math.random().toString(36).slice(2),
-    stationId: stationId,
-    stationName: stationId,
-    items: itemDetails,
-    loggedBy: currentUser ? currentUser.username : 'unknown',
-    loggedAt: new Date().toISOString(),
-    notes: notes
-  };
-  db_slogs.unshift(entry);
-  saveSlogsLocal();
-  if (sb) {
-    try { await sb.from('station_logs').insert([entry]); } catch(e) {}
-  }
-
-  closeModal('station-log-modal');
-  renderFloorStock();
-  // Toast
-  var t = document.createElement('div');
-  t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 20px;border-radius:99px;font-size:13px;font-weight:600;z-index:999;white-space:nowrap';
-  t.textContent = '✅ Logged to ' + stationId;
-  document.body.appendChild(t);
-  setTimeout(function(){ t.remove(); }, 2500);
-}
-
-// ── QR SCANNER (camera) ─────────────────────────────────────────────────────
-function startQRScan() {
-  // Use jsQR library via CDN — load on demand
-  var statusEl = document.getElementById('slog-scan-status');
-  statusEl.textContent = 'Opening camera…';
-  // Create a hidden video element to capture camera feed
-  if (!window._qrVideo) {
-    var v = document.createElement('video');
-    v.setAttribute('playsinline', '');
-    v.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:500;background:#000';
-    v.id = '_qr-video';
-    var overlay = document.createElement('div');
-    overlay.id = '_qr-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:501;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none';
-    overlay.innerHTML = '<div style="width:220px;height:220px;border:3px solid #22c55e;border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.5)"></div>'
-      + '<div style="color:#fff;margin-top:14px;font-size:14px;font-weight:600;pointer-events:auto">Point at a Station QR Code</div>';
-    var closeBtn = document.createElement('button');
-    closeBtn.textContent = '✕ Cancel';
-    closeBtn.style.cssText = 'position:fixed;top:20px;right:20px;z-index:502;background:rgba(0,0,0,.7);color:#fff;border:none;border-radius:99px;padding:8px 18px;font-size:14px;cursor:pointer';
-    closeBtn.onclick = stopQRScan;
-    document.body.appendChild(v);
-    document.body.appendChild(overlay);
-    document.body.appendChild(closeBtn);
-    window._qrVideo = v; window._qrOverlay = overlay; window._qrCloseBtn = closeBtn;
-  }
-  if (!window.jsQR) {
-    var s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
-    s.onload = function() { _startCamera(statusEl); };
-    s.onerror = function() { statusEl.textContent = 'QR library failed. Select station manually.'; stopQRScan(); };
-    document.head.appendChild(s);
-  } else { _startCamera(statusEl); }
-}
-
-function _startCamera(statusEl) {
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-    .then(function(stream) {
-      window._qrStream = stream;
-      window._qrVideo.srcObject = stream;
-      window._qrVideo.play();
-      statusEl.textContent = 'Scanning…';
-      _scanQRFrame(statusEl);
-    })
-    .catch(function() { statusEl.textContent = 'Camera access denied. Select station manually.'; stopQRScan(); });
-}
-
-function _scanQRFrame(statusEl) {
-  var v = window._qrVideo;
-  if (!v || !window.jsQR) return;
-  var c = document.createElement('canvas');
-  c.width = v.videoWidth; c.height = v.videoHeight;
-  var ctx = c.getContext('2d');
-  ctx.drawImage(v, 0, 0);
-  var data = ctx.getImageData(0, 0, c.width, c.height);
-  var code = window.jsQR(data.data, c.width, c.height);
-  if (code && code.data) {
-    // Extract station param from URL in QR
-    try {
-      var url = new URL(code.data);
-      var station = url.searchParams.get('station');
-      if (station) {
-        stopQRScan();
-        var sel = document.getElementById('slog-station-sel');
-        if (sel) {
-          // Add option if not there yet
-          if (!sel.querySelector('option[value="'+station+'"]')) {
-            sel.innerHTML += '<option value="'+esc(station)+'">'+esc(station)+'</option>';
-          }
-          sel.value = station;
-        }
-        if (statusEl) statusEl.textContent = '✅ Station: ' + station;
-        return;
-      }
-    } catch(e) {}
-  }
-  window._qrAnimFrame = requestAnimationFrame(function() { _scanQRFrame(statusEl); });
-}
-
-function stopQRScan() {
-  if (window._qrStream) { window._qrStream.getTracks().forEach(function(t){ t.stop(); }); window._qrStream = null; }
-  if (window._qrVideo)     { window._qrVideo.remove();     window._qrVideo = null; }
-  if (window._qrOverlay)   { window._qrOverlay.remove();   window._qrOverlay = null; }
-  if (window._qrCloseBtn)  { window._qrCloseBtn.remove();  window._qrCloseBtn = null; }
-  if (window._qrAnimFrame) { cancelAnimationFrame(window._qrAnimFrame); window._qrAnimFrame = null; }
-}
-
-// Handle ?station= URL param (QR scan opens app to this station)
-function checkURLStationParam() {
-  var params = new URLSearchParams(window.location.search);
-  var station = params.get('station');
-  if (station) {
-    window.history.replaceState({}, '', window.location.pathname);
-    // Wait for app to be ready then open the log modal
-    setTimeout(function() {
-      if (currentUser) { switchTab('floor'); openStationLogModal(station); }
-      else { window._pendingStation = station; }
-    }, 500);
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// STATION QR CODE GENERATION
-// ══════════════════════════════════════════════════════════════════════════════
-function openStationQRModal() {
-  var stations = getQcStations();
-  var grid = document.getElementById('station-qr-grid');
-  if (!stations.length) {
-    grid.innerHTML = '<p style="color:var(--muted);font-size:13px">No stations configured. Add stations in the QC Station settings.</p>';
-  } else {
-    grid.innerHTML = stations.map(function(s) {
-      return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center" id="qr-cell-'+esc(s)+'">'
-        + '<canvas id="qr-canvas-'+esc(s)+'" style="width:120px;height:120px"></canvas>'
-        + '<div style="font-size:12px;font-weight:700;margin-top:8px;color:var(--text)">' + esc(s) + '</div>'
-        + '</div>';
-    }).join('');
-    // Load QRCode library on demand
-    if (!window.QRCode) {
-      var scr = document.createElement('script');
-      scr.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
-      scr.onload = function() { stations.forEach(renderStationQR); };
-      document.head.appendChild(scr);
-    } else { stations.forEach(renderStationQR); }
-  }
-  document.getElementById('station-qr-modal').classList.add('open');
-}
-
-function renderStationQR(stationId) {
-  var canvas = document.getElementById('qr-canvas-' + stationId);
-  if (!canvas || !window.QRCode) return;
-  var url = window.location.href.split('?')[0] + '?station=' + encodeURIComponent(stationId);
-  QRCode.toCanvas(canvas, url, { width: 120, margin: 1, color: { dark: '#0f172a', light: '#f8f9fa' } }, function(err){});
-}
-
-function printStationQRs() {
-  var stations = getQcStations();
-  var win = window.open('', '_blank');
-  var html = '<html><head><title>SupplyBase — Station QR Codes</title><style>'
-    + 'body{font-family:sans-serif;padding:24px} .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px}'
-    + '.cell{border:1px solid #ccc;border-radius:8px;padding:12px;text-align:center;page-break-inside:avoid}'
-    + '.label{font-weight:700;font-size:13px;margin-top:8px}'
-    + '@media print{.no-print{display:none}}'
-    + '</style></head><body>'
-    + '<div style="margin-bottom:16px"><strong>SupplyBase — Station QR Codes</strong> <span class="no-print" style="margin-left:12px"><button onclick="window.print()">Print</button></span></div>'
-    + '<div class="grid">';
-  stations.forEach(function(s) {
-    var url = window.location.href.split('?')[0] + '?station=' + encodeURIComponent(s);
-    // Embed as image using QR API (fallback)
-    html += '<div class="cell"><img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=' + encodeURIComponent(url) + '" width="140" height="140"><div class="label">' + s + '</div></div>';
-  });
-  html += '</div></body></html>';
-  win.document.write(html);
-  win.document.close();
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// HOOK INTO switchTab + load for floor stock
-// ══════════════════════════════════════════════════════════════════════════════
-var _origSwitchTab = switchTab;
-switchTab = function(name) {
-  _origSwitchTab(name);
-  if (name === 'floor') renderFloorStock();
-  // Handle pending station from QR scan (if login happened after scan)
-  if (window._pendingStation && currentUser) {
-    var ps = window._pendingStation; window._pendingStation = null;
-    openStationLogModal(ps);
-  }
-};
-
 document.addEventListener('DOMContentLoaded', function() {
   load();
   initPWA();
   initPullToRefresh();
   initBiometricLoginCheck();
-  checkURLStationParam();
   // Re-render inventory on resize (desktop ↔ mobile switch)
   window.addEventListener('resize', function() {
     if (document.getElementById('tab-inventory').classList.contains('active')) renderInventory();
@@ -7344,7 +6839,7 @@ function initPWA() {
   var manifest = {
     name: 'SupplyBase',
     short_name: 'SupplyBase',
-    description: 'Warehouse Consumables Tracker',
+    description: 'Consumables Management System',
     start_url: window.location.href.split('?')[0].split('#')[0],
     display: 'standalone',
     background_color: '#f4f5f7',
@@ -8106,7 +7601,7 @@ function renderAuditLog() {
     <div style="text-align:center;margin-bottom:32px">
       <img src="https://www.golocad.com/images/LOCAD-LOGO-BLACK.svg" alt="Locad" style="height:28px;margin-bottom:10px" onerror="this.src='https://www.golocad.com/images/LOCAD-LOGO-WHITE.svg';this.style.filter='invert(1)'">
       <p style="color:#0f172a;font-size:1.4rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;margin:0 0 4px">SupplyBase</p>
-      <p style="color:#64748b;font-size:13px;margin:0">Warehouse Consumables Tracker</p>
+      <p style="color:#64748b;font-size:13px;margin:0">Consumables Management System</p>
     </div>
 
     <!-- Recent logins -->
@@ -8119,7 +7614,7 @@ function renderAuditLog() {
       <!-- Biometric quick-login button (shown only when a credential is saved) -->
       <button id="bio-login-btn" onclick="doBiometricLogin()">
         <span class="bio-icon" id="bio-btn-icon">🔒</span>
-        <span id="bio-btn-label">Sign in with Face ID</span>
+        <span id="bio-btn-label">Biometric Log-In</span>
       </button>
       <div id="bio-divider" style="display:none;text-align:center;font-size:12px;color:var(--muted);margin-bottom:14px;position:relative">
         <span style="background:#fff;padding:0 10px;position:relative;z-index:1">or enter credentials</span>
@@ -8135,52 +7630,6 @@ function renderAuditLog() {
       </div>
       <p id="login-error" style="color:var(--danger);font-size:12px;min-height:18px;margin:6px 0 14px"></p>
       <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:15px" onclick="doLogin()">Sign in</button>
-    </div>
-  </div>
-</div>
-
-<!-- LOG TO STATION MODAL -->
-<div class="modal-bg" id="station-log-modal">
-  <div class="modal" style="max-width:500px">
-    <h2>✏️ Log to Station</h2>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Fill in what was consumed, then select or scan the packing station.</p>
-
-    <!-- Items list -->
-    <div id="slog-items-wrap" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
-    <button class="btn btn-secondary" style="font-size:12px;width:100%;justify-content:center;margin-bottom:16px" onclick="addStationLogItem()">+ Add Item</button>
-
-    <!-- Station selector -->
-    <div class="form-group" style="margin-bottom:8px">
-      <label>Packing Station</label>
-      <select id="slog-station-sel" style="font-size:14px">
-        <option value="">— Select station —</option>
-      </select>
-    </div>
-    <div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:8px">— or —</div>
-    <button class="btn btn-secondary" style="width:100%;justify-content:center;font-size:13px;margin-bottom:14px" onclick="startQRScan()" id="btn-scan-qr">📷 Scan Station QR Code</button>
-    <div id="slog-scan-status" style="font-size:12px;color:var(--accent);min-height:16px;text-align:center;margin-bottom:8px"></div>
-
-    <div class="form-group" style="margin-bottom:14px">
-      <label>Notes (optional)</label>
-      <input type="text" id="slog-notes" placeholder="e.g. Extra consumption, damaged items…">
-    </div>
-    <p id="slog-error" style="color:var(--danger);font-size:12px;min-height:16px;margin-bottom:8px"></p>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal('station-log-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitStationLog()">Log Consumption</button>
-    </div>
-  </div>
-</div>
-
-<!-- STATION QR CODES MODAL -->
-<div class="modal-bg" id="station-qr-modal">
-  <div class="modal" style="max-width:560px">
-    <h2>🖨 Station QR Codes</h2>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Print and post these at each packing station. Scan with any phone camera to open the log form pre-filled with that station.</p>
-    <div id="station-qr-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-bottom:16px"></div>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal('station-qr-modal')">Close</button>
-      <button class="btn btn-primary" onclick="printStationQRs()">🖨 Print All</button>
     </div>
   </div>
 </div>
