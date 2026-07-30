@@ -312,6 +312,12 @@
     /* Filters: stack on mobile */
     .filters { gap: 7px; }
     .filters select, .filters input { font-size: 13px; }
+    /* Prevent iOS auto-zoom on input focus (requires font-size >= 16px) */
+    input, select, textarea { font-size: 16px !important; }
+    /* Login overlay: scrollable so Sign In button isn't hidden behind keyboard */
+    #login-overlay { align-items: flex-start !important; overflow-y: auto !important; }
+    #login-overlay > div { padding: 32px 16px 32px !important; }
+    #login-card { padding: 20px !important; }
     /* Modals: full width on mobile */
     .modal { margin: 0; border-radius: 14px 14px 0 0; max-width: 100% !important; max-height: 92vh !important; position: fixed; bottom: 0; left: 0; right: 0; }
     .modal-bg { align-items: flex-end; }
@@ -1060,8 +1066,8 @@
         <input type="text" id="f-unit" placeholder="rolls, boxes, pcs…">
       </div>
       <div class="form-group">
-        <label>Min Qty (low stock alert)</label>
-        <input type="number" id="f-min" min="0" placeholder="10">
+        <label>Reorder Point <span style="color:var(--muted);font-weight:400;font-size:11px">(low stock alert)</span></label>
+        <input type="number" id="f-min" min="0" placeholder="e.g. 10">
       </div>
       <div class="form-group">
         <label>Reorder Qty</label>
@@ -1394,7 +1400,7 @@
         </select>
       </div>
       <div class="form-group full">
-        <label>Low stock threshold</label>
+        <label>Fallback low stock threshold <span style="color:var(--muted);font-weight:400;font-size:11px">(items without a Reorder Point)</span></label>
         <select id="set-low-stock-threshold" style="width:100%">
           <option value="10">≤ 10%</option>
           <option value="20">≤ 20%</option>
@@ -2130,6 +2136,10 @@ async function updateMaxRef(item, newQty) {
 
 function stockStatus(item) {
   if (item.qty <= 0) return 'danger';
+  // Per-item reorder point takes priority; fall back to global % threshold
+  if (item.minQty > 0) {
+    return item.qty <= item.minQty ? 'warn' : 'ok';
+  }
   var ref = getMaxRef(item);
   var pct = Math.round((item.qty / ref) * 100);
   if (pct <= getLowStockThreshold()) return 'warn';
@@ -2575,6 +2585,7 @@ function openItemDetail(itemId) {
     + row('Category', item.category ? `<span class="badge badge-info">${esc(item.category)}</span>` : '—')
     + row('Status', `<span class="badge ${badgeClass}">${badgeLabel}</span>`)
     + row('Current Stock', `<strong style="font-size:1.05rem">${fmtInt(item.qty)}</strong> <span style="color:var(--muted)">${esc(item.unit||'')}</span>`)
+    + (item.minQty > 0 ? row('Reorder Point', `<span style="color:var(--muted)">${fmtInt(item.minQty)} ${esc(item.unit||'')}</span>${item.qty <= item.minQty && item.qty > 0 ? ' <span style="color:#b45309;font-size:11px;font-weight:600">⚡ at or below</span>' : ''}`) : '')
     + (function() {
         var r = getRunway(item);
         if (!r) return row('Runway', '<span style="color:var(--muted)">— (no recent usage)</span>');
@@ -5756,12 +5767,18 @@ function showCriticalStockAlert() {
   if (warn.length) {
     html += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--warn);margin:' + (danger.length?'12px':'0') + ' 0 4px">⚡ Low Stock (' + warn.length + ')</div>';
     html += warn.map(function(i) {
-      var max = getMaxRef(i);
-      var pct = Math.round((i.qty / max) * 100);
+      var subtitle = '';
+      if (i.minQty > 0) {
+        subtitle = 'Reorder point: ' + fmtInt(i.minQty) + ' ' + esc(i.unit||'');
+      } else {
+        var max = getMaxRef(i);
+        var pct = Math.round((i.qty / max) * 100);
+        subtitle = pct + '% remaining';
+      }
       return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(217,119,6,.06);border:1px solid rgba(217,119,6,.2);border-radius:7px">'
         + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">' + esc(i.name) + '</div>'
-        + '<div style="font-size:11px;color:var(--muted)">' + (i.category || '') + (i.sku ? ' · ' + i.sku : '') + '</div></div>'
-        + '<span class="badge badge-warn" style="flex-shrink:0">' + fmtInt(i.qty) + ' ' + esc(i.unit||'') + ' (' + pct + '%)</span>'
+        + '<div style="font-size:11px;color:var(--muted)">' + subtitle + (i.category ? ' · ' + esc(i.category) : '') + '</div></div>'
+        + '<span class="badge badge-warn" style="flex-shrink:0">' + fmtInt(i.qty) + ' ' + esc(i.unit||'') + '</span>'
         + '<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;flex-shrink:0" onclick="closeModal(\'critical-stock-modal\');openNewRequestModal(\''+i.id+'\')">Request</button>'
         + '</div>';
     }).join('');
@@ -6843,14 +6860,14 @@ function renderAuditLog() {
       <div id="recent-logins-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
     </div>
 
-    <div style="background:#fff;border:1px solid #e2e4e9;border-radius:12px;padding:28px;box-shadow:0 4px 24px rgba(0,0,0,.06)">
+    <div id="login-card" style="background:#fff;border:1px solid #e2e4e9;border-radius:12px;padding:28px;box-shadow:0 4px 24px rgba(0,0,0,.06)">
       <div class="form-group" style="margin-bottom:14px">
         <label>Username</label>
-        <input type="text" id="login-username" placeholder="Enter username" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
+        <input type="text" id="login-username" placeholder="Enter username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
       </div>
       <div class="form-group" style="margin-bottom:6px">
         <label>Password</label>
-        <input type="password" id="login-pass" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+        <input type="password" id="login-pass" placeholder="Enter password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" onkeydown="if(event.key==='Enter')doLogin()">
       </div>
       <p id="login-error" style="color:var(--danger);font-size:12px;min-height:18px;margin:6px 0 14px"></p>
       <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Sign in</button>
