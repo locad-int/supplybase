@@ -1431,6 +1431,26 @@
         <input type="text" id="set-contact-note" placeholder="e.g. Available Mon–Fri, 9am–6pm" autocomplete="off">
       </div>
     </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+    <p style="color:var(--muted);font-size:13px;margin-bottom:12px">What <strong>User</strong> accounts are allowed to do.</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="uperm-import_inventory" style="width:16px;height:16px;margin-top:1px;flex-shrink:0" onchange="onUserPermChange()">
+        <span><strong>Import inventory count files</strong><br><span style="color:var(--muted);font-size:11px">Upload .csv/.xlsx to update stock quantities</span></span>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="uperm-confirm_requests" style="width:16px;height:16px;margin-top:1px;flex-shrink:0" onchange="onUserPermChange()">
+        <span><strong>Confirm &amp; issue supply requests</strong><br><span style="color:var(--muted);font-size:11px">Approve and log issuances for pending requests</span></span>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="uperm-add_item" style="width:16px;height:16px;margin-top:1px;flex-shrink:0" onchange="onUserPermChange()">
+        <span><strong>Add new items manually</strong><br><span style="color:var(--muted);font-size:11px">Create new inventory items from scratch</span></span>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="uperm-add_new_items_on_import" style="width:16px;height:16px;margin-top:1px;flex-shrink:0" onchange="onUserPermChange()">
+        <span><strong>Add new materials via import</strong><br><span style="color:var(--muted);font-size:11px">Unmatched rows in an import file will create new items</span></span>
+      </label>
+    </div>
     <p id="settings-msg" style="color:var(--ok);font-size:12px;min-height:18px;margin-top:8px"></p>
     <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
       <button class="btn btn-danger btn-sm" onclick="reconnectSupabase()" title="Change Supabase connection">🔌 Change database</button>
@@ -1577,6 +1597,16 @@ var autoRefreshTimer = null;
 var REFRESH_INTERVAL_KEY = 'sb_refreshInterval';
 var LOW_STOCK_THRESHOLD_KEY = 'sb_lowStockThreshold';
 
+// ─── USER PERMISSIONS ────────────────────────────────────────────────────────────
+// Superuser can toggle these on/off for the User role via Settings
+var USER_PERMS_KEY = 'userPermissions';
+var userPermissions = {
+  confirm_requests:       false,  // Confirm & issue supply requests
+  import_inventory:       true,   // Upload inventory count files
+  add_new_items_on_import: false, // Create new materials found in import file
+  add_item:               false   // Add new items manually
+};
+
 // ─── QC PACK STATION ─────────────────────────────────────────────────────────────
 var QC_STATION_USERS = ['aira.agellon','rodessa.orcena','reah.costales','mylene.failano','flonie.caramoan','ramon.sambrano','jayson.frivaldo'];
 var QC_STATIONS_KEY  = 'qcStations';
@@ -1695,6 +1725,14 @@ async function loadGlobalSettings() {
       var t = parseInt(settingsMap['lowStockThreshold']);
       if (!isNaN(t)) saveLowStockThresholdLocal(t);
     }
+    // Sync superuser credentials from Supabase → localStorage (cross-device support)
+    if (settingsMap['adminCredentials'] !== undefined) {
+      try {
+        var creds = JSON.parse(settingsMap['adminCredentials']);
+        if (creds && creds.username) localStorage.setItem(ADMIN_USER_KEY, creds.username);
+        if (creds && creds.passwords) localStorage.setItem(PASS_KEY, JSON.stringify(creds.passwords));
+      } catch(e) {}
+    }
     if (settingsMap[QC_STATIONS_KEY] !== undefined) {
       try {
         var parsed = JSON.parse(settingsMap[QC_STATIONS_KEY]);
@@ -1705,6 +1743,17 @@ async function loadGlobalSettings() {
       try {
         var hiddenParsed = JSON.parse(settingsMap[INV_COLS_KEY]);
         if (Array.isArray(hiddenParsed)) { invHiddenCols = hiddenParsed; applyInvColVisibility(); }
+      } catch(e) {}
+    }
+    if (settingsMap[USER_PERMS_KEY] !== undefined) {
+      try {
+        var permsParsed = JSON.parse(settingsMap[USER_PERMS_KEY]);
+        if (permsParsed && typeof permsParsed === 'object') {
+          Object.keys(userPermissions).forEach(function(k) {
+            if (permsParsed[k] !== undefined) userPermissions[k] = !!permsParsed[k];
+          });
+          applyRoleUI();
+        }
       } catch(e) {}
     }
   } catch(e) {} // settings table may not exist yet — silently ignore
@@ -1763,6 +1812,18 @@ function startRealtime() {
           try {
             var hiddenParsed = JSON.parse(row.value);
             if (Array.isArray(hiddenParsed)) { invHiddenCols = hiddenParsed; applyInvColVisibility(); }
+          } catch(e) {}
+        }
+        if (row.key === USER_PERMS_KEY) {
+          try {
+            var permsParsed = JSON.parse(row.value);
+            if (permsParsed && typeof permsParsed === 'object') {
+              Object.keys(userPermissions).forEach(function(k) {
+                if (permsParsed[k] !== undefined) userPermissions[k] = !!permsParsed[k];
+              });
+              applyRoleUI();
+              renderRequests();
+            }
           } catch(e) {}
         }
       })
@@ -2003,6 +2064,8 @@ async function load() {
     db.logs     = r2.data || [];
     db.reorders = r3.data || [];
     db.accounts = r4.data || [];
+    // Load credentials from Supabase before showing login screen (cross-device support)
+    await loadGlobalSettings();
     await loadMessages(); // graceful — won't throw if table missing
     await loadRequests();
     db_audit = getAuditLocal();
@@ -5227,10 +5290,10 @@ function renderRequests() {
   var newReqBtn = document.getElementById('btn-new-request');
   if (newReqBtn) newReqBtn.style.display = (currentRole === 'requestor' || currentRole === 'user') ? '' : 'none';
 
-  // Show/hide mass action bar (admin only)
+  // Show/hide mass action bar (requires confirm_requests permission)
   var massBar = document.getElementById('req-mass-bar');
   var pendingCount = db_reqs.filter(function(r) { return r.status === 'pending'; }).length;
-  if (massBar) massBar.style.display = (isAdmin && pendingCount > 0) ? 'flex' : 'none';
+  if (massBar) massBar.style.display = (can('confirm_requests') && pendingCount > 0) ? 'flex' : 'none';
   // Prune stale selections
   selectedReqIds.forEach(function(id) { if (!db_reqs.find(function(r) { return r.id === id && r.status === 'pending'; })) selectedReqIds.delete(id); });
   updateMassActionBar();
@@ -5399,7 +5462,7 @@ alter publication supabase_realtime add table settings;</pre>
       var prioLabel = prio === 'urgent' ? '🔴 Urgent' : prio === 'low' ? '🔵 Low' : 'Normal';
       var requesterAcct = db.accounts.find(function(a) { return a.username === req.requestedBy; });
       var requesterIsUser = requesterAcct ? requesterAcct.role === 'user' : false;
-      var canConfirm = currentRole === 'superuser' || (currentRole === 'user' && !requesterIsUser);
+      var canConfirm = currentRole === 'superuser' || (can('confirm_requests') && !requesterIsUser);
       var isOwnPending = req.status === 'pending' && currentUser && req.requestedBy === currentUser.username;
       var isSelected = selectedReqIds.has(req.id);
       var actionButtons = buildActionButtons(req, isAdmin, canConfirm);
@@ -5450,7 +5513,7 @@ alter publication supabase_realtime add table settings;</pre>
       var prioLabel = batchPrio === 'urgent' ? '🔴 Urgent' : batchPrio === 'low' ? '🔵 Low' : 'Normal';
       var requesterAcct = db.accounts.find(function(a) { return a.username === first.requestedBy; });
       var requesterIsUser = requesterAcct ? requesterAcct.role === 'user' : false;
-      var canConfirm = currentRole === 'superuser' || (currentRole === 'user' && !requesterIsUser);
+      var canConfirm = currentRole === 'superuser' || (can('confirm_requests') && !requesterIsUser);
       var isOwnPending = batchStatus === 'pending' && currentUser && first.requestedBy === currentUser.username;
       // Batch checkbox — select all individual req IDs
       var allSelected = items.every(function(r){ return selectedReqIds.has(r.id); });
@@ -5539,6 +5602,14 @@ async function saveInvHiddenCols() {
   try {
     await sb.from('settings').delete().eq('key', INV_COLS_KEY);
     await sb.from('settings').insert([{ key: INV_COLS_KEY, value: JSON.stringify(invHiddenCols) }]);
+  } catch(e) {}
+}
+
+async function saveUserPermissions() {
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', USER_PERMS_KEY);
+    await sb.from('settings').insert([{ key: USER_PERMS_KEY, value: JSON.stringify(userPermissions) }]);
   } catch(e) {}
 }
 
@@ -5690,7 +5761,11 @@ function can(action) {
   var viewerActions = ['view','export'];
   var requestorActions = ['view','export','request'];
   var brandActions = ['view'];
-  if (currentRole === 'user') return userActions.indexOf(action) >= 0;
+  if (currentRole === 'user') {
+    if (userActions.indexOf(action) >= 0) return true;
+    // Check superuser-configurable permissions
+    return !!userPermissions[action];
+  }
   if (currentRole === 'viewer') return viewerActions.indexOf(action) >= 0;
   if (currentRole === 'requestor') return requestorActions.indexOf(action) >= 0;
   if (currentRole === 'brand') return brandActions.indexOf(action) >= 0;
@@ -5864,7 +5939,7 @@ function applyRoleUI() {
   var uname = currentUser ? currentUser.username : '';
   badge.textContent = uname ? uname + ' · ' + (labels[currentRole] || currentRole) : (labels[currentRole] || currentRole);
 
-  show('btn-add-item',      can('add_item') || currentRole === 'superuser');
+  show('btn-add-item',      can('add_item'));
   show('btn-reset',         currentRole === 'superuser');
   show('btn-settings',      currentRole === 'superuser');
   show('btn-change-pass',   !!currentRole);
@@ -5894,8 +5969,8 @@ function applyRoleUI() {
   if (auditNav) auditNav.style.display = currentRole === 'superuser' ? '' : 'none';
   show('btn-clear-audit', currentRole === 'superuser');
 
-  // Import button: superuser and user (write roles) only
-  show('btn-import-file', currentRole === 'superuser' || currentRole === 'user');
+  // Import button: controlled by userPermissions for user role
+  show('btn-import-file', can('import_inventory'));
   show('btn-clear-log', currentRole === 'superuser');
   // Columns button: superuser only
   var colWrap = document.getElementById('btn-col-toggle-wrap');
@@ -5980,7 +6055,25 @@ function openSettings() {
   document.getElementById('set-contact-note').value  = c.note  || '';
   document.getElementById('set-refresh-interval').value = String(getRefreshInterval());
   document.getElementById('set-low-stock-threshold').value = String(getLowStockThreshold());
+  // Populate user permissions checkboxes
+  Object.keys(userPermissions).forEach(function(k) {
+    var cb = document.getElementById('uperm-' + k);
+    if (cb) cb.checked = !!userPermissions[k];
+  });
   openModal('settings-modal');
+}
+
+async function onUserPermChange() {
+  // Read all checkboxes and save immediately
+  Object.keys(userPermissions).forEach(function(k) {
+    var cb = document.getElementById('uperm-' + k);
+    if (cb) userPermissions[k] = cb.checked;
+  });
+  await saveUserPermissions();
+  applyRoleUI();
+  renderRequests();
+  var msg = document.getElementById('settings-msg');
+  if (msg) { msg.textContent = 'User permissions saved.'; setTimeout(function(){ msg.textContent=''; }, 2000); }
 }
 
 function openContactAdmin() {
@@ -6019,6 +6112,14 @@ function saveSettings() {
   if (u) p.user = u;
   if (v) p.viewer = v;
   localStorage.setItem(PASS_KEY, JSON.stringify(p));
+
+  // Sync superuser credentials to Supabase so all devices (mobile, etc.) can log in
+  if (sb) {
+    var creds = { username: newAdminUser, passwords: p };
+    sb.from('settings').delete().eq('key', 'adminCredentials').then(function() {
+      sb.from('settings').insert([{ key: 'adminCredentials', value: JSON.stringify(creds) }]).then().catch(function(){});
+    }).catch(function(){});
+  }
 
   // If the current session is the admin, update the displayed username
   if (currentUser && currentUser.role === 'superuser') {
