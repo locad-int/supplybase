@@ -495,6 +495,46 @@
   .bio-offer-actions { display: flex; gap: 8px; margin-top: 10px; }
   .bio-offer-yes { flex: 1; padding: 9px; border-radius: 8px; border: none; background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
   .bio-offer-no  { flex: 1; padding: 9px; border-radius: 8px; border: none; background: rgba(255,255,255,.15); color: #fff; font-size: 13px; font-weight: 500; cursor: pointer; }
+
+  /* ─── MOBILE LAYOUT FIXES — OTHER TABS ──────────────────────────────────── */
+  @media (max-width: 768px) {
+
+    /* Utility class for table horizontal scroll (per task spec) */
+    .mob-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
+
+    /* ── All table wrappers: clamp to viewport width ── */
+    .table-wrap { max-width: 100%; }
+
+    /* ── COST REPORT TAB ─────────────────────────────────── */
+    /* Date inputs have inline width:150px;flex:0 0 auto.
+       Two inputs + "From"/"To" labels sum to ~377px on a 358px content area.
+       Reduce to 130px so the four items fit on one flex row. */
+    #rpt-from, #rpt-to { width: 130px !important; }
+
+    /* User-report table is rendered by JS without a table-wrap; make it scrollable */
+    #user-report-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* ── DASHBOARD TAB ───────────────────────────────────── */
+    /* Custom date-range input pair: allow wrapping when viewport is narrow */
+    .dash-date-inputs { flex-wrap: wrap; }
+    .dash-date-inputs input { flex: 1 1 auto; min-width: 0; }
+
+    /* ── AUDIT LOG TAB ───────────────────────────────────── */
+    /* Each audit entry is a flex row with inline min-width:130px / 90px / 120px.
+       Total minimum (340 px + gaps) exceeds ~358 px content width.
+       Stack the four fields vertically so none overflow. */
+    #audit-list-wrap > div > div {
+      flex-direction: column !important;
+      gap: 4px !important;
+      align-items: flex-start !important;
+    }
+    #audit-list-wrap > div > div > div {
+      min-width: 0 !important;
+      max-width: 100%;
+      word-break: break-word;
+    }
+
+  }
 </style>
 </head>
 <body>
