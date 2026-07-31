@@ -2387,9 +2387,15 @@ function openMobileMoreMenu() {
   }
   if (activeTabId === 'usage') {
     html += '<div class="mm-item" onclick="exportLogsCSV();closeMobileMoreMenu()">⬇ Export Log CSV</div>';
+    if (currentRole === 'superuser') {
+      html += '<div class="mm-item" onclick="closeMobileMoreMenu();clearLog()" class="mm-item-danger">🗑 Clear Log</div>';
+    }
   }
   html += '<div class="mm-item" onclick="openSettings();closeMobileMoreMenu()">⚙ Settings</div>';
   html += '<div class="mm-item" onclick="openChangePassword();closeMobileMoreMenu()">🔑 Change Password</div>';
+  if (currentRole === 'superuser') {
+    html += '<div class="mm-item" onclick="closeMobileMoreMenu();confirmReset()" style="border-top:1px solid var(--sidebar-border)"><span class="mm-item-danger">↺ Reset Inventory</span></div>';
+  }
   html += '<div class="mm-item" onclick="logout()" style="border-top:1px solid var(--sidebar-border)"><span class="mm-item-danger">Sign out</span></div>';
   document.getElementById('mobile-more-items').innerHTML = html;
   document.getElementById('mobile-more-bg').style.display = 'block';
