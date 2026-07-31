@@ -618,6 +618,7 @@
       <button id="btn-change-pass" class="sidebar-action-btn" onclick="openChangePassword()">🔑 Change Password</button>
       <button id="btn-contact-admin" class="sidebar-action-btn" onclick="openContactAdmin()">📞 Contact Admin</button>
       <button id="btn-refresh" class="sidebar-action-btn" onclick="refreshData()">↻ Refresh</button>
+      <button id="btn-stocktake-lock" class="sidebar-action-btn" onclick="toggleStocktakeLock()" style="display:none">🔒 Lock for Stocktake</button>
       <button id="btn-reset" class="sidebar-action-btn sidebar-action-danger" onclick="confirmReset()">↺ Reset</button>
       <button id="btn-install-app" class="sidebar-action-btn" onclick="openInstallModal()" style="display:none;color:#38bdf8">📲 Install App</button>
       <button class="sidebar-action-btn sidebar-action-signout" onclick="logout()">Sign out</button>
@@ -6483,6 +6484,8 @@ function applyRoleUI() {
 
   show('btn-add-item',      can('add_item'));
   show('btn-reset',         currentRole === 'superuser');
+  show('btn-stocktake-lock', canManageStocktake());
+  applyStocktakeLock(); // sync label after role is known
   show('btn-settings',      currentRole === 'superuser');
   show('btn-change-pass',   !!currentRole);
   show('btn-contact-admin', false);
@@ -6588,6 +6591,11 @@ function applyStocktakeLock() {
   var loginPopup = document.getElementById('stocktake-login-popup');
   if (banner) banner.classList.toggle('active', stocktakeLock);
   if (unlockBtn) unlockBtn.style.display = (stocktakeLock && canManageStocktake()) ? '' : 'none';
+  var sidebarLockBtn = document.getElementById('btn-stocktake-lock');
+  if (sidebarLockBtn) {
+    sidebarLockBtn.style.display = canManageStocktake() ? '' : 'none';
+    sidebarLockBtn.textContent = stocktakeLock ? '🔓 Unlock Stocktake' : '🔒 Lock for Stocktake';
+  }
   // Force-logout any non-manager who is currently logged in when lock activates
   if (stocktakeLock && currentRole && !canManageStocktake()) {
     logout();
