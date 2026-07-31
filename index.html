@@ -519,6 +519,21 @@
     .dash-date-inputs { flex-wrap: wrap; }
     .dash-date-inputs input { flex: 1 1 auto; min-width: 0; }
 
+    /* ── USAGE LOG TAB ──────────────────────────────────── */
+    /* Type chips + item filter + export buttons: same pattern as inventory */
+    #log-type-chips { flex: 1 1 100%; overflow-x: auto; flex-wrap: nowrap !important;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; }
+    #log-type-chips::-webkit-scrollbar { display: none; }
+    #log-filter-item { flex: 1 1 auto; min-width: 0; }
+    /* Hide export/clear on mobile — accessible via More sheet */
+    #btn-log-usage { flex: 1 1 100%; }
+    .filters #btn-clear-log,
+    #tab-usage .filters > button[onclick*="exportLogsCSV"] { display: none !important; }
+    /* Log entry card: better stacking on narrow screens */
+    .log-entry { grid-template-columns: auto 1fr; gap: 8px; }
+    .log-entry > *:last-child { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .log-qty { font-size: 1rem; }
+
     /* ── AUDIT LOG TAB ───────────────────────────────────── */
     /* Each audit entry is a flex row with inline min-width:130px / 90px / 120px.
        Total minimum (340 px + gaps) exceeds ~358 px content width.
@@ -717,7 +732,7 @@
       <select id="log-filter-item" onchange="logVisibleCount=LOG_PAGE_SIZE;renderLogs()" style="width:auto;max-width:220px">
         <option value="">All Items</option>
       </select>
-      <div id="log-type-chips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <div id="log-type-chips" style="display:flex;gap:6px;flex-wrap:nowrap;align-items:center">
         <button class="status-chip" data-type="use"     onclick="toggleLogTypeChip('use')"     style="border-color:#3b82f6;color:#3b82f6">Use</button>
         <button class="status-chip" data-type="restock" onclick="toggleLogTypeChip('restock')" style="border-color:var(--ok);color:var(--ok)">Restock</button>
         <button class="status-chip" data-type="adjust"  onclick="toggleLogTypeChip('adjust')"  style="border-color:var(--warn);color:var(--warn)">Adjust</button>
@@ -2354,11 +2369,16 @@ function openMobileMoreMenu() {
     html += '<div class="mm-item mm-item-accent" onclick="openItemModal();closeMobileMoreMenu()">+ Add Item</div>';
   }
   // Inventory-specific actions
-  if (currentTab === 'inventory') {
+  var activePanel = document.querySelector('.tab-panel.active');
+  var activeTabId = activePanel ? activePanel.id.replace('tab-', '') : '';
+  if (activeTabId === 'inventory') {
     html += '<div class="mm-item" onclick="exportInventoryCSV();closeMobileMoreMenu()">⬇ Export CSV</div>';
     if (currentRole === 'superuser' || can('adjust')) {
       html += '<div class="mm-item" onclick="openImportModal();closeMobileMoreMenu()">⬆ Import File</div>';
     }
+  }
+  if (activeTabId === 'usage') {
+    html += '<div class="mm-item" onclick="exportLogsCSV();closeMobileMoreMenu()">⬇ Export Log CSV</div>';
   }
   html += '<div class="mm-item" onclick="openSettings();closeMobileMoreMenu()">⚙ Settings</div>';
   html += '<div class="mm-item" onclick="openChangePassword();closeMobileMoreMenu()">🔑 Change Password</div>';
