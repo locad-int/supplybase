@@ -7478,14 +7478,25 @@ function handleImportFile(input) {
 }
 
 function parseCSVLine(line) {
-  var result = [], cur = '', inQuotes = false;
+  // RFC4180-style: a quote only opens a quoted field at the START of a field.
+  // A quote appearing mid-field is literal data (e.g. inch marks: 2x6" or 1/2").
+  var result = [], cur = '', inQuotes = false, fieldStart = true;
   for (var i = 0; i < line.length; i++) {
     var c = line[i];
-    if (c === '"' && !inQuotes) { inQuotes = true; }
-    else if (c === '"' && inQuotes && line[i+1] === '"') { cur += '"'; i++; }
-    else if (c === '"' && inQuotes) { inQuotes = false; }
-    else if (c === ',' && !inQuotes) { result.push(cur); cur = ''; }
-    else { cur += c; }
+    if (inQuotes) {
+      if (c === '"') {
+        if (line[i+1] === '"') { cur += '"'; i++; }  // escaped quote ""
+        else { inQuotes = false; }                    // closing quote
+      } else {
+        cur += c;                                     // commas are literal inside quotes
+      }
+      fieldStart = false;
+      continue;
+    }
+    if (c === '"' && fieldStart) { inQuotes = true; fieldStart = false; continue; }
+    if (c === ',') { result.push(cur); cur = ''; fieldStart = true; continue; }
+    cur += c;              // literal char, including a mid-field " (inch mark)
+    fieldStart = false;
   }
   result.push(cur);
   return result;
@@ -7552,6 +7563,11 @@ function previewImport(rows) {
       // Need a name to create; skip blank rows and "for removal" rows for items that don't exist
       if (!nameVal || toDelete) {
         if (nameVal || skuVal) unmatched.push(nameVal || skuVal);
+        return;
+      }
+      // Sanity check: a very long name containing commas means the row failed to split
+      if (nameVal.length > 120 && nameVal.indexOf(',') !== -1) {
+        unmatched.push(nameVal.slice(0, 40) + '… (row did not split — check file formatting)');
         return;
       }
       var nQty  = (qtyVal    !== undefined && qtyVal    !== '') ? parseFloat(qtyVal)    : 0;
