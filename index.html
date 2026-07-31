@@ -471,6 +471,20 @@
   .ptr-spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ─── STOCKTAKE LOCK BANNER ──────────────────────────────────────────────── */
+  #stocktake-banner {
+    display: none; background: #f59e0b; color: #1c1917;
+    text-align: center; font-size: 13px; font-weight: 700;
+    padding: 10px 16px; letter-spacing: .02em;
+    position: sticky; top: 0; z-index: 39;
+  }
+  #stocktake-banner.active { display: block; }
+  #stocktake-banner button {
+    margin-left: 12px; background: rgba(0,0,0,.15); border: none;
+    color: #1c1917; font-weight: 700; font-size: 12px;
+    padding: 3px 10px; border-radius: 6px; cursor: pointer;
+  }
+
   /* ─── BIOMETRIC LOGIN BUTTON ─────────────────────────────────────────────── */
   #bio-login-btn {
     display: none; width: 100%; justify-content: center; align-items: center; gap: 10px;
@@ -636,6 +650,11 @@
       </span>
     </div>
   </header>
+  <!-- STOCKTAKE LOCK BANNER -->
+  <div id="stocktake-banner">
+    🔒 Stocktake in Progress — All transactions are locked
+    <button id="stocktake-unlock-btn" onclick="toggleStocktakeLock()" style="display:none">Unlock</button>
+  </div>
   <main>
 
   <!-- Summary Cards -->
@@ -1759,6 +1778,7 @@ const SUPABASE_ANON_KEY = 'supplybase_supabase_anon_key';
 const SESSION_ROLE_KEY  = 'consumables_tracker_session_role';
 const SESSION_USER_KEY  = 'consumables_tracker_session_user';
 let sb = null;
+var stocktakeLock = false; // when true, all transactions are blocked
 
 // Hardcoded credentials — no setup required on new devices
 const HARDCODED_SUPABASE_URL = 'https://tkasifllaagsxhpcpzrf.supabase.co';
@@ -1975,6 +1995,10 @@ async function loadGlobalSettings() {
           applyRoleUI();
         }
       } catch(e) {}
+    }
+    if (settingsMap['stocktakeLock'] !== undefined) {
+      stocktakeLock = settingsMap['stocktakeLock'] === 'true';
+      applyStocktakeLock();
     }
   } catch(e) {} // settings table may not exist yet — silently ignore
 }
@@ -2390,6 +2414,10 @@ function openMobileMoreMenu() {
     if (currentRole === 'superuser') {
       html += '<div class="mm-item" onclick="closeMobileMoreMenu();clearLog()" class="mm-item-danger">🗑 Clear Log</div>';
     }
+  }
+  if (canManageStocktake()) {
+    var lockLabel = stocktakeLock ? '🔓 Unlock — End Stocktake' : '🔒 Lock for Stocktake';
+    html += '<div class="mm-item" onclick="toggleStocktakeLock();closeMobileMoreMenu()">' + lockLabel + '</div>';
   }
   html += '<div class="mm-item" onclick="openSettings();closeMobileMoreMenu()">⚙ Settings</div>';
   html += '<div class="mm-item" onclick="openChangePassword();closeMobileMoreMenu()">🔑 Change Password</div>';
@@ -3182,6 +3210,7 @@ function openLogForItem(itemId) {
 }
 
 async function saveLog() {
+  if (checkStocktakeLock()) return;
   const itemId = document.getElementById('lf-item').value;
   const type = document.getElementById('lf-type').value;
   const qty = parseFloat(document.getElementById('lf-qty').value);
@@ -3585,6 +3614,7 @@ function calcAdjVariance() {
 }
 
 function applyAdjust() {
+  if (checkStocktakeLock()) return;
   const item = db.items.find(i => i.id === adjustItemId);
   if (!item) return;
   const sysQty = item.qty;
@@ -5093,6 +5123,7 @@ function closeReqItemDropdown() {
 }
 
 async function submitRequest() {
+  if (checkStocktakeLock()) return;
   var errEl = document.getElementById('req-error');
   if (reqCart.length === 0) { errEl.textContent = 'Add at least one item to the request.'; return; }
 
@@ -5218,6 +5249,7 @@ function openBatchConfirmModal(batchId) {
 }
 
 async function confirmBatchIssuance() {
+  if (checkStocktakeLock()) return;
   var batchReqs = db_reqs.filter(function(r){ return r.batchId === _batchConfirmId && r.status === 'pending'; });
   if (!batchReqs.length) { closeModal('confirm-request-modal'); return; }
   var now = new Date().toISOString();
@@ -6386,6 +6418,7 @@ function logout() {
   document.getElementById('login-error').textContent = '';
   renderRecentLogins();
   document.getElementById('login-overlay').style.display = 'flex';
+  applyStocktakeLock(); // show stocktake popup if lock is active
 }
 
 
@@ -6542,6 +6575,54 @@ async function confirmReset() {
     updateRequestBadge();
     if(currentRole) applyRoleUI();
   }, { danger: true, confirmLabel: 'Reset' });
+}
+
+// ─── STOCKTAKE LOCK ──────────────────────────────────────────────────────────
+function canManageStocktake() {
+  return currentRole === 'superuser' || currentRole === 'user';
+}
+
+function applyStocktakeLock() {
+  var banner = document.getElementById('stocktake-banner');
+  var unlockBtn = document.getElementById('stocktake-unlock-btn');
+  var loginPopup = document.getElementById('stocktake-login-popup');
+  if (banner) banner.classList.toggle('active', stocktakeLock);
+  if (unlockBtn) unlockBtn.style.display = (stocktakeLock && canManageStocktake()) ? '' : 'none';
+  // Force-logout any non-manager who is currently logged in when lock activates
+  if (stocktakeLock && currentRole && !canManageStocktake()) {
+    logout();
+    return; // logout() will call applyStocktakeLock() again via its own flow
+  }
+  // Show popup on login screen if locked (only for non-managers)
+  if (loginPopup) {
+    var loginVisible = document.getElementById('login-overlay').style.display !== 'none';
+    if (stocktakeLock && loginVisible && !canManageStocktake()) {
+      loginPopup.style.display = 'flex';
+    } else {
+      loginPopup.style.display = 'none';
+    }
+  }
+}
+
+async function toggleStocktakeLock() {
+  if (!canManageStocktake()) return;
+  stocktakeLock = !stocktakeLock;
+  applyStocktakeLock();
+  // Save to Supabase so all devices see it
+  if (sb) {
+    try {
+      await sb.from('settings').delete().eq('key', 'stocktakeLock');
+      await sb.from('settings').insert([{ key: 'stocktakeLock', value: stocktakeLock ? 'true' : 'false' }]);
+    } catch(e) {}
+  }
+}
+
+function checkStocktakeLock() {
+  // Returns true (and shows alert) if locked and user cannot manage stocktake
+  if (!stocktakeLock) return false;
+  if (canManageStocktake()) return false; // superuser and user can still act
+  alert('🔒 Stocktake in progress — transactions are temporarily locked. Please try again later.');
+  return true;
 }
 
 async function confirmFullReset() {
@@ -7774,6 +7855,19 @@ function renderAuditLog() {
 
 <!-- LOGIN OVERLAY -->
 <div id="login-overlay" style="position:fixed;inset:0;background:#f4f5f7;z-index:999;display:none;align-items:center;justify-content:center">
+
+  <!-- Stocktake lock popup (shown on top of login when locked) -->
+  <div id="stocktake-login-popup" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,0.5);z-index:10;align-items:center;justify-content:center;padding:24px">
+    <div style="background:#fff;border-radius:16px;padding:28px 24px;width:100%;max-width:340px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <div style="width:52px;height:52px;border-radius:50%;background:#fef3c7;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <p style="font-size:16px;font-weight:700;color:#0f172a;margin:0 0 10px">Inventory Count in Progress</p>
+      <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0 0 22px">All transactions are temporarily locked while inventory is being counted. Please check back later.</p>
+      <button onclick="document.getElementById('stocktake-login-popup').style.display='none'" style="background:#0f172a;color:#fff;border:none;border-radius:8px;padding:11px 24px;font-size:14px;font-weight:600;cursor:pointer;width:100%">I understand</button>
+    </div>
+  </div>
+
   <div style="width:100%;max-width:400px;padding:24px">
     <div style="text-align:center;margin-bottom:32px">
       <img src="https://www.golocad.com/images/LOCAD-LOGO-BLACK.svg" alt="Locad" style="height:28px;margin-bottom:10px" onerror="this.src='https://www.golocad.com/images/LOCAD-LOGO-WHITE.svg';this.style.filter='invert(1)'">
