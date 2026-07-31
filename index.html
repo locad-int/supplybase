@@ -2394,7 +2394,8 @@ function openMobileMoreMenu() {
   html += '<div class="mm-item" onclick="openSettings();closeMobileMoreMenu()">⚙ Settings</div>';
   html += '<div class="mm-item" onclick="openChangePassword();closeMobileMoreMenu()">🔑 Change Password</div>';
   if (currentRole === 'superuser') {
-    html += '<div class="mm-item" onclick="closeMobileMoreMenu();confirmReset()" style="border-top:1px solid var(--sidebar-border)"><span class="mm-item-danger">↺ Reset Inventory</span></div>';
+    html += '<div class="mm-item" onclick="closeMobileMoreMenu();confirmReset()" style="border-top:1px solid var(--sidebar-border)"><span class="mm-item-danger">↺ Reset to Baseline</span></div>';
+    html += '<div class="mm-item" onclick="closeMobileMoreMenu();confirmFullReset()"><span class="mm-item-danger">⚠ Full Reset (Zero All)</span></div>';
   }
   html += '<div class="mm-item" onclick="logout()" style="border-top:1px solid var(--sidebar-border)"><span class="mm-item-danger">Sign out</span></div>';
   document.getElementById('mobile-more-items').innerHTML = html;
@@ -6541,6 +6542,44 @@ async function confirmReset() {
     updateRequestBadge();
     if(currentRole) applyRoleUI();
   }, { danger: true, confirmLabel: 'Reset' });
+}
+
+async function confirmFullReset() {
+  if (currentRole !== 'superuser') return;
+  showConfirm('Full Reset', 'This will:\n\n• Set ALL item quantities to 0\n• Clear the import baseline\n• Delete all logs, reorders, and requests\n\nAfter this, import a new file to set the starting inventory.\n\nThis cannot be undone.', async function() {
+    var now = new Date().toISOString();
+    // Zero out all quantities and clear baseline
+    db.items.forEach(function(item) {
+      item.qty = 0;
+      item.baselineQty = null;
+      item.updatedAt = now;
+    });
+    // Clear all history
+    db.logs = [];
+    db.reorders = [];
+    db_reqs = [];
+    saveReqsLocal();
+    // Sync to Supabase
+    if (sb) {
+      try { await _sbClearLogsAndReorders(); } catch(e) {}
+      if (REQ_TABLE_OK !== false) {
+        try { await sb.from('supply_requests').delete().neq('id', ''); } catch(e) {}
+      }
+      try {
+        for (var i = 0; i < db.items.length; i++) {
+          await sb.from('items').update({ qty: 0, baselineQty: null, updatedAt: now }).eq('id', db.items[i].id);
+        }
+      } catch(e) {}
+    }
+    logAudit('Full Reset', 'All quantities zeroed, baseline cleared, all logs/reorders/requests deleted');
+    renderInventory();
+    renderLogs();
+    renderReorder();
+    renderRequests();
+    updateSummary();
+    updateRequestBadge();
+    alert('Full reset complete. Import your new inventory file to set starting levels.');
+  }, { danger: true, confirmLabel: 'Full Reset' });
 }
 
 const CONTACT_INFO_KEY = 'consumables_tracker_contact_info';
