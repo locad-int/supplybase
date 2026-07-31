@@ -612,6 +612,8 @@
 
 <!-- MAIN AREA -->
 <div class="main-wrap">
+  <!-- PULL-TO-REFRESH INDICATOR (must be first child of main-wrap) -->
+  <div id="ptr-indicator"><div class="ptr-spinner"></div><span id="ptr-label">Pull to refresh</span></div>
   <header class="topbar">
     <button id="hamburger-btn" onclick="toggleMobileSidebar()" aria-label="Menu">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -6870,18 +6872,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ─── PULL-TO-REFRESH ─────────────────────────────────────────────────────────
 function initPullToRefresh() {
-  var el = document.querySelector('.main-wrap');
-  if (!el) return;
-  var startY = 0, pulling = false, threshold = 72;
   var indicator = document.getElementById('ptr-indicator');
   var label = document.getElementById('ptr-label');
-  el.addEventListener('touchstart', function(e) {
-    if (el.scrollTop === 0) startY = e.touches[0].clientY;
+  if (!indicator) return;
+  var startY = 0, pulling = false, threshold = 72;
+
+  // Use document (not .main-wrap) — the page scrolls via window, not the container
+  document.addEventListener('touchstart', function(e) {
+    startY = (window.scrollY === 0) ? e.touches[0].clientY : 0;
   }, { passive: true });
-  el.addEventListener('touchmove', function(e) {
+
+  document.addEventListener('touchmove', function(e) {
     if (!startY) return;
     var dist = e.touches[0].clientY - startY;
-    if (dist > 10 && el.scrollTop === 0) {
+    if (dist > 10 && window.scrollY === 0) {
       pulling = true;
       var progress = Math.min(dist / threshold, 1);
       indicator.style.height = (progress * 48) + 'px';
@@ -6889,10 +6893,11 @@ function initPullToRefresh() {
       if (label) label.textContent = dist >= threshold ? 'Release to refresh' : 'Pull to refresh';
     }
   }, { passive: true });
-  el.addEventListener('touchend', function() {
+
+  document.addEventListener('touchend', function() {
     if (pulling && indicator.classList.contains('ptr-visible')) {
-      var dist = parseFloat(indicator.style.height || '0');
-      if (dist >= threshold * 0.7) {
+      var pulled = parseFloat(indicator.style.height || '0');
+      if (pulled >= threshold * 0.7) {
         indicator.classList.add('ptr-loading');
         if (label) label.textContent = 'Refreshing…';
         refreshData().finally(function() {
@@ -7748,9 +7753,6 @@ function renderAuditLog() {
     </div>
   </div>
 </div>
-
-<!-- PULL-TO-REFRESH INDICATOR -->
-<div id="ptr-indicator"><div class="ptr-spinner"></div><span id="ptr-label">Pull to refresh</span></div>
 
 <!-- BIOMETRIC OFFER BANNER -->
 <div id="bio-offer-banner">
