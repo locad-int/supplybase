@@ -461,7 +461,8 @@
 
   /* ─── PULL-TO-REFRESH ────────────────────────────────────────────────────── */
   #ptr-indicator {
-    display: none; align-items: center; justify-content: center;
+    /* display:flex always — height:0 + overflow:hidden keeps it invisible at rest */
+    display: flex; align-items: center; justify-content: center;
     gap: 8px; padding: 0; color: var(--muted); font-size: 13px; font-weight: 500;
     overflow: hidden; height: 0; transition: height .25s ease;
   }
@@ -6872,6 +6873,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ─── PULL-TO-REFRESH ─────────────────────────────────────────────────────────
 function initPullToRefresh() {
+  if (!('ontouchstart' in window)) return; // desktop — skip
   var indicator = document.getElementById('ptr-indicator');
   var label = document.getElementById('ptr-label');
   if (!indicator) return;
