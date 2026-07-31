@@ -1757,9 +1757,14 @@ const SESSION_ROLE_KEY  = 'consumables_tracker_session_role';
 const SESSION_USER_KEY  = 'consumables_tracker_session_user';
 let sb = null;
 
+// Hardcoded credentials — no setup required on new devices
+const HARDCODED_SUPABASE_URL = 'https://tkasifllaagsxhpcpzrf.supabase.co';
+const HARDCODED_SUPABASE_KEY = 'sb_publishable_eKsY9d1RsINGrGKx3SK6Fg_YrLK4aUn';
+
 function initSupabase() {
-  var url = localStorage.getItem(SUPABASE_URL_KEY);
-  var key = localStorage.getItem(SUPABASE_ANON_KEY);
+  // Prefer hardcoded credentials; fall back to localStorage for legacy installs
+  var url = HARDCODED_SUPABASE_URL || localStorage.getItem(SUPABASE_URL_KEY);
+  var key = HARDCODED_SUPABASE_KEY || localStorage.getItem(SUPABASE_ANON_KEY);
   if (url && key) {
     sb = window.supabase.createClient(url, key);
     return true;
