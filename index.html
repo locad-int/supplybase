@@ -1220,7 +1220,7 @@
         </table>
       </div>
       <div id="import-unmatched-wrap" style="display:none;margin-top:10px;font-size:11px;color:var(--muted)">
-        <strong>⚠ Unmatched rows (skipped):</strong> <span id="import-unmatched-list"></span>
+        <strong>⚠ Skipped rows (no item name):</strong> <span id="import-unmatched-list"></span>
       </div>
     </div>
     <div class="modal-actions">
@@ -7517,13 +7517,16 @@ function previewImport(rows) {
   var colSupplier = findCol(['supplier','vendor','suppliername']);
   var colCategory = findCol(['category','cat','itemcategory','type']);
   var colRemarks  = findCol(['remarks','remark','notes','comment','action']);
+  var colUnit     = findCol(['unit','uom','unitofmeasure','units']);
+  var colMinQty   = findCol(['minqty','reorderpt','reorderpoint','minimum','min','lowstockat']);
+  var colLocation = findCol(['location','storedat','storage','bin','area','zone']);
 
   if (!colName && !colSku) {
     alert('File must have a "Name" or "SKU" column to match items.');
     return;
   }
 
-  var matched = [], unmatched = [];
+  var matched = [], unmatched = [], newItems = [];
 
   rows.forEach(function(row) {
     var nameVal     = colName     ? (row[colName]     || '').trim() : '';
@@ -7533,18 +7536,44 @@ function previewImport(rows) {
     var supplierVal = colSupplier ? (row[colSupplier] || '').trim() : undefined;
     var categoryVal = colCategory ? (row[colCategory] || '').trim() : undefined;
     var remarksVal  = colRemarks  ? (row[colRemarks]  || '').trim().toLowerCase() : '';
+    var unitVal     = colUnit     ? (row[colUnit]     || '').trim() : '';
+    var minQtyVal   = colMinQty   ? row[colMinQty]    : undefined;
+    var locationVal = colLocation ? (row[colLocation] || '').trim() : '';
 
     // Match: SKU first, then name
     var item = null;
     if (skuVal) item = db.items.find(function(i){ return i.sku && i.sku.toLowerCase() === skuVal.toLowerCase(); });
     if (!item && nameVal) item = db.items.find(function(i){ return i.name.toLowerCase() === nameVal.toLowerCase(); });
 
+    var toDelete = remarksVal.includes('for removal') || remarksVal === 'delete' || remarksVal === 'remove';
+
+    // ── NEW ITEM: not in system yet ──
     if (!item) {
-      unmatched.push(nameVal || skuVal);
+      // Need a name to create; skip blank rows and "for removal" rows for items that don't exist
+      if (!nameVal || toDelete) {
+        if (nameVal || skuVal) unmatched.push(nameVal || skuVal);
+        return;
+      }
+      var nQty  = (qtyVal    !== undefined && qtyVal    !== '') ? parseFloat(qtyVal)    : 0;
+      var nCost = (costVal   !== undefined && costVal   !== '') ? parseFloat(costVal)   : 0;
+      var nMin  = (minQtyVal !== undefined && minQtyVal !== '') ? parseFloat(minQtyVal) : 0;
+      if (isNaN(nQty))  nQty  = 0;
+      if (isNaN(nCost)) nCost = 0;
+      if (isNaN(nMin))  nMin  = 0;
+      newItems.push({
+        isNew: true,
+        name: nameVal,
+        sku: skuVal,
+        qty: nQty,
+        cost: nCost,
+        minQty: nMin,
+        unit: unitVal,
+        location: locationVal,
+        supplier: supplierVal || '',
+        category: categoryVal || ''
+      });
       return;
     }
-
-    var toDelete = remarksVal.includes('for removal') || remarksVal === 'delete' || remarksVal === 'remove';
 
     var newQty      = (qtyVal  !== undefined && qtyVal  !== '') ? parseInt(qtyVal,  10) : undefined;
     var newCost     = (costVal !== undefined && costVal !== '') ? parseFloat(costVal) : undefined;
@@ -7560,11 +7589,31 @@ function previewImport(rows) {
     matched.push({ item: item, newQty: newQty, newCost: newCost, newSupplier: newSupplier, newCategory: newCategory, toDelete: toDelete });
   });
 
-  _importRows = matched;
+  _importRows = newItems.concat(matched);
 
-  // Build preview table
+  // Build preview table — new items first
   var tbody = document.getElementById('import-preview-body');
-  tbody.innerHTML = matched.map(function(r) {
+  var newRowsHtml = newItems.map(function(r) {
+    var meta = [];
+    if (r.category) meta.push('Category: ' + esc(r.category));
+    if (r.unit)     meta.push('Unit: ' + esc(r.unit));
+    if (r.location) meta.push('At: ' + esc(r.location));
+    if (r.minQty)   meta.push('Reorder @ ' + fmtInt(r.minQty));
+    if (r.supplier) meta.push('Supplier: ' + esc(r.supplier));
+    return '<tr style="border-bottom:1px solid var(--border);background:rgba(22,163,74,.06)">'
+      + '<td style="padding:8px 12px;font-weight:600;font-size:12px">' + esc(r.name)
+        + (r.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.sku) + '</span>' : '')
+        + (meta.length ? '<br><span style="font-size:10px;color:var(--muted)">' + meta.join(' · ') + '</span>' : '')
+      + '</td>'
+      + '<td style="text-align:right;color:var(--muted)">—</td>'
+      + '<td style="text-align:right;color:#16a34a;font-weight:700">' + fmtInt(r.qty) + '</td>'
+      + '<td style="text-align:right;color:var(--muted)">—</td>'
+      + '<td style="text-align:right;color:#16a34a;font-weight:700">₱' + fmt(r.cost) + '</td>'
+      + '<td style="padding:8px 12px;text-align:center"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(22,163,74,.15);color:#16a34a">✚ Will create</span></td>'
+      + '</tr>';
+  }).join('');
+
+  tbody.innerHTML = newRowsHtml + matched.map(function(r) {
     if (r.toDelete) {
       return '<tr style="border-bottom:1px solid var(--border);background:rgba(220,38,38,.05)">'
         + '<td style="padding:8px 12px;font-weight:600;font-size:12px;color:var(--danger)">' + esc(r.item.name) + (r.item.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.item.sku) + '</span>' : '') + '</td>'
@@ -7605,15 +7654,18 @@ function previewImport(rows) {
       + cell(r.item.cost, r.newCost, costChanged, true)
       + '<td style="padding:8px 12px;text-align:center">' + statusBadge + '</td>'
       + '</tr>';
-  }).join('') || '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--muted)">No matching items found.</td></tr>';
+  }).join('') || (newRowsHtml ? '' : '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--muted)">No items found in file.</td></tr>');
 
   // Summary bar
-  var willUpdate  = matched.filter(function(r){ return !r.toDelete && (r.newQty !== undefined && r.newQty !== r.item.qty || r.newCost !== undefined && r.newCost !== r.item.cost || r.newSupplier !== undefined); });
+  var willUpdate  = matched.filter(function(r){ return !r.toDelete && (r.newQty !== undefined && r.newQty !== r.item.qty || r.newCost !== undefined && r.newCost !== r.item.cost || r.newSupplier !== undefined || r.newCategory !== undefined); });
   var willDelete  = matched.filter(function(r){ return r.toDelete; });
-  document.getElementById('import-summary-bar').innerHTML =
-    '✅ <strong>' + willUpdate.length + '</strong> will update &nbsp;·&nbsp; '
-    + '<span style="color:var(--danger)">🗑 <strong>' + willDelete.length + '</strong> will delete</span> &nbsp;·&nbsp; '
-    + '<span style="color:var(--muted)">' + (matched.length - willUpdate.length - willDelete.length) + ' unchanged &nbsp;·&nbsp; ' + unmatched.length + ' unmatched (skipped)</span>';
+  var parts = [];
+  if (newItems.length)  parts.push('<span style="color:#16a34a">✚ <strong>' + newItems.length + '</strong> new item' + (newItems.length===1?'':'s') + '</span>');
+  parts.push('✅ <strong>' + willUpdate.length + '</strong> will update');
+  if (willDelete.length) parts.push('<span style="color:var(--danger)">🗑 <strong>' + willDelete.length + '</strong> will delete</span>');
+  parts.push('<span style="color:var(--muted)">' + (matched.length - willUpdate.length - willDelete.length) + ' unchanged</span>');
+  if (unmatched.length) parts.push('<span style="color:var(--muted)">' + unmatched.length + ' skipped (no name)</span>');
+  document.getElementById('import-summary-bar').innerHTML = parts.join(' &nbsp;·&nbsp; ');
 
   // Unmatched list
   if (unmatched.length) {
@@ -7622,23 +7674,64 @@ function previewImport(rows) {
   }
 
   document.getElementById('import-preview-wrap').style.display = '';
-  document.getElementById('import-apply-btn').style.display = (willUpdate.length || willDelete.length) ? '' : 'none';
-  document.getElementById('import-apply-btn').textContent = willDelete.length
-    ? '✓ Apply (' + willUpdate.length + ' updates + ' + willDelete.length + ' deletions)'
-    : '✓ Apply Updates';
+  var hasWork = newItems.length || willUpdate.length || willDelete.length;
+  document.getElementById('import-apply-btn').style.display = hasWork ? '' : 'none';
+  var btnParts = [];
+  if (newItems.length)   btnParts.push(newItems.length + ' new');
+  if (willUpdate.length) btnParts.push(willUpdate.length + ' updates');
+  if (willDelete.length) btnParts.push(willDelete.length + ' deletions');
+  document.getElementById('import-apply-btn').textContent = '✓ Apply (' + btnParts.join(' + ') + ')';
 }
 
 async function applyImport() {
-  var toDelete = _importRows.filter(function(r) { return r.toDelete; });
+  var toCreate = _importRows.filter(function(r) { return r.isNew; });
+  var toDelete = _importRows.filter(function(r) { return !r.isNew && r.toDelete; });
   var toUpdate = _importRows.filter(function(r) {
-    return !r.toDelete && (
+    return !r.isNew && !r.toDelete && (
       (r.newQty !== undefined && r.newQty !== r.item.qty) ||
       (r.newCost !== undefined && r.newCost !== r.item.cost) ||
       (r.newSupplier !== undefined) ||
       (r.newCategory !== undefined)
     );
   });
-  if (!toDelete.length && !toUpdate.length) { closeModal('import-modal'); return; }
+  if (!toCreate.length && !toDelete.length && !toUpdate.length) { closeModal('import-modal'); return; }
+
+  // ── Process new items ──
+  var createdItems = [];
+  var nextSeq = db.items.length ? Math.max.apply(null, db.items.map(function(i){ return i.seq || 0; })) + 1 : 1;
+  toCreate.forEach(function(r) {
+    var now = new Date().toISOString();
+    var newItem = {
+      id: uid(),
+      seq: nextSeq++,
+      name: r.name,
+      sku: r.sku || '',
+      category: r.category || '',
+      location: r.location || '',
+      qty: r.qty,
+      unit: r.unit || '',
+      minQty: r.minQty || 0,
+      reorderQty: 0,
+      cost: r.cost || 0,
+      supplier: r.supplier || '',
+      notes: '',
+      baselineQty: r.qty,
+      maxRef: r.qty,
+      createdAt: now,
+      updatedAt: now
+    };
+    db.items.push(newItem);
+    createdItems.push(newItem);
+    // Opening stock log
+    if (r.qty > 0) {
+      db.logs.push({
+        id: uid(), itemId: newItem.id, type: 'restock', qty: r.qty, absQty: r.qty,
+        by: (currentUser && currentUser.username) || 'Import',
+        date: now, ref: '', notes: 'Created via import — opening stock'
+      });
+    }
+    logAudit('Import create', newItem.name + (newItem.sku ? ' (SKU: ' + newItem.sku + ')' : '') + ' — opening stock ' + r.qty);
+  });
 
   // ── Process deletions ──
   toDelete.forEach(function(r) {
@@ -7689,6 +7782,14 @@ async function applyImport() {
   save();
   if (sb) {
     try {
+      // Insert new items into Supabase
+      if (createdItems.length) {
+        await sb.from('items').insert(createdItems);
+        var newLogs = db.logs.filter(function(l) {
+          return createdItems.some(function(ci){ return ci.id === l.itemId; });
+        });
+        if (newLogs.length) await sb.from('logs').insert(newLogs);
+      }
       // Delete from Supabase
       for (var d = 0; d < toDelete.length; d++) {
         await sb.from('items').delete().eq('id', toDelete[d].item.id);
@@ -7707,7 +7808,9 @@ async function applyImport() {
   resetImportModal();
   updateSummary();
   renderInventory();
+  renderLogs();
   var msg = [];
+  if (toCreate.length) msg.push(toCreate.length + ' new item' + (toCreate.length!==1?'s':'') + ' created');
   if (toUpdate.length) msg.push(toUpdate.length + ' item' + (toUpdate.length!==1?'s':'') + ' updated');
   if (toDelete.length) msg.push(toDelete.length + ' item' + (toDelete.length!==1?'s':'') + ' deleted');
   alert('✅ ' + msg.join(' · ') + '.');
