@@ -707,7 +707,15 @@
       <div id="btn-col-toggle-wrap" style="position:relative;display:none">
         <button class="btn btn-secondary" onclick="toggleColPopover()" style="font-size:12px">⊞ Columns</button>
         <div id="col-toggle-popover">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px">Show / Hide Columns</div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Columns visible to</div>
+          <select id="col-role-select" onchange="setColEditRole(this.value)" style="width:100%;margin-bottom:4px;font-size:12px">
+            <option value="superuser">Superuser</option>
+            <option value="user" selected>User</option>
+            <option value="viewer">Viewer</option>
+            <option value="requestor">Requestor</option>
+            <option value="brand">Brand</option>
+          </select>
+          <div id="col-role-note" style="font-size:10px;color:var(--muted);margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)"></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-sku"      onchange="toggleInvCol('sku',this.checked)"><label for="ctog-sku">SKU</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-category" onchange="toggleInvCol('category',this.checked)"><label for="ctog-category">Category</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-reorder"  onchange="toggleInvCol('reorder',this.checked)"><label for="ctog-reorder">Reorder Pt</label></div>
@@ -716,7 +724,7 @@
           <div class="col-toggle-row"><input type="checkbox" id="ctog-cost"     onchange="toggleInvCol('cost',this.checked)"><label for="ctog-cost">Cost/Unit</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-status"   onchange="toggleInvCol('status',this.checked)"><label for="ctog-status">Status</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-location" onchange="toggleInvCol('location',this.checked)"><label for="ctog-location">Location</label></div>
-          <div style="font-size:11px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">Changes apply to all users.</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">Applies to everyone with the selected role, on all devices. Only you can change this.</div>
         </div>
       </div>
     </div>
@@ -1686,6 +1694,27 @@
         <span><strong>Add new materials via import</strong><br><span style="color:var(--muted);font-size:11px">Unmatched rows in an import file will create new items</span></span>
       </label>
     </div>
+
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+    <p style="color:var(--muted);font-size:13px;margin-bottom:10px">Which <strong>tabs</strong> each role can see. Superuser always sees all tabs.</p>
+    <select id="tab-role-select" onchange="setTabEditRole(this.value)" style="width:100%;margin-bottom:4px;font-size:13px">
+      <option value="user" selected>User</option>
+      <option value="viewer">Viewer</option>
+      <option value="requestor">Requestor</option>
+      <option value="brand">Brand</option>
+    </select>
+    <p id="tab-role-note" style="font-size:11px;color:var(--muted);margin:0 0 10px"></p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-inventory" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('inventory',this.checked)">Inventory</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-usage" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('usage',this.checked)">Usage Log</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-reorder" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('reorder',this.checked)">Reorder</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-report" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('report',this.checked)">Cost Report</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-dashboard" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('dashboard',this.checked)">Dashboard</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-messages" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('messages',this.checked)">Messages</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-requests" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('requests',this.checked)">Requests</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-audit" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('audit',this.checked)">Audit Log</label>
+    </div>
+
     <p id="settings-msg" style="color:var(--ok);font-size:12px;min-height:18px;margin-top:8px"></p>
     <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
       <button class="btn btn-danger btn-sm" onclick="reconnectSupabase()" title="Change Supabase connection">🔌 Change database</button>
@@ -1982,8 +2011,14 @@ async function loadGlobalSettings() {
     }
     if (settingsMap[INV_COLS_KEY] !== undefined) {
       try {
-        var hiddenParsed = JSON.parse(settingsMap[INV_COLS_KEY]);
-        if (Array.isArray(hiddenParsed)) { invHiddenCols = hiddenParsed; applyInvColVisibility(); }
+        invColsByRole = _normaliseInvCols(JSON.parse(settingsMap[INV_COLS_KEY]));
+        applyInvColVisibility();
+      } catch(e) {}
+    }
+    if (settingsMap[TABS_KEY] !== undefined) {
+      try {
+        var tabsParsed = _normaliseTabs(JSON.parse(settingsMap[TABS_KEY]));
+        if (tabsParsed) { tabsByRole = tabsParsed; applyTabVisibility(); }
       } catch(e) {}
     }
     if (settingsMap[USER_PERMS_KEY] !== undefined) {
@@ -2055,8 +2090,15 @@ function startRealtime() {
         }
         if (row.key === INV_COLS_KEY) {
           try {
-            var hiddenParsed = JSON.parse(row.value);
-            if (Array.isArray(hiddenParsed)) { invHiddenCols = hiddenParsed; applyInvColVisibility(); }
+            invColsByRole = _normaliseInvCols(JSON.parse(row.value));
+            applyInvColVisibility();
+            renderInventory();
+          } catch(e) {}
+        }
+        if (row.key === TABS_KEY) {
+          try {
+            var tp = _normaliseTabs(JSON.parse(row.value));
+            if (tp) { tabsByRole = tp; applyTabVisibility(); }
           } catch(e) {}
         }
         if (row.key === USER_PERMS_KEY) {
@@ -2360,6 +2402,12 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 
 // ─── TABS ───────────────────────────────────────────────────────────────────────
 function switchTab(name) {
+  // Enforce per-role tab access
+  if (isTabHidden(name)) {
+    var fallback = visibleTabsFor(currentRole)[0];
+    if (!fallback || fallback === name) return;
+    name = fallback;
+  }
   document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === name);
   });
@@ -2394,7 +2442,9 @@ function openMobileMoreMenu() {
     { tab:'dashboard', icon:'📊', label:'Dashboard' },
     { tab:'audit',     icon:'📋', label:'Audit Log' }
   ];
-  var html = moreItems.map(function(it) {
+  var html = moreItems.filter(function(it) {
+    return !isTabHidden(it.tab);
+  }).map(function(it) {
     return '<div class="mm-item" onclick="switchTab(\''+it.tab+'\')">' + it.icon + ' ' + it.label + '</div>';
   }).join('');
   html += '<div class="mm-item" onclick="refreshData();closeMobileMoreMenu()">↻ Refresh</div>';
@@ -2617,9 +2667,10 @@ function renderInventory() {
         + '</div>'
         + '<div class="inv-mc-row">'
         + '<span class="inv-mc-qty">' + fmtInt(item.qty) + '</span>'
-        + '<span class="inv-mc-unit">' + esc(item.unit||'') + '</span>'
-        + (item.category ? '<span class="badge badge-info">' + esc(item.category) + '</span>' : '')
-        + (item.minQty > 0 ? '<span class="inv-mc-reorder">Reorder @ ' + fmtInt(item.minQty) + '</span>' : '')
+        + (isColHidden('unit')     ? '' : '<span class="inv-mc-unit">' + esc(item.unit||'') + '</span>')
+        + (isColHidden('category') ? '' : (item.category ? '<span class="badge badge-info">' + esc(item.category) + '</span>' : ''))
+        + (isColHidden('reorder')  ? '' : (item.minQty > 0 ? '<span class="inv-mc-reorder">Reorder @ ' + fmtInt(item.minQty) + '</span>' : ''))
+        + (isColHidden('location') ? '' : (item.location ? '<span class="badge badge-info">' + esc(item.location) + '</span>' : ''))
         + '</div>'
         + (actBtns ? '<div class="inv-mc-actions">' + actBtns + '</div>' : '');
       mobileList.appendChild(card);
@@ -2985,23 +3036,23 @@ function openItemDetail(itemId) {
   const lastUpdated = lastLog ? new Date(lastLog.date).toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }) : '—';
 
   document.getElementById('idet-body').innerHTML =
-    row('SKU', item.sku ? esc(item.sku) : '')
-    + row('Category', item.category ? `<span class="badge badge-info">${esc(item.category)}</span>` : '—')
-    + row('Status', `<span class="badge ${badgeClass}">${badgeLabel}</span>`)
-    + row('Current Stock', `<strong style="font-size:1.05rem">${fmtInt(item.qty)}</strong> <span style="color:var(--muted)">${esc(item.unit||'')}</span>`)
-    + (item.minQty > 0 ? row('Reorder Point', `<span style="color:var(--muted)">${fmtInt(item.minQty)} ${esc(item.unit||'')}</span>${item.qty <= item.minQty && item.qty > 0 ? ' <span style="color:#b45309;font-size:11px;font-weight:600">⚡ at or below</span>' : ''}`) : '')
-    + (function() {
+    (isColHidden('sku')      ? '' : row('SKU', item.sku ? esc(item.sku) : ''))
+    + (isColHidden('category') ? '' : row('Category', item.category ? `<span class="badge badge-info">${esc(item.category)}</span>` : '—'))
+    + (isColHidden('status')   ? '' : row('Status', `<span class="badge ${badgeClass}">${badgeLabel}</span>`))
+    + row('Current Stock', `<strong style="font-size:1.05rem">${fmtInt(item.qty)}</strong> <span style="color:var(--muted)">${isColHidden('unit') ? '' : esc(item.unit||'')}</span>`)
+    + (isColHidden('reorder') ? '' : (item.minQty > 0 ? row('Reorder Point', `<span style="color:var(--muted)">${fmtInt(item.minQty)} ${esc(item.unit||'')}</span>${item.qty <= item.minQty && item.qty > 0 ? ' <span style="color:#b45309;font-size:11px;font-weight:600">⚡ at or below</span>' : ''}`) : ''))
+    + (isColHidden('runway') ? '' : (function() {
         var r = getRunway(item);
         if (!r) return row('Runway', '<span style="color:var(--muted)">— (no recent usage)</span>');
         if (r.days === 0) return row('Runway', '<span style="color:#dc2626;font-weight:700">⛔ Out of stock</span>');
         var color = r.days <= 7 ? '#dc2626' : r.days <= 14 ? '#b45309' : 'var(--ok)';
         var avgFmt = r.avgDaily < 1 ? (r.avgDaily * 30).toFixed(1) + '/mo' : r.avgDaily.toFixed(1) + '/day';
         return row('Runway', `<span style="color:${color};font-weight:700">~${r.days} days</span> <span style="color:var(--muted);font-size:11px">(avg ${avgFmt})</span>`);
-      })()
-    + row('Unit', esc(item.unit||'—'))
-    + row('Unit Cost', item.cost ? fmtPHP(item.cost) : '')
+      })())
+    + (isColHidden('unit')     ? '' : row('Unit', esc(item.unit||'—')))
+    + (isColHidden('cost')     ? '' : row('Unit Cost', item.cost ? fmtPHP(item.cost) : ''))
     + row('Supplier', item.supplier ? esc(item.supplier) : '')
-    + row('Location', item.location ? esc(item.location) : '')
+    + (isColHidden('location') ? '' : row('Location', item.location ? esc(item.location) : ''))
     + row('Notes', item.notes ? esc(item.notes) : '')
     + row('Last Activity', lastUpdated);
 
@@ -5916,17 +5967,158 @@ alter publication supabase_realtime add table settings;</pre>
   el.innerHTML = out;
 }
 
-// ─── INVENTORY COLUMN VISIBILITY ─────────────────────────────────────────────────
+// ─── TAB ACCESS BY ROLE (superuser-controlled) ───────────────────────────────────
+var TABS_KEY  = 'tabsByRole';
+var ALL_TABS  = ['inventory','usage','reorder','report','dashboard','messages','requests','audit'];
+var TAB_LABELS = { inventory:'Inventory', usage:'Usage Log', reorder:'Reorder', report:'Cost Report',
+                   dashboard:'Dashboard', messages:'Messages', requests:'Requests', audit:'Audit Log' };
+// Hidden tabs per role. Superuser is never restricted (prevents lock-out).
+// Defaults mirror the previous hard-coded behaviour.
+var tabsByRole = {
+  user:      ['audit'],
+  viewer:    ['audit'],
+  requestor: ['audit'],
+  brand:     ['usage','reorder','report','dashboard','messages','requests','audit']
+};
+var _tabEditRole = 'user'; // which role the superuser is configuring
+var TAB_ROLES = ['user','viewer','requestor','brand'];
+
+function _normaliseTabs(parsed) {
+  var out = { user: [], viewer: [], requestor: [], brand: [] };
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    TAB_ROLES.forEach(function(r) {
+      out[r] = Array.isArray(parsed[r]) ? parsed[r].filter(function(t){ return ALL_TABS.indexOf(t) !== -1; }) : [];
+    });
+    return out;
+  }
+  return null; // unrecognised shape — keep current defaults
+}
+
+function isTabHidden(tab, role) {
+  var r = role || currentRole;
+  if (!r || r === 'superuser') return false; // superuser sees everything
+  var list = tabsByRole[r];
+  return !!list && list.indexOf(tab) !== -1;
+}
+
+function visibleTabsFor(role) {
+  return ALL_TABS.filter(function(t) { return !isTabHidden(t, role); });
+}
+
+async function loadTabsByRole() {
+  if (!sb) return;
+  try {
+    var r = await sb.from('settings').select('*').eq('key', TABS_KEY);
+    if (r.data && r.data.length > 0) {
+      var n = _normaliseTabs(JSON.parse(r.data[0].value));
+      if (n) tabsByRole = n;
+    }
+  } catch(e) {}
+  applyTabVisibility();
+}
+
+async function saveTabsByRole() {
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', TABS_KEY);
+    await sb.from('settings').insert([{ key: TABS_KEY, value: JSON.stringify(tabsByRole) }]);
+  } catch(e) {}
+}
+
+// Hide/show sidebar nav, bottom nav, and redirect away from a hidden tab
+function applyTabVisibility() {
+  if (!currentRole) return;
+  ALL_TABS.forEach(function(tab) {
+    var hidden = isTabHidden(tab);
+    var navEl = document.getElementById('nav-' + tab);
+    if (navEl) navEl.style.display = hidden ? 'none' : '';
+    var bnEl = document.getElementById('bn-' + tab);
+    if (bnEl) bnEl.style.display = hidden ? 'none' : '';
+  });
+  // If the active tab just became hidden, move to the first visible one
+  var activePanel = document.querySelector('.tab-panel.active');
+  var activeTab = activePanel ? activePanel.id.replace('tab-', '') : '';
+  if (activeTab && isTabHidden(activeTab)) {
+    var first = visibleTabsFor(currentRole)[0];
+    if (first) switchTab(first);
+  }
+  // Sync the settings UI if open
+  var sel = document.getElementById('tab-role-select');
+  if (sel && sel.value !== _tabEditRole) sel.value = _tabEditRole;
+  ALL_TABS.forEach(function(tab) {
+    var cb = document.getElementById('ttog-' + tab);
+    if (cb) cb.checked = (tabsByRole[_tabEditRole] || []).indexOf(tab) === -1;
+  });
+  var note = document.getElementById('tab-role-note');
+  if (note) {
+    var n = visibleTabsFor(_tabEditRole).length;
+    note.textContent = n + ' of ' + ALL_TABS.length + ' tabs visible to ' + _tabEditRole;
+  }
+}
+
+function setTabEditRole(role) {
+  if (TAB_ROLES.indexOf(role) === -1) return;
+  _tabEditRole = role;
+  applyTabVisibility();
+}
+
+async function toggleTabAccess(tab, visible) {
+  if (currentRole !== 'superuser') return;
+  var list = (tabsByRole[_tabEditRole] || []).slice();
+  if (visible) {
+    list = list.filter(function(t) { return t !== tab; });
+  } else {
+    // Don't allow a role to end up with no tabs at all
+    if (list.indexOf(tab) === -1) list.push(tab);
+    if (ALL_TABS.filter(function(t){ return list.indexOf(t) === -1; }).length === 0) {
+      alert('A role must keep at least one visible tab.');
+      applyTabVisibility(); // re-tick the checkbox
+      return;
+    }
+  }
+  tabsByRole[_tabEditRole] = list;
+  applyTabVisibility();
+  await saveTabsByRole();
+  logAudit('Tab access', _tabEditRole + ': ' + tab + ' → ' + (visible ? 'visible' : 'hidden'));
+}
+
+// ─── INVENTORY COLUMN VISIBILITY (per role, superuser-controlled) ────────────────
 var INV_COLS_KEY = 'invHiddenCols';
-var invHiddenCols = []; // array of col names that are hidden, e.g. ['runway','sku']
+var INV_ALL_COLS = ['sku','category','reorder','runway','unit','cost','status','location'];
+var INV_ROLES    = ['superuser','user','viewer','requestor','brand'];
+// Hidden columns per role: { superuser: [], user: [], viewer: ['cost'], ... }
+var invColsByRole = { superuser: [], user: [], viewer: [], requestor: [], brand: [] };
+var _colEditRole  = 'user'; // which role the superuser is currently configuring
+
+// Normalise any stored shape into the per-role object
+function _normaliseInvCols(parsed) {
+  var out = { superuser: [], user: [], viewer: [], requestor: [], brand: [] };
+  if (Array.isArray(parsed)) {
+    // Legacy: one global array — apply to every role so behaviour is unchanged
+    INV_ROLES.forEach(function(r) { out[r] = parsed.slice(); });
+  } else if (parsed && typeof parsed === 'object') {
+    INV_ROLES.forEach(function(r) {
+      out[r] = Array.isArray(parsed[r]) ? parsed[r].filter(function(c){ return INV_ALL_COLS.indexOf(c) !== -1; }) : [];
+    });
+  }
+  return out;
+}
+
+// Columns hidden for the logged-in user
+function hiddenColsForCurrentRole() {
+  if (!currentRole) return [];
+  return invColsByRole[currentRole] || [];
+}
+function isColHidden(col) {
+  return hiddenColsForCurrentRole().indexOf(col) !== -1;
+}
 
 async function loadInvHiddenCols() {
   if (!sb) return;
   try {
     var r = await sb.from('settings').select('*').eq('key', INV_COLS_KEY);
     if (r.data && r.data.length > 0) {
-      var parsed = JSON.parse(r.data[0].value);
-      if (Array.isArray(parsed)) invHiddenCols = parsed;
+      invColsByRole = _normaliseInvCols(JSON.parse(r.data[0].value));
     }
   } catch(e) {}
   applyInvColVisibility();
@@ -5936,7 +6128,7 @@ async function saveInvHiddenCols() {
   if (!sb) return;
   try {
     await sb.from('settings').delete().eq('key', INV_COLS_KEY);
-    await sb.from('settings').insert([{ key: INV_COLS_KEY, value: JSON.stringify(invHiddenCols) }]);
+    await sb.from('settings').insert([{ key: INV_COLS_KEY, value: JSON.stringify(invColsByRole) }]);
   } catch(e) {}
 }
 
@@ -5950,33 +6142,54 @@ async function saveUserPermissions() {
 
 function applyInvColVisibility() {
   var table = document.getElementById('inv-table');
-  if (!table) return;
-  var allCols = ['sku','category','reorder','runway','unit','cost','status','location'];
-  allCols.forEach(function(col) {
-    table.classList.toggle('hide-col-' + col, invHiddenCols.indexOf(col) !== -1);
-  });
-  // Sync checkboxes
-  allCols.forEach(function(col) {
+  var mine = hiddenColsForCurrentRole();
+  if (table) {
+    INV_ALL_COLS.forEach(function(col) {
+      table.classList.toggle('hide-col-' + col, mine.indexOf(col) !== -1);
+    });
+  }
+  // Sync checkboxes to the role being EDITED (not the viewer's own role)
+  var editing = invColsByRole[_colEditRole] || [];
+  INV_ALL_COLS.forEach(function(col) {
     var cb = document.getElementById('ctog-' + col);
-    if (cb) cb.checked = invHiddenCols.indexOf(col) === -1; // checked = visible
+    if (cb) cb.checked = editing.indexOf(col) === -1; // checked = visible
   });
+  var sel = document.getElementById('col-role-select');
+  if (sel && sel.value !== _colEditRole) sel.value = _colEditRole;
+  var note = document.getElementById('col-role-note');
+  if (note) {
+    note.textContent = editing.length
+      ? editing.length + ' column' + (editing.length===1?'':'s') + ' hidden from ' + _colEditRole
+      : 'All columns visible to ' + _colEditRole;
+  }
+}
+
+function setColEditRole(role) {
+  if (INV_ROLES.indexOf(role) === -1) return;
+  _colEditRole = role;
+  applyInvColVisibility();
 }
 
 async function toggleInvCol(col, visible) {
-  if (currentRole !== 'superuser') return;
+  if (currentRole !== 'superuser') return; // only superuser may change this
+  var list = invColsByRole[_colEditRole] || [];
   if (visible) {
-    invHiddenCols = invHiddenCols.filter(function(c) { return c !== col; });
+    invColsByRole[_colEditRole] = list.filter(function(c) { return c !== col; });
   } else {
-    if (invHiddenCols.indexOf(col) === -1) invHiddenCols.push(col);
+    if (list.indexOf(col) === -1) list.push(col);
+    invColsByRole[_colEditRole] = list;
   }
   applyInvColVisibility();
+  renderInventory(); // refresh mobile cards / table content
   await saveInvHiddenCols();
+  logAudit('Column visibility', _colEditRole + ': ' + col + ' → ' + (visible ? 'visible' : 'hidden'));
 }
 
 function toggleColPopover() {
   var pop = document.getElementById('col-toggle-popover');
   if (!pop) return;
   pop.classList.toggle('open');
+  if (pop.classList.contains('open')) applyInvColVisibility();
 }
 
 // Close popover when clicking outside
@@ -6492,12 +6705,7 @@ function applyRoleUI() {
   show('btn-log-usage',      can('log'));
   show('btn-create-reorder', can('reorder'));
 
-  // Hide most nav tabs for brand users — inventory only
-  var navIds = ['nav-usage', 'nav-reorder', 'nav-requests', 'nav-messages', 'nav-report', 'nav-audit', 'nav-dashboard'];
-  navIds.forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.style.display = isBrand ? 'none' : '';
-  });
+  // Tab visibility is driven by the per-role config (see applyTabVisibility)
   show('btn-export-inv-csv', !isBrand);
   // Hide reorder/expenses cards for brand users
   var reorderCard = document.getElementById('card-reorder');
@@ -6505,13 +6713,6 @@ function applyRoleUI() {
   if (reorderCard) reorderCard.style.display = isBrand ? 'none' : '';
   if (expensesCard) expensesCard.style.display = isBrand ? 'none' : '';
 
-  // Requests nav: visible to non-brand roles
-  var reqNav = document.getElementById('nav-requests');
-  if (reqNav) reqNav.style.display = isBrand ? 'none' : '';
-
-  // Audit Log nav: superuser only
-  var auditNav = document.getElementById('nav-audit');
-  if (auditNav) auditNav.style.display = currentRole === 'superuser' ? '' : 'none';
   show('btn-clear-audit', currentRole === 'superuser');
 
   // Import button: controlled by userPermissions for user role
@@ -6521,6 +6722,7 @@ function applyRoleUI() {
   var colWrap = document.getElementById('btn-col-toggle-wrap');
   if (colWrap) colWrap.style.display = currentRole === 'superuser' ? '' : 'none';
   applyInvColVisibility();
+  applyTabVisibility();
 
   // Cost/unit column: hide from brand users
   var costHeaders = document.querySelectorAll('.inv-col-cost');
@@ -6696,6 +6898,7 @@ function openSettings() {
     var cb = document.getElementById('uperm-' + k);
     if (cb) cb.checked = !!userPermissions[k];
   });
+  applyTabVisibility(); // sync the tab-access checkboxes
   openModal('settings-modal');
 }
 
@@ -7325,11 +7528,26 @@ function downloadCSV(filename, rows) {
 }
 
 function exportInventoryCSV() {
-  var rows = [['#','Name','SKU','Category','Stock','Unit','Min Qty','Cost/Unit','Status','Location']];
+  // Respect per-role hidden columns so the export can't be used to read concealed data
+  var cols = [
+    { key: 'seq',      header: '#',         col: null,        val: function(it,i){ return i+1; } },
+    { key: 'name',     header: 'Name',      col: null,        val: function(it){ return it.name; } },
+    { key: 'sku',      header: 'SKU',       col: 'sku',       val: function(it){ return it.sku||''; } },
+    { key: 'category', header: 'Category',  col: 'category',  val: function(it){ return it.category||''; } },
+    { key: 'qty',      header: 'Stock',     col: null,        val: function(it){ return it.qty; } },
+    { key: 'unit',     header: 'Unit',      col: 'unit',      val: function(it){ return it.unit||''; } },
+    { key: 'minQty',   header: 'Min Qty',   col: 'reorder',   val: function(it){ return it.minQty||0; } },
+    { key: 'cost',     header: 'Cost/Unit', col: 'cost',      val: function(it){ return it.cost||0; } },
+    { key: 'status',   header: 'Status',    col: 'status',    val: function(it){
+        var s = stockStatus(it);
+        return s === 'danger' ? 'Out of Stock' : s === 'warn' ? 'Low Stock' : 'Healthy';
+      } },
+    { key: 'location', header: 'Location',  col: 'location',  val: function(it){ return it.location||''; } }
+  ].filter(function(c) { return !c.col || !isColHidden(c.col); });
+
+  var rows = [cols.map(function(c){ return c.header; })];
   db.items.forEach(function(item, i) {
-    var status = stockStatus(item);
-    var statusLabel = status === 'danger' ? 'Out of Stock' : status === 'warn' ? 'Low Stock' : 'Healthy';
-    rows.push([i+1, item.name, item.sku||'', item.category||'', item.qty, item.unit||'', item.minQty||0, item.cost||0, statusLabel, item.location||'']);
+    rows.push(cols.map(function(c){ return c.val(item, i); }));
   });
   downloadCSV('inventory_' + new Date().toISOString().split('T')[0] + '.csv', rows);
 }
