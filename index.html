@@ -7539,6 +7539,14 @@ function exportInventoryCSV() {
     { key: 'qty',      header: 'Stock',     col: null,        val: function(it){ return it.qty; } },
     { key: 'unit',     header: 'Unit',      col: 'unit',      val: function(it){ return it.unit||''; } },
     { key: 'minQty',   header: 'Min Qty',   col: 'reorder',   val: function(it){ return it.minQty||0; } },
+    { key: 'runway',   header: 'Runway (days)', col: 'runway', val: function(it){
+        var r = getRunway(it);
+        return r ? r.days : '';   // blank when there's no recent usage to project from
+      } },
+    { key: 'avgDaily', header: 'Avg Daily Use', col: 'runway', val: function(it){
+        var r = getRunway(it);
+        return r ? Math.round(r.avgDaily * 100) / 100 : '';
+      } },
     { key: 'cost',     header: 'Cost/Unit', col: 'cost',      val: function(it){ return it.cost||0; } },
     { key: 'status',   header: 'Status',    col: 'status',    val: function(it){
         var s = stockStatus(it);
