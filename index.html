@@ -1227,6 +1227,10 @@
           <tbody id="import-preview-body"></tbody>
         </table>
       </div>
+      <div id="import-blocked-wrap" style="display:none;margin-top:10px;font-size:11px;color:var(--warn);background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:8px 10px">
+        <strong>🔒 New materials not created</strong> — your account isn't allowed to add new items via import. Ask a superuser to enable "Add new materials via import" in Settings, or add these manually.<br>
+        <span id="import-blocked-list" style="color:var(--muted)"></span>
+      </div>
       <div id="import-unmatched-wrap" style="display:none;margin-top:10px;font-size:11px;color:var(--muted)">
         <strong>⚠ Skipped rows (no item name):</strong> <span id="import-unmatched-list"></span>
       </div>
@@ -7661,6 +7665,8 @@ function resetImportModal() {
   document.getElementById('import-preview-wrap').style.display = 'none';
   document.getElementById('import-apply-btn').style.display = 'none';
   document.getElementById('import-unmatched-wrap').style.display = 'none';
+  var bw = document.getElementById('import-blocked-wrap');
+  if (bw) bw.style.display = 'none';
   document.getElementById('import-preview-body').innerHTML = '';
   // reset both file inputs so the same file can be re-selected
   document.getElementById('import-file-input').value = '';
@@ -7768,6 +7774,9 @@ function previewImport(rows) {
   }
 
   var matched = [], unmatched = [], newItems = [];
+  // "Add new materials via import" — superuser always allowed, others per Settings toggle
+  var mayCreate = can('add_new_items_on_import');
+  var blockedNew = [];
 
   rows.forEach(function(row) {
     var nameVal     = colName     ? (row[colName]     || '').trim() : '';
@@ -7800,6 +7809,8 @@ function previewImport(rows) {
         unmatched.push(nameVal.slice(0, 40) + '… (row did not split — check file formatting)');
         return;
       }
+      // Permission gate — creating new materials is off for this account
+      if (!mayCreate) { blockedNew.push(nameVal); return; }
       var nQty  = (qtyVal    !== undefined && qtyVal    !== '') ? parseFloat(qtyVal)    : 0;
       var nCost = (costVal   !== undefined && costVal   !== '') ? parseFloat(costVal)   : 0;
       var nMin  = (minQtyVal !== undefined && minQtyVal !== '') ? parseFloat(minQtyVal) : 0;
@@ -7910,8 +7921,20 @@ function previewImport(rows) {
   parts.push('✅ <strong>' + willUpdate.length + '</strong> will update');
   if (willDelete.length) parts.push('<span style="color:var(--danger)">🗑 <strong>' + willDelete.length + '</strong> will delete</span>');
   parts.push('<span style="color:var(--muted)">' + (matched.length - willUpdate.length - willDelete.length) + ' unchanged</span>');
+  if (blockedNew.length) parts.push('<span style="color:var(--warn)">🔒 <strong>' + blockedNew.length + '</strong> new item' + (blockedNew.length===1?'':'s') + ' blocked</span>');
   if (unmatched.length) parts.push('<span style="color:var(--muted)">' + unmatched.length + ' skipped (no name)</span>');
   document.getElementById('import-summary-bar').innerHTML = parts.join(' &nbsp;·&nbsp; ');
+
+  // Blocked-new notice — explain why, so it isn't mistaken for a bug
+  var blockedWrap = document.getElementById('import-blocked-wrap');
+  if (blockedWrap) {
+    if (blockedNew.length) {
+      blockedWrap.style.display = '';
+      document.getElementById('import-blocked-list').textContent = blockedNew.join(', ');
+    } else {
+      blockedWrap.style.display = 'none';
+    }
+  }
 
   // Unmatched list
   if (unmatched.length) {
@@ -7930,7 +7953,10 @@ function previewImport(rows) {
 }
 
 async function applyImport() {
-  var toCreate = _importRows.filter(function(r) { return r.isNew; });
+  // Re-check at apply time — the preview list could be stale if the permission changed
+  var toCreate = can('add_new_items_on_import')
+    ? _importRows.filter(function(r) { return r.isNew; })
+    : [];
   var toDelete = _importRows.filter(function(r) { return !r.isNew && r.toDelete; });
   var toUpdate = _importRows.filter(function(r) {
     return !r.isNew && !r.toDelete && (
