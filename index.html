@@ -721,6 +721,7 @@
     <div class="col-toggle-row"><input type="checkbox" id="ctog-runway"   onchange="toggleInvCol('runway',this.checked)"><label for="ctog-runway">Runway</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-unit"     onchange="toggleInvCol('unit',this.checked)"><label for="ctog-unit">Unit</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-cost"     onchange="toggleInvCol('cost',this.checked)"><label for="ctog-cost">Cost/Unit</label></div>
+          <div class="col-toggle-row"><input type="checkbox" id="ctog-supplier" onchange="toggleInvCol('supplier',this.checked)"><label for="ctog-supplier">Supplier</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-status"   onchange="toggleInvCol('status',this.checked)"><label for="ctog-status">Status</label></div>
           <div class="col-toggle-row"><input type="checkbox" id="ctog-location" onchange="toggleInvCol('location',this.checked)"><label for="ctog-location">Location</label></div>
           <div style="font-size:11px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">Applies to everyone with the selected role, on all devices. Only you can change this.</div>
@@ -3050,7 +3051,7 @@ function openItemDetail(itemId) {
       })())
     + (isColHidden('unit')     ? '' : row('Unit', esc(item.unit||'—')))
     + (isColHidden('cost')     ? '' : row('Unit Cost', item.cost ? fmtPHP(item.cost) : ''))
-    + row('Supplier', item.supplier ? esc(item.supplier) : '')
+    + (isColHidden('supplier') ? '' : row('Supplier', item.supplier ? esc(item.supplier) : ''))
     + (isColHidden('location') ? '' : row('Location', item.location ? esc(item.location) : ''))
     + row('Notes', item.notes ? esc(item.notes) : '')
     + row('Last Activity', lastUpdated);
@@ -6083,7 +6084,7 @@ async function toggleTabAccess(tab, visible) {
 
 // ─── INVENTORY COLUMN VISIBILITY (per role, superuser-controlled) ────────────────
 var INV_COLS_KEY = 'invHiddenCols';
-var INV_ALL_COLS = ['sku','category','reorder','runway','unit','cost','status','location'];
+var INV_ALL_COLS = ['sku','category','reorder','runway','unit','cost','supplier','status','location'];
 // Superuser is deliberately excluded — they always see every column.
 var INV_ROLES    = ['user','viewer','requestor','brand'];
 // Hidden columns per role: { user: [], viewer: ['cost'], ... }
@@ -7548,6 +7549,7 @@ function exportInventoryCSV() {
         return r ? Math.round(r.avgDaily * 100) / 100 : '';
       } },
     { key: 'cost',     header: 'Cost/Unit', col: 'cost',      val: function(it){ return it.cost||0; } },
+    { key: 'supplier', header: 'Supplier',  col: 'supplier',  val: function(it){ return it.supplier||''; } },
     { key: 'status',   header: 'Status',    col: 'status',    val: function(it){
         var s = stockStatus(it);
         return s === 'danger' ? 'Out of Stock' : s === 'warn' ? 'Low Stock' : 'Healthy';
