@@ -3784,19 +3784,43 @@ function saveReorder() {
   renderReorder();
 }
 
-function markReceived(id) {
+async function markReceived(id) {
+  if (checkStocktakeLock()) return;
   const r = db.reorders.find(x => x.id === id);
   if (!r) return;
   const item = db.items.find(i => i.id === r.itemId);
   if (!item) return;
   const now = new Date().toISOString();
+  // Fresh qty first — this restock must add on top of the latest DB value,
+  // not a possibly-stale local one (same class of bug as the disappearing
+  // restock: a bulk save() from a stale snapshot can silently undo it).
+  if (sb) {
+    try {
+      var freshMR = await sb.from('items').select('qty').eq('id', item.id).single();
+      if (freshMR.data && !freshMR.error && freshMR.data.qty !== undefined) item.qty = freshMR.data.qty;
+    } catch(e) {}
+  }
   r.status = 'received';
   if (!r.receivedAt) r.receivedAt = now;
   const newQty = item.qty + r.qty;
-  db.logs.push({ id: uid(), itemId: r.itemId, type: 'restock', qty: r.qty, absQty: newQty, by: 'Reorder', date: new Date().toISOString(), notes: `Reorder received from ${r.supplier||'supplier'}`, ref: '' });
+  // FIFO: this delivery opens a new batch, same as a manual restock log
+  getLayers(item);
+  addLayer(item, r.qty, r.cost > 0 ? r.cost : undefined);
+  const logEntry = { id: uid(), itemId: r.itemId, type: 'restock', qty: r.qty, absQty: newQty, by: 'Reorder', date: now, notes: `Reorder received from ${r.supplier||'supplier'}`, ref: '',
+    costAmount: r.cost > 0 ? Math.round(r.qty * r.cost * 100) / 100 : null };
+  db.logs.push(logEntry);
   item.qty = newQty;
-  item.updatedAt = new Date().toISOString();
-  save();
+  item.updatedAt = now;
+  syncItemCost(item);
+  updateMaxRef(item, newQty);
+  updateSummary();
+  if (sb) {
+    await sbInsertLogs([logEntry]);
+    await sbUpdateItem(item, { "maxRef": item.maxRef });
+    try { await sb.from('reorders').update({ status: r.status, receivedAt: r.receivedAt }).eq('id', r.id); } catch(e) {}
+  } else {
+    save();
+  }
   renderReorder();
   renderInventory();
 }
@@ -3961,10 +3985,19 @@ function calcAdjVariance() {
   }
 }
 
-function applyAdjust() {
+async function applyAdjust() {
   if (checkStocktakeLock()) return;
   const item = db.items.find(i => i.id === adjustItemId);
   if (!item) return;
+  // Always fetch the latest qty from Supabase first — otherwise this adjustment
+  // gets computed against a stale local qty and the write below can clobber
+  // a usage/restock another device logged in the meantime.
+  if (sb) {
+    try {
+      var freshAdj = await sb.from('items').select('qty').eq('id', item.id).single();
+      if (freshAdj.data && !freshAdj.error && freshAdj.data.qty !== undefined) item.qty = freshAdj.data.qty;
+    } catch(e) {}
+  }
   const sysQty = item.qty;
   const reasonSel = document.getElementById('adj-reason').value.trim();
   const isVarianceMode = document.getElementById('adj-variance-group').style.display !== 'none';
@@ -4002,7 +4035,7 @@ function applyAdjust() {
   if (diff < 0)      { _aDetail = describeConsumption(item, -diff); _aCost = consumeLayers(item, -diff); }
   else if (diff > 0) { _aCost = addFoundStock(item, diff); }
 
-  db.logs.push({
+  var adjLog = {
     id: uid(),
     itemId: adjustItemId,
     type: 'adjust',
@@ -4017,12 +4050,20 @@ function applyAdjust() {
     ref: '',
     costAmount: _aCost,
     costDetail: _aDetail
-  });
+  };
+  db.logs.push(adjLog);
 
   item.qty = phys;
   item.updatedAt = new Date().toISOString();
   syncItemCost(item);
-  save();
+  updateSummary();
+  // Targeted write — a bulk save() here would upsert every item from this
+  // session's local memory and could overwrite concurrent changes elsewhere.
+  if (sb) {
+    try { await sbUpdateItem(item); await sbInsertLogs([adjLog]); } catch(e) { save(); }
+  } else {
+    save();
+  }
   closeModal('adjust-modal');
   renderInventory();
 }
@@ -5655,6 +5696,14 @@ async function confirmBatchIssuance() {
     var issueQty = issueEl ? Math.max(1, parseInt(issueEl.value) || req.qty) : req.qty;
     var item = db.items.find(function(it){ return it.id === req.itemId; });
     if (item) {
+      // Fresh qty first — prevents this line from being computed against a
+      // stale local value and overwriting concurrent changes on write.
+      if (sb) {
+        try {
+          var freshBI = await sb.from('items').select('qty').eq('id', item.id).single();
+          if (freshBI.data && !freshBI.error && freshBI.data.qty !== undefined) item.qty = freshBI.data.qty;
+        } catch(e) {}
+      }
       var newQty = Math.max(0, item.qty - issueQty);
       getLayers(item);
       var _bDetail = describeConsumption(item, issueQty);
@@ -5676,7 +5725,11 @@ async function confirmBatchIssuance() {
       try { await sb.from('supply_requests').update({ status: 'confirmed', confirmedBy: req.confirmedBy, confirmedAt: now, seenByRequestor: false, issuedQty: issueQty }).eq('id', req.id); } catch(e) {}
     }
   }
-  saveReqsLocal(); save();
+  saveReqsLocal();
+  // No bulk save() here — items were already persisted individually above via
+  // sbUpdateItem, which is targeted. A bulk save() would upsert every item from
+  // this session's local memory and could clobber concurrent changes elsewhere.
+  if (!sb) save(); else updateSummary();
   logAudit('Batch confirmed', 'Batch ' + _batchConfirmId + ' (' + batchReqs.length + ' items) by ' + currentUser.username);
   _batchConfirmId = null;
   document.getElementById('crm-issue-qty').style.display = '';
@@ -5829,6 +5882,14 @@ async function confirmIssuance() {
 
   var item = db.items.find(i => i.id === req.itemId);
   if (item) {
+    // Always fetch the latest qty first — prevents this issuance from being
+    // computed against a stale local qty and overwriting concurrent changes.
+    if (sb) {
+      try {
+        var freshCI = await sb.from('items').select('qty').eq('id', item.id).single();
+        if (freshCI.data && !freshCI.error && freshCI.data.qty !== undefined) item.qty = freshCI.data.qty;
+      } catch(e) {}
+    }
     var newQty = Math.max(0, item.qty - issueQty);
     // FIFO: draw from the oldest batch before qty changes
     getLayers(item);
@@ -5844,10 +5905,15 @@ async function confirmIssuance() {
       costAmount: _cost, costDetail: _detail
     };
     db.logs.push(logEntry);
+    updateSummary();
+    // Targeted write only — a bulk save() here would upsert every item from
+    // this session's local memory and could clobber concurrent changes to
+    // OTHER items made by other users/devices since this session last synced.
     if (sb) {
       await sbInsertLogs([logEntry]); await sbUpdateItem(item);
+    } else {
+      save();
     }
-    save();
   }
 
   req.status      = 'confirmed';
@@ -5957,14 +6023,29 @@ async function massConfirmRequests() {
 
         var item = db.items.find(function(it) { return it.id === req.itemId; });
         if (item) {
+          // Fresh qty first — this loop confirms multiple requests in sequence,
+          // so a stale read here would compound across items.
+          if (sb) {
+            try {
+              var freshMC = await sb.from('items').select('qty').eq('id', item.id).single();
+              if (freshMC.data && !freshMC.error && freshMC.data.qty !== undefined) item.qty = freshMC.data.qty;
+            } catch(e) {}
+          }
           var newQty = Math.max(0, item.qty - req.qty);
+          // FIFO: draw from the oldest batch before qty changes (previously
+          // skipped here, which let costLayers drift out of sync with qty)
+          getLayers(item);
+          var _mDetail = describeConsumption(item, req.qty);
+          var _mCost   = consumeLayers(item, req.qty);
           item.qty = newQty;
           item.updatedAt = now;
+          syncItemCost(item);
           var logEntry = {
             id: uid(), itemId: req.itemId, type: 'use',
             qty: req.qty, absQty: newQty,
             by: currentUser.username, date: now, ref: req.reqNumber || '',
-            notes: 'Confirmed — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
+            notes: 'Confirmed — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
+            costAmount: _mCost, costDetail: _mDetail
           };
           db.logs.push(logEntry);
           if (sb) {
@@ -5983,7 +6064,10 @@ async function massConfirmRequests() {
         }
         logAudit('Issuance confirmed (mass)', req.itemName + ' ×' + req.qty + ' (req by ' + req.requestedBy + ')');
       }
-      save();
+      // No bulk save() — items were already persisted individually above via
+      // sbUpdateItem. A bulk save() would upsert every item from this
+      // session's local memory and could clobber concurrent changes elsewhere.
+      if (!sb) save(); else updateSummary();
       saveReqsLocal();
       selectedReqIds.clear();
       updateSummary();
