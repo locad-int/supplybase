@@ -892,6 +892,7 @@
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
         <h3 style="margin:0;font-size:1rem;color:var(--text)">📊 Variance Adjustments</h3>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-secondary" id="btn-compare-files" onclick="openCompareModal()" style="font-size:12px;display:none">⚖ Compare Count Files</button>
           <select id="var-type" onchange="renderVariance()" style="width:auto;flex:0 0 auto">
             <option value="">All Variances</option>
             <option value="negative">Negative (Shortage)</option>
@@ -1241,6 +1242,75 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('import-modal');resetImportModal()">Cancel</button>
       <button id="import-apply-btn" class="btn btn-primary" onclick="applyImport()" style="display:none">✓ Apply Updates</button>
+    </div>
+  </div>
+</div>
+
+<!-- COMPARE COUNT FILES MODAL -->
+<div class="modal-bg" id="compare-modal">
+  <div class="modal" style="max-width:920px">
+    <h2>⚖ Compare Count Files</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+      Compare two count files to see the variance. Nothing is saved until you choose to book it.
+    </p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Before count</label>
+        <div id="cmp-before-drop" onclick="document.getElementById('cmp-before-input').click()"
+             style="margin-top:6px;border:2px dashed var(--border);border-radius:8px;padding:16px;text-align:center;cursor:pointer;font-size:12px;color:var(--muted)">
+          📂 Click to choose file
+        </div>
+        <input type="file" id="cmp-before-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleCompareFile(this,'before')">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">After count</label>
+        <div id="cmp-after-drop" onclick="document.getElementById('cmp-after-input').click()"
+             style="margin-top:6px;border:2px dashed var(--border);border-radius:8px;padding:16px;text-align:center;cursor:pointer;font-size:12px;color:var(--muted)">
+          📂 Click to choose file
+        </div>
+        <input type="file" id="cmp-after-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleCompareFile(this,'after')">
+      </div>
+    </div>
+
+    <p id="cmp-error" style="color:var(--danger);font-size:12px;min-height:16px;margin-bottom:8px"></p>
+
+    <div id="cmp-results" style="display:none">
+      <div id="cmp-summary" style="margin-bottom:10px;padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border)"></div>
+      <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--surface2);position:sticky;top:0">
+              <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Item</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Before</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">After</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Variance</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Unit Cost</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Cost Impact</th>
+              <th style="padding:8px 12px;text-align:center;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">In system</th>
+            </tr>
+          </thead>
+          <tbody id="cmp-body"></tbody>
+        </table>
+      </div>
+      <div id="cmp-notmatched" style="display:none;margin-top:8px;font-size:11px;color:var(--muted)"></div>
+
+      <div style="margin-top:14px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface2)">
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px">Book this variance to expenses</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">Count date</label>
+            <input type="date" id="cmp-book-date" style="font-size:13px">
+          </div>
+          <button class="btn btn-primary" id="cmp-book-btn" onclick="bookCompareVariance()" style="font-size:13px">📌 Book Variance</button>
+        </div>
+        <div id="cmp-book-note" style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6"></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('compare-modal')">Close</button>
+      <button class="btn btn-secondary" onclick="exportCompareCSV()" id="cmp-export-btn" style="display:none">⬇ Export Report</button>
     </div>
   </div>
 </div>
@@ -2477,6 +2547,9 @@ function openMobileMoreMenu() {
     var lockLabel = stocktakeLock ? '🔓 Unlock — End Stocktake' : '🔒 Lock for Stocktake';
     html += '<div class="mm-item" onclick="toggleStocktakeLock();closeMobileMoreMenu()">' + lockLabel + '</div>';
   }
+  if (currentRole === 'superuser') {
+    html += '<div class="mm-item" onclick="closeMobileMoreMenu();openCompareModal()">⚖ Compare Count Files</div>';
+  }
   html += '<div class="mm-item" onclick="openSettings();closeMobileMoreMenu()">⚙ Settings</div>';
   html += '<div class="mm-item" onclick="openChangePassword();closeMobileMoreMenu()">🔑 Change Password</div>';
   if (currentRole === 'superuser') {
@@ -2583,6 +2656,116 @@ function getRunway(item) {
   return { days: Math.round(item.qty / avgDaily), avgDaily: avgDaily };
 }
 
+// ─── FIFO BATCH COSTING ──────────────────────────────────────────────────────
+// Each item carries costLayers: [{qty, cost, date}] held oldest-first.
+// Consumption draws from the oldest batch until it's exhausted, then the next.
+// item.cost always mirrors the OLDEST remaining batch — i.e. what the next unit costs.
+
+function getLayers(item) {
+  if (!item) return [];
+  if (!Array.isArray(item.costLayers)) {
+    // Migrate on first touch: treat existing stock as one opening batch
+    if (typeof item.costLayers === 'string' && item.costLayers) {
+      try { item.costLayers = JSON.parse(item.costLayers); } catch(e) { item.costLayers = null; }
+    }
+    if (!Array.isArray(item.costLayers)) {
+      item.costLayers = (item.qty > 0)
+        ? [{ qty: item.qty, cost: item.cost || 0, date: item.createdAt || new Date().toISOString() }]
+        : [];
+    }
+  }
+  return item.costLayers;
+}
+
+function layersQty(item)   { return getLayers(item).reduce(function(s,l){ return s + l.qty; }, 0); }
+function layersValue(item) { return getLayers(item).reduce(function(s,l){ return s + l.qty * l.cost; }, 0); }
+
+// Cost of the batch currently being issued — drives the displayed Cost/Unit
+function currentUnitCost(item) {
+  var L = getLayers(item);
+  if (!L.length) return item.cost || 0;
+  return L[0].cost;
+}
+
+// Keep item.cost in step with the active batch and reconcile drift
+function syncItemCost(item) {
+  var L = getLayers(item);
+  // Reconcile: if layers drifted from actual qty (manual edits, imports), true them up
+  var lq = layersQty(item);
+  if (lq !== item.qty) {
+    if (item.qty <= 0)      { item.costLayers = []; }
+    else if (lq === 0)      { item.costLayers = [{ qty: item.qty, cost: item.cost || 0, date: new Date().toISOString() }]; }
+    else if (item.qty > lq) { L.push({ qty: item.qty - lq, cost: L.length ? L[L.length-1].cost : (item.cost||0), date: new Date().toISOString() }); }
+    else                    { consumeLayers(item, lq - item.qty); }
+  }
+  item.cost = Math.round(currentUnitCost(item) * 100) / 100;
+  return item.cost;
+}
+
+// Add a received batch on top
+function addLayer(item, qty, unitCost) {
+  if (!(qty > 0)) return;
+  var L = getLayers(item);
+  var c = (unitCost === undefined || unitCost === null || isNaN(unitCost)) ? currentUnitCost(item) : unitCost;
+  var last = L[L.length - 1];
+  if (last && last.cost === c) last.qty += qty;          // merge same-price batches
+  else L.push({ qty: qty, cost: c, date: new Date().toISOString() });
+}
+
+// Stock found during a count. Unlike a delivery, this isn't a new batch —
+// it's stock that should have been there all along, so it joins the OLDEST
+// batch. Appending it instead would give a nonsensical issue order.
+function addFoundStock(item, qty) {
+  if (!(qty > 0)) return 0;
+  var L = getLayers(item);
+  if (L.length) { L[0].qty += qty; return Math.round(qty * L[0].cost * 100) / 100; }
+  var c = item.cost || 0;
+  L.push({ qty: qty, cost: c, date: new Date().toISOString() });
+  return Math.round(qty * c * 100) / 100;
+}
+
+// Draw qty from the oldest batches. Returns the actual cost consumed.
+function consumeLayers(item, qty) {
+  if (!(qty > 0)) return 0;
+  var L = getLayers(item);
+  var remaining = qty, total = 0, used = [];
+  while (remaining > 0 && L.length) {
+    var layer = L[0];
+    var take = Math.min(layer.qty, remaining);
+    total += take * layer.cost;
+    used.push({ qty: take, cost: layer.cost });
+    layer.qty -= take;
+    remaining -= take;
+    if (layer.qty <= 0) L.shift();
+  }
+  if (remaining > 0) {
+    // Consuming beyond recorded batches — value at the last known price
+    var fallback = used.length ? used[used.length-1].cost : (item.cost || 0);
+    total += remaining * fallback;
+    used.push({ qty: remaining, cost: fallback, beyondStock: true });
+  }
+  return Math.round(total * 100) / 100;
+}
+
+// Human-readable breakdown, e.g. "80 @ ₱10 + 20 @ ₱12"
+function describeConsumption(item, qty) {
+  var L = getLayers(item).map(function(l){ return { qty: l.qty, cost: l.cost }; }); // copy
+  var remaining = qty, parts = [];
+  for (var i = 0; i < L.length && remaining > 0; i++) {
+    var take = Math.min(L[i].qty, remaining);
+    parts.push(fmtInt(take) + ' @ ₱' + fmt(L[i].cost));
+    remaining -= take;
+  }
+  if (remaining > 0) parts.push(fmtInt(remaining) + ' @ ₱' + fmt(L.length ? L[L.length-1].cost : (item.cost||0)));
+  return parts.join(' + ');
+}
+
+// Cost of a log entry — prefers the amount captured at the time
+function logCostOf(log, item) {
+  if (log && log.costAmount !== undefined && log.costAmount !== null) return log.costAmount;
+  return Math.abs(log.qty || 0) * (item ? (item.cost || 0) : 0);
+}
+
 function runwayHtml(item) {
   var r = getRunway(item);
   if (!r) return '<span style="color:var(--muted);font-size:12px">—</span>';
@@ -2617,7 +2800,7 @@ function updateSummary() {
     .filter(l => (l.type === 'use' || l.type === 'damage') && new Date(l.date) >= weekStart)
     .reduce((sum, l) => {
       const item = db.items.find(i => i.id === l.itemId);
-      return sum + (l.qty || 0) * (item?.cost || 0);
+      return sum + logCostOf(l, item);
     }, 0);
   document.getElementById('s-value').textContent = fmtPHP(weekExpenses);
 
@@ -2821,15 +3004,33 @@ function saveItem() {
   if (editItemId) {
     const idx = db.items.findIndex(i => i.id === editItemId);
     const old = db.items[idx];
+    const prevQty = old.qty, prevCost = old.cost;
     db.items[idx] = { ...old, ...data };
-    if (old.qty !== qty) {
-      db.logs.push({ id: uid(), itemId: editItemId, type: 'adjust', qty: qty - old.qty, absQty: qty, by: (currentUser && currentUser.username) || 'Edit', date: new Date().toISOString(), notes: 'Item edited', ref: '' });
-      if (qty > old.qty) updateMaxRef(db.items[idx], qty);
+    const it = db.items[idx];
+    getLayers(it); // migrate if needed (preserved by the spread above)
+
+    // Manual cost edit re-prices the batch currently being issued
+    if (prevCost !== data.cost) {
+      const L = getLayers(it);
+      if (L.length) L[0].cost = data.cost;
     }
+    // Manual qty edit moves batches so costing stays consistent
+    if (prevQty !== qty) {
+      const d = qty - prevQty;
+      let cAmt = null, cDet = '';
+      if (d < 0)      { cDet = describeConsumption(it, -d); cAmt = consumeLayers(it, -d); }
+      else            { cAmt = addFoundStock(it, d); }
+      db.logs.push({ id: uid(), itemId: editItemId, type: 'adjust', qty: d, absQty: qty, variance: d,
+        varianceReason: 'Item edited', by: (currentUser && currentUser.username) || 'Edit',
+        date: new Date().toISOString(), notes: 'Item edited', ref: '', costAmount: cAmt, costDetail: cDet });
+      if (qty > prevQty) updateMaxRef(it, qty);
+    }
+    syncItemCost(it);
   } else {
     data.id = uid();
     data.seq = db.items.length ? Math.max(...db.items.map(i=>i.seq||0)) + 1 : 1;
     data.createdAt = new Date().toISOString();
+    data.costLayers = qty > 0 ? [{ qty: qty, cost: data.cost || 0, date: data.createdAt }] : [];
     db.items.push(data);
     db.logs.push({ id: uid(), itemId: data.id, type: 'restock', qty, absQty: qty, by: 'Initial', date: new Date().toISOString(), notes: 'Item created', ref: '' });
     // seed maxRef with opening stock
@@ -3008,6 +3209,9 @@ function openLogDetail(logId) {
     + row('Date & Time', new Date(log.date).toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }))
     + row('Quantity', `<span style="color:${color};font-weight:700">${qtySign}${fmtInt(Math.abs(log.qty))} ${esc(item ? (item.unit||'') : '')}</span>`)
     + (log.absQty != null ? row('Stock after', fmtInt(log.absQty) + ' ' + esc(item ? (item.unit||'') : '')) : '')
+    + (isColHidden('cost') ? '' :
+        (log.costDetail ? row('Batches used', '<span style="font-family:var(--font-mono,monospace);font-size:12px">' + esc(log.costDetail) + '</span>') : '')
+      + (log.costAmount != null ? row('Cost booked', '<strong>' + fmtPHP(log.costAmount) + '</strong>') : ''))
     + row('Performed by', esc(log.by || '—'))
     + row('Reference / PO #', log.ref ? esc(log.ref) : '')
     + (log.type === 'adjust' && log.variance != null ? row('Variance', (log.variance >= 0 ? '+' : '') + fmtInt(log.variance)) : '')
@@ -3057,7 +3261,18 @@ function openItemDetail(itemId) {
         return row('Runway', `<span style="color:${color};font-weight:700">~${r.days} days</span> <span style="color:var(--muted);font-size:11px">(avg ${avgFmt})</span>`);
       })())
     + (isColHidden('unit')     ? '' : row('Unit', esc(item.unit||'—')))
-    + (isColHidden('cost')     ? '' : row('Unit Cost', item.cost ? fmtPHP(item.cost) : ''))
+    + (isColHidden('cost')     ? '' : row('Unit Cost', item.cost ? fmtPHP(item.cost) + ' <span style="color:var(--muted);font-size:11px">(current batch)</span>' : ''))
+    + (isColHidden('cost')     ? '' : (function() {
+        var L = getLayers(item);
+        if (!L.length) return '';
+        var rows = L.map(function(l, i) {
+          return '<div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0;' + (i===0 ? 'font-weight:700' : 'color:var(--muted)') + '">'
+            + '<span>' + (i===0 ? '▶ ' : '&nbsp;&nbsp;&nbsp;') + fmtInt(l.qty) + ' ' + esc(item.unit||'') + ' @ ' + fmtPHP(l.cost) + '</span>'
+            + '<span>' + fmtPHP(l.qty * l.cost) + '</span></div>';
+        }).join('');
+        return row('Batches (FIFO)', rows + '<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-weight:700">'
+          + '<span>Total value</span><span>' + fmtPHP(layersValue(item)) + '</span></div>');
+      })())
     + (isColHidden('supplier') ? '' : row('Supplier', item.supplier ? esc(item.supplier) : ''))
     + (isColHidden('location') ? '' : row('Location', item.location ? esc(item.location) : ''))
     + row('Notes', item.notes ? esc(item.notes) : '')
@@ -3251,13 +3466,17 @@ function updateWACPreview() {
   const qty = parseFloat(document.getElementById('lf-qty').value);
   const item = db.items.find(i => i.id === itemId);
   if (!item || isNaN(deliveryCost) || isNaN(qty) || qty <= 0) { preview.style.display = 'none'; return; }
-  const currentStock = item.qty || 0;
-  const currentCost = item.cost || 0;
-  const newAvg = currentStock > 0
-    ? (currentStock * currentCost + qty * deliveryCost) / (currentStock + qty)
-    : deliveryCost;
+  // FIFO: the delivery becomes a new batch stacked behind existing stock
+  const L = getLayers(item);
+  const onHand = layersQty(item);
   preview.style.display = '';
-  preview.innerHTML = `New avg cost: <strong style="color:var(--accent)">${fmtPHP(newAvg)}</strong> (was ${fmtPHP(currentCost)})`;
+  if (onHand > 0) {
+    preview.innerHTML = 'Added as a new batch. Current stock of <strong>' + fmtInt(onHand) + '</strong> @ '
+      + '<strong>' + fmtPHP(currentUnitCost(item)) + '</strong> will be issued first, then '
+      + '<strong style="color:var(--accent)">' + fmtPHP(deliveryCost) + '</strong>.';
+  } else {
+    preview.innerHTML = 'No stock on hand — new cost becomes <strong style="color:var(--accent)">' + fmtPHP(deliveryCost) + '</strong>.';
+  }
 }
 
 function openLogForItem(itemId) {
@@ -3295,6 +3514,23 @@ async function saveLog() {
   if (type === 'use' || type === 'damage') delta = -qty;
   if (type === 'adjust') delta = qty - item.qty; // treat qty as absolute
   const newQty = Math.max(0, item.qty + delta);
+
+  // ── FIFO: move the batches BEFORE qty changes, capturing actual cost ──
+  getLayers(item); // ensure migrated
+  let fifoCost = null, fifoDetail = '';
+  if (type === 'use' || type === 'damage') {
+    fifoDetail = describeConsumption(item, qty);
+    fifoCost   = consumeLayers(item, qty);
+  } else if (type === 'restock') {
+    const dc = parseFloat(document.getElementById('lf-delivery-cost').value);
+    addLayer(item, qty, (!isNaN(dc) && dc > 0) ? dc : undefined);
+    if (!isNaN(dc) && dc > 0) fifoCost = Math.round(qty * dc * 100) / 100;
+  } else if (type === 'adjust') {
+    const d = newQty - originalQty;
+    if (d < 0)      { fifoDetail = describeConsumption(item, -d); fifoCost = consumeLayers(item, -d); }
+    else if (d > 0) { fifoCost = addFoundStock(item, d); }
+  }
+
   item.qty = newQty;
   item.updatedAt = new Date().toISOString();
   // auto-calibrate peak reference on restock or upward adjust
@@ -3315,19 +3551,12 @@ async function saveLog() {
     logEntry.variance = newQty - originalQty;
     logEntry.varianceReason = document.getElementById('lf-notes').value.trim();
   }
+  // Capture the FIFO cost on the log so reports never re-price history
+  if (fifoCost !== null) logEntry.costAmount = fifoCost;
+  if (fifoDetail) logEntry.costDetail = fifoDetail;
   db.logs.push(logEntry);
-  // Weighted average cost update on restock
-  if (type === 'restock') {
-    const deliveryCost = parseFloat(document.getElementById('lf-delivery-cost').value);
-    if (!isNaN(deliveryCost) && deliveryCost > 0) {
-      const prevStock = originalQty;
-      const prevCost = item.cost || 0;
-      item.cost = prevStock > 0
-        ? (prevStock * prevCost + qty * deliveryCost) / (prevStock + qty)
-        : deliveryCost;
-      item.cost = Math.round(item.cost * 100) / 100; // round to 2 decimal places
-    }
-  }
+  // item.cost now tracks the oldest remaining batch
+  syncItemCost(item);
   // Auto-update open reorders when a restock is logged for the same item
   if (type === 'restock') {
     db.reorders.forEach(r => {
@@ -3357,7 +3586,7 @@ async function saveLog() {
   updateSummary();
   if (sb) {
     try {
-      await sb.from('items').update({ qty: item.qty, cost: item.cost, updatedAt: item.updatedAt, "maxRef": item.maxRef }).eq('id', item.id);
+      await sb.from('items').update({ qty: item.qty, cost: item.cost, updatedAt: item.updatedAt, "maxRef": item.maxRef, "costLayers": item.costLayers }).eq('id', item.id);
       await sb.from('logs').insert([logEntry]);
     } catch(e) { save(); } // fallback to bulk save on error
   } else {
@@ -3707,6 +3936,12 @@ function applyAdjust() {
     document.getElementById('adj-notes').value.trim()
   ].filter(Boolean).join(' | ');
 
+  // FIFO: shortage consumes oldest batches; overage adds at the current batch price
+  getLayers(item);
+  var _aCost = null, _aDetail = '';
+  if (diff < 0)      { _aDetail = describeConsumption(item, -diff); _aCost = consumeLayers(item, -diff); }
+  else if (diff > 0) { _aCost = addFoundStock(item, diff); }
+
   db.logs.push({
     id: uid(),
     itemId: adjustItemId,
@@ -3719,11 +3954,14 @@ function applyAdjust() {
     by: document.getElementById('adj-by').value.trim(),
     date: (adjustTimestamp || new Date()).toISOString(),
     notes: notes,
-    ref: ''
+    ref: '',
+    costAmount: _aCost,
+    costDetail: _aDetail
   });
 
   item.qty = phys;
   item.updatedAt = new Date().toISOString();
+  syncItemCost(item);
   save();
   closeModal('adjust-modal');
   renderInventory();
@@ -4407,7 +4645,7 @@ function renderDashboard() {
   // KPI: Spend
   const totalSpend = spendLogs.reduce((s, l) => {
     const item = db.items.find(i => i.id === l.itemId);
-    return s + (l.qty || 0) * (item?.cost || 0);
+    return s + logCostOf(l, item);
   }, 0);
 
   // KPI: Units consumed
@@ -4425,7 +4663,7 @@ function renderDashboard() {
   });
   const totalRestockCost = restockLogs.reduce((s, l) => {
     const item = db.items.find(i => i.id === l.itemId);
-    return s + (l.qty || 0) * (item?.cost || 0);
+    return s + logCostOf(l, item);
   }, 0);
 
   document.getElementById('dk-spend').textContent   = fmtPHP(totalSpend);
@@ -4443,7 +4681,7 @@ function renderDashboard() {
     return d >= prevFrom && d <= prevTo;
   }).reduce((s, l) => {
     const item = db.items.find(i => i.id === l.itemId);
-    return s + (l.qty || 0) * (item?.cost || 0);
+    return s + logCostOf(l, item);
   }, 0);
   const periodLabel = dashPeriod === 'week' ? 'Last 7 days' : dashPeriod === 'month' ? 'This month' : dashPeriod === '30days' ? 'Last 30 days' : dashPeriod === '90days' ? 'Last 90 days' : 'Custom period';
   let trendSub = periodLabel;
@@ -4490,7 +4728,7 @@ function renderDashboard() {
   spendLogs.forEach(l => {
     const item = db.items.find(i => i.id === l.itemId);
     const cat  = item?.category || 'Uncategorized';
-    catMap[cat] = (catMap[cat] || 0) + (l.qty || 0) * (item?.cost || 0);
+    catMap[cat] = (catMap[cat] || 0) + logCostOf(l, item);
   });
   const catList = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
 
@@ -5319,13 +5557,18 @@ async function confirmBatchIssuance() {
     var item = db.items.find(function(it){ return it.id === req.itemId; });
     if (item) {
       var newQty = Math.max(0, item.qty - issueQty);
+      getLayers(item);
+      var _bDetail = describeConsumption(item, issueQty);
+      var _bCost   = consumeLayers(item, issueQty);
       var logEntry = { id: uid(), itemId: req.itemId, type: 'use', qty: issueQty, absQty: newQty, by: currentUser.username,
-        date: req.createdAt || now, ref: '', notes: 'Batch request — ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '') };
+        date: req.createdAt || now, ref: '', notes: 'Batch request — ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
+        costAmount: _bCost, costDetail: _bDetail };
       db.logs.push(logEntry);
       item.qty = newQty;
       item.updatedAt = now;
+      syncItemCost(item);
       if (sb) {
-        try { await sb.from('logs').insert([logEntry]); await sb.from('items').update({ qty: item.qty, updatedAt: item.updatedAt }).eq('id', item.id); } catch(e) {}
+        try { await sb.from('logs').insert([logEntry]); await sb.from('items').update({ qty: item.qty, cost: item.cost, updatedAt: item.updatedAt, "costLayers": item.costLayers }).eq('id', item.id); } catch(e) {}
       }
     }
     req.status = 'confirmed'; req.confirmedBy = currentUser.username; req.confirmedAt = now;
@@ -5481,16 +5724,22 @@ async function confirmIssuance() {
   var item = db.items.find(i => i.id === req.itemId);
   if (item) {
     var newQty = Math.max(0, item.qty - issueQty);
+    // FIFO: draw from the oldest batch before qty changes
+    getLayers(item);
+    var _detail = describeConsumption(item, issueQty);
+    var _cost   = consumeLayers(item, issueQty);
     item.qty = newQty;
     item.updatedAt = new Date().toISOString();
+    syncItemCost(item);
     var logEntry = {
       id: uid(), itemId: req.itemId, type: 'use', qty: issueQty, absQty: newQty,
       by: currentUser.username, date: new Date().toISOString(), ref: req.reqNumber || '',
-      notes: 'Confirmed — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : '')
+      notes: 'Confirmed — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
+      costAmount: _cost, costDetail: _detail
     };
     db.logs.push(logEntry);
     if (sb) {
-      try { await sb.from('logs').insert([logEntry]); await sb.from('items').update({ qty: item.qty, updatedAt: item.updatedAt }).eq('id', item.id); } catch(e) {}
+      try { await sb.from('logs').insert([logEntry]); await sb.from('items').update({ qty: item.qty, cost: item.cost, updatedAt: item.updatedAt, "costLayers": item.costLayers }).eq('id', item.id); } catch(e) {}
     }
     save();
   }
@@ -6724,6 +6973,7 @@ function applyRoleUI() {
   if (expensesCard) expensesCard.style.display = isBrand ? 'none' : '';
 
   show('btn-clear-audit', currentRole === 'superuser');
+  show('btn-compare-files', currentRole === 'superuser');
 
   // Import button: controlled by userPermissions for user role
   show('btn-import-file', can('import_inventory'));
@@ -6853,6 +7103,7 @@ async function confirmFullReset() {
     db.items.forEach(function(item) {
       item.qty = 0;
       item.baselineQty = null;
+      item.costLayers = [];   // clear FIFO batches too
       item.updatedAt = now;
     });
     // Clear all history
@@ -6868,7 +7119,7 @@ async function confirmFullReset() {
       }
       try {
         for (var i = 0; i < db.items.length; i++) {
-          await sb.from('items').update({ qty: 0, baselineQty: null, updatedAt: now }).eq('id', db.items[i].id);
+          await sb.from('items').update({ qty: 0, baselineQty: null, "costLayers": [], updatedAt: now }).eq('id', db.items[i].id);
         }
       } catch(e) {}
     }
@@ -7645,7 +7896,7 @@ function exportCostReportCSV() {
     if (!costMap[log.itemId]) costMap[log.itemId] = { qty: 0, cost: 0 };
     var item = db.items.find(function(i){ return i.id === log.itemId; });
     costMap[log.itemId].qty += log.qty || 0;
-    costMap[log.itemId].cost += (log.qty || 0) * (item ? (item.cost || 0) : 0);
+    costMap[log.itemId].cost += logCostOf(log, item);
     if (item) costMap[log.itemId].item = item;
   });
   Object.values(costMap).sort(function(a,b){ return b.cost - a.cost; }).forEach(function(entry) {
@@ -7744,6 +7995,241 @@ function parseCSVLine(line) {
 }
 
 function normalizeHeader(h) { return (h || '').toLowerCase().replace(/[\s\/\-_]/g, ''); }
+
+// ─── COMPARE COUNT FILES ─────────────────────────────────────────────────────
+var _cmpBefore = null, _cmpAfter = null, _cmpRows = [];
+
+function openCompareModal() {
+  resetCompareModal();
+  // default the count date to the most recent Saturday
+  var d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 1) % 7));
+  document.getElementById('cmp-book-date').value = d.toISOString().split('T')[0];
+  openModal('compare-modal');
+}
+
+function resetCompareModal() {
+  _cmpBefore = null; _cmpAfter = null; _cmpRows = [];
+  ['before','after'].forEach(function(w) {
+    var inp = document.getElementById('cmp-' + w + '-input');
+    if (inp) inp.value = '';
+    var drop = document.getElementById('cmp-' + w + '-drop');
+    if (drop) { drop.innerHTML = '📂 Click to choose file'; drop.style.borderColor = 'var(--border)'; }
+  });
+  document.getElementById('cmp-error').textContent = '';
+  document.getElementById('cmp-results').style.display = 'none';
+  document.getElementById('cmp-export-btn').style.display = 'none';
+}
+
+// Generic file → rows parser (shared shape with the importer)
+function parseAnyFile(file, cb) {
+  var ext = file.name.split('.').pop().toLowerCase();
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      if (ext === 'csv') {
+        var lines = String(e.target.result).split(/\r?\n/).filter(function(l){ return l.trim(); });
+        if (!lines.length) return cb([], 'File is empty.');
+        var headers = parseCSVLine(lines[0]);
+        var out = [];
+        for (var i = 1; i < lines.length; i++) {
+          var vals = parseCSVLine(lines[i]);
+          if (!vals.length || vals.every(function(v){ return !v.trim(); })) continue;
+          var obj = {};
+          headers.forEach(function(h, idx){ obj[h.trim()] = (vals[idx] || '').trim(); });
+          out.push(obj);
+        }
+        cb(out, null);
+      } else {
+        var wb = XLSX.read(e.target.result, { type: 'array' });
+        cb(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }), null);
+      }
+    } catch (err) { cb([], 'Could not parse file: ' + err.message); }
+  };
+  if (ext === 'csv') reader.readAsText(file); else reader.readAsArrayBuffer(file);
+}
+
+// Turn parsed rows into { key -> {name, sku, qty, cost} }
+function extractCountMap(rows) {
+  if (!rows.length) return null;
+  var origKeys = Object.keys(rows[0]);
+  function findCol(keys) {
+    for (var ki = 0; ki < keys.length; ki++)
+      for (var hi = 0; hi < origKeys.length; hi++)
+        if (normalizeHeader(origKeys[hi]) === keys[ki]) return origKeys[hi];
+    return null;
+  }
+  var cName = findCol(['name','itemname','item']);
+  var cSku  = findCol(['sku','code','itemcode','skucode']);
+  var cQty  = findCol(['stock','qty','quantity','currentstock','currentqty']);
+  var cCost = findCol(['costunit','cost','unitcost','costperunit','price']);
+  if (!cName && !cSku) return null;
+
+  var map = {};
+  rows.forEach(function(r) {
+    var name = cName ? String(r[cName] || '').trim() : '';
+    var sku  = cSku  ? String(r[cSku]  || '').trim() : '';
+    if (!name && !sku) return;
+    var qty  = cQty  ? parseFloat(r[cQty])  : NaN;
+    var cost = cCost ? parseFloat(r[cCost]) : NaN;
+    var key = (sku ? 's:' + sku.toLowerCase() : 'n:' + name.toLowerCase());
+    map[key] = { name: name, sku: sku, qty: isNaN(qty) ? null : qty, cost: isNaN(cost) ? null : cost };
+  });
+  return map;
+}
+
+function handleCompareFile(input, which) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var errEl = document.getElementById('cmp-error');
+  errEl.textContent = '';
+  parseAnyFile(file, function(rows, err) {
+    if (err) { errEl.textContent = err; return; }
+    var map = extractCountMap(rows);
+    if (!map) { errEl.textContent = 'The ' + which + ' file needs a Name or SKU column, plus Stock/Qty.'; return; }
+    if (which === 'before') _cmpBefore = map; else _cmpAfter = map;
+    var drop = document.getElementById('cmp-' + which + '-drop');
+    drop.innerHTML = '✓ ' + esc(file.name) + '<br><span style="font-size:10px">' + Object.keys(map).length + ' rows</span>';
+    drop.style.borderColor = 'var(--ok)';
+    if (_cmpBefore && _cmpAfter) runCompare();
+  });
+}
+
+function runCompare() {
+  var errEl = document.getElementById('cmp-error');
+  var keys = {};
+  Object.keys(_cmpBefore).forEach(function(k){ keys[k] = true; });
+  Object.keys(_cmpAfter).forEach(function(k){ keys[k] = true; });
+
+  _cmpRows = [];
+  var notMatched = [];
+  Object.keys(keys).forEach(function(k) {
+    var b = _cmpBefore[k], a = _cmpAfter[k];
+    if (!b || !a) { notMatched.push((a || b).name || (a || b).sku); return; }
+    if (b.qty === null || a.qty === null) return;
+    var variance = a.qty - b.qty;
+    if (variance === 0) return; // only show differences
+    // Cost basis: before-file cost, falling back to the item's current cost
+    var item = null;
+    if (b.sku) item = db.items.find(function(i){ return i.sku && i.sku.toLowerCase() === b.sku.toLowerCase(); });
+    if (!item && b.name) item = db.items.find(function(i){ return i.name.toLowerCase() === b.name.toLowerCase(); });
+    var cost = (b.cost !== null && b.cost > 0) ? b.cost : (item ? (item.cost || 0) : 0);
+    _cmpRows.push({
+      name: a.name || b.name, sku: a.sku || b.sku,
+      beforeQty: b.qty, afterQty: a.qty, variance: variance,
+      cost: cost, costImpact: variance * cost,
+      item: item, costFromFile: (b.cost !== null && b.cost > 0)
+    });
+  });
+
+  _cmpRows.sort(function(x, y){ return Math.abs(y.costImpact) - Math.abs(x.costImpact); });
+
+  var tbody = document.getElementById('cmp-body');
+  tbody.innerHTML = _cmpRows.map(function(r) {
+    var col = r.variance < 0 ? '#dc2626' : '#16a34a';
+    return '<tr style="border-bottom:1px solid var(--border)">'
+      + '<td style="padding:8px 12px;font-weight:600">' + esc(r.name) + (r.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.sku) + '</span>' : '') + '</td>'
+      + '<td style="text-align:right">' + fmtInt(r.beforeQty) + '</td>'
+      + '<td style="text-align:right">' + fmtInt(r.afterQty) + '</td>'
+      + '<td style="text-align:right;font-weight:700;color:' + col + '">' + (r.variance > 0 ? '+' : '') + fmtInt(r.variance) + '</td>'
+      + '<td style="text-align:right;color:var(--muted)">' + (r.cost ? '₱' + fmt(r.cost) : '—') + '</td>'
+      + '<td style="text-align:right;font-weight:700;color:' + col + '">' + (r.costImpact ? (r.costImpact > 0 ? '+' : '−') + '₱' + fmt(Math.abs(r.costImpact)) : '—') + '</td>'
+      + '<td style="text-align:center">' + (r.item ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--warn)" title="Not found — cannot be booked">—</span>') + '</td>'
+      + '</tr>';
+  }).join('') || '<tr><td colspan="7" style="padding:16px;text-align:center;color:var(--muted)">No differences between the two files.</td></tr>';
+
+  // Totals
+  var sC=0,oC=0,sU=0,oU=0,sCost=0,oCost=0;
+  _cmpRows.forEach(function(r) {
+    if (r.variance < 0) { sC++; sU += -r.variance; sCost += -r.costImpact; }
+    else                { oC++; oU +=  r.variance; oCost +=  r.costImpact; }
+  });
+  var net = oCost - sCost;
+  document.getElementById('cmp-summary').innerHTML =
+    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Variance summary</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px">'
+    + '<span style="color:#dc2626">⬇ Shortage: <strong>' + sC + '</strong> items · ' + fmtInt(sU) + ' units · ₱' + fmt(sCost) + '</span>'
+    + '<span style="color:#16a34a">⬆ Excess: <strong>' + oC + '</strong> items · ' + fmtInt(oU) + ' units · ₱' + fmt(oCost) + '</span>'
+    + '<span style="font-weight:700">Net: ' + (net < 0 ? '−' : '+') + '₱' + fmt(Math.abs(net)) + '</span>'
+    + '</div>';
+
+  var nmEl = document.getElementById('cmp-notmatched');
+  if (notMatched.length) {
+    nmEl.style.display = '';
+    nmEl.innerHTML = '<strong>⚠ In only one file (ignored):</strong> ' + esc(notMatched.slice(0,30).join(', ')) + (notMatched.length > 30 ? ' …and ' + (notMatched.length-30) + ' more' : '');
+  } else nmEl.style.display = 'none';
+
+  var bookable = _cmpRows.filter(function(r){ return r.item; });
+  var qtyChanges = bookable.filter(function(r){ return r.item.qty !== r.afterQty; });
+  document.getElementById('cmp-book-note').innerHTML =
+    'Creates ' + bookable.length + ' adjustment record' + (bookable.length===1?'':'s') + ' dated to the count date, so the cost lands in that week\'s expenses.<br>'
+    + (qtyChanges.length
+        ? '<span style="color:var(--warn)">⚠ ' + qtyChanges.length + ' item' + (qtyChanges.length===1?'':'s') + ' will also have stock updated to the after-count figure.</span>'
+        : '<span style="color:var(--ok)">✓ Stock already matches the after-count figures — no quantities will change.</span>')
+    + (_cmpRows.length - bookable.length ? '<br><span style="color:var(--muted)">' + (_cmpRows.length - bookable.length) + ' row(s) not found in the system and will be skipped.</span>' : '');
+
+  document.getElementById('cmp-book-btn').style.display = (currentRole === 'superuser' && bookable.length) ? '' : 'none';
+  document.getElementById('cmp-results').style.display = '';
+  document.getElementById('cmp-export-btn').style.display = _cmpRows.length ? '' : 'none';
+  errEl.textContent = '';
+}
+
+async function bookCompareVariance() {
+  if (currentRole !== 'superuser') return;
+  var dateVal = document.getElementById('cmp-book-date').value;
+  if (!dateVal) { document.getElementById('cmp-error').textContent = 'Choose a count date first.'; return; }
+  var bookable = _cmpRows.filter(function(r){ return r.item; });
+  if (!bookable.length) return;
+
+  var qtyChanges = bookable.filter(function(r){ return r.item.qty !== r.afterQty; });
+  var msg = 'Book ' + bookable.length + ' variance record' + (bookable.length===1?'':'s') + ' dated ' + dateVal + '?\n\n'
+    + (qtyChanges.length ? qtyChanges.length + ' item(s) will also have stock updated.\n\n' : 'No stock quantities will change.\n\n')
+    + 'This cannot be undone.';
+
+  showConfirm('Book Variance', msg, async function() {
+    var stamp = new Date(dateVal + 'T12:00:00').toISOString();
+    var newLogs = [], changedItems = [];
+    bookable.forEach(function(r) {
+      newLogs.push({
+        id: uid(), itemId: r.item.id, type: 'adjust',
+        qty: Math.abs(r.variance), absQty: r.afterQty,
+        by: (currentUser && currentUser.username) || 'Compare',
+        date: stamp, ref: '',
+        notes: 'Count variance (file compare) — before ' + r.beforeQty + ', after ' + r.afterQty,
+        variance: r.variance,
+        varianceReason: 'Physical count (file compare)'
+      });
+      if (r.item.qty !== r.afterQty) {
+        r.item.qty = r.afterQty;
+        r.item.updatedAt = stamp;
+        changedItems.push(r.item);
+      }
+    });
+    db.logs = db.logs.concat(newLogs);
+    save();
+    if (sb) {
+      try {
+        await sb.from('logs').insert(newLogs);
+        for (var i = 0; i < changedItems.length; i++) {
+          await sb.from('items').update({ qty: changedItems[i].qty, updatedAt: changedItems[i].updatedAt }).eq('id', changedItems[i].id);
+        }
+      } catch(e) {}
+    }
+    logAudit('Variance booked', bookable.length + ' records dated ' + dateVal + (changedItems.length ? '; ' + changedItems.length + ' quantities updated' : ''));
+    renderInventory(); renderLogs(); updateSummary();
+    if (typeof renderVariance === 'function') renderVariance();
+    closeModal('compare-modal');
+    alert('✅ Booked ' + bookable.length + ' variance record(s) to ' + dateVal + '.');
+  }, { danger: true, confirmLabel: 'Book Variance' });
+}
+
+function exportCompareCSV() {
+  var rows = [['Item','SKU','Before','After','Variance','Unit Cost','Cost Impact','In System']];
+  _cmpRows.forEach(function(r) {
+    rows.push([r.name, r.sku||'', r.beforeQty, r.afterQty, r.variance, r.cost, Math.round(r.costImpact*100)/100, r.item ? 'yes' : 'no']);
+  });
+  downloadCSV('count_variance_' + new Date().toISOString().split('T')[0] + '.csv', rows);
+}
 
 function previewImport(rows) {
   if (!rows || !rows.length) { alert('No data found in file.'); return; }
@@ -8037,6 +8523,7 @@ async function applyImport() {
       notes: '',
       baselineQty: r.qty,
       maxRef: r.qty,
+      costLayers: r.qty > 0 ? [{ qty: r.qty, cost: r.cost || 0, date: now }] : [],
       createdAt: now,
       updatedAt: now
     };
@@ -8080,6 +8567,10 @@ async function applyImport() {
         variance:       diff,
         varianceReason: 'Physical count (import)'
       };
+      // FIFO: move batches to match the counted quantity
+      getLayers(r.item);
+      if (diff < 0)      { logEntry.costDetail = describeConsumption(r.item, -diff); logEntry.costAmount = consumeLayers(r.item, -diff); }
+      else if (diff > 0) { logEntry.costAmount = addFoundStock(r.item, diff); }
       db.logs.push(logEntry);
       var prevQty = r.item.qty;
       r.item.qty = r.newQty;
@@ -8089,6 +8580,9 @@ async function applyImport() {
     }
     if (r.newCost !== undefined && r.newCost !== r.item.cost) {
       changes.push('cost→₱' + r.newCost);
+      // Re-price the current batch; later batches keep their own cost
+      var _L = getLayers(r.item);
+      if (_L.length) _L[0].cost = r.newCost;
       r.item.cost = r.newCost;
     }
     if (r.newSupplier !== undefined) {
@@ -8122,7 +8616,7 @@ async function applyImport() {
       // Update in Supabase
       for (var u = 0; u < toUpdate.length; u++) {
         var r = toUpdate[u];
-        await sb.from('items').update({ qty: r.item.qty, cost: r.item.cost, supplier: r.item.supplier, category: r.item.category, "baselineQty": r.item.baselineQty }).eq('id', r.item.id);
+        await sb.from('items').update({ qty: r.item.qty, cost: r.item.cost, supplier: r.item.supplier, category: r.item.category, "baselineQty": r.item.baselineQty, "costLayers": r.item.costLayers }).eq('id', r.item.id);
       }
     } catch(e) {}
   }
@@ -8155,7 +8649,7 @@ function renderMonthlyReport() {
   db.logs.filter(function(l){ return l.type === 'use' || l.type === 'damage'; }).forEach(function(log) {
     var d = new Date(log.date);
     var item = db.items.find(function(i){ return i.id === log.itemId; });
-    var cost = (log.qty || 0) * (item ? (item.cost || 0) : 0);
+    var cost = logCostOf(log, item);
     var bucket = months.find(function(m){ return m.year === d.getFullYear() && m.month === d.getMonth(); });
     if (bucket) bucket.total += cost;
   });
@@ -8188,7 +8682,7 @@ function renderUserReport() {
     userMap[u].units += log.qty || 0;
     var item = db.items.find(function(i){ return i.id === log.itemId; });
     if (log.type === 'use' || log.type === 'damage') {
-      userMap[u].cost += (log.qty || 0) * (item ? (item.cost || 0) : 0);
+      userMap[u].cost += logCostOf(log, item);
     }
   });
 
