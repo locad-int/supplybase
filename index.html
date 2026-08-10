@@ -1100,7 +1100,7 @@
         <div id="req-oos-warning" style="display:none" class="form-group full">
           <div style="background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);border-radius:8px;padding:8px 12px;display:flex;align-items:flex-start;gap:8px">
             <span style="font-size:16px;line-height:1.2">⛔</span>
-            <div><div style="font-weight:700;color:#dc2626;font-size:12px">Out of Stock</div><div style="font-size:11px;color:var(--muted);margin-top:1px">0 on hand. Request may be held until restocked.</div></div>
+            <div><div style="font-weight:700;color:#dc2626;font-size:12px">Out of Stock — cannot be requested</div><div style="font-size:11px;color:var(--muted);margin-top:1px">0 on hand. Choose another item, or wait until it is restocked.</div></div>
           </div>
         </div>
         <div class="form-group">
@@ -1130,7 +1130,7 @@
           </select>
         </div>
       </div>
-      <button class="btn btn-secondary" onclick="addToReqCart()" style="width:100%;margin-top:6px;font-size:13px">+ Add to Request</button>
+      <button class="btn btn-secondary" id="btn-add-to-req" onclick="addToReqCart()" style="width:100%;margin-top:6px;font-size:13px">+ Add to Request</button>
       <div id="req-error" style="color:var(--danger);font-size:12px;margin-top:6px"></div>
     </div>
 
@@ -5288,6 +5288,11 @@ function addToReqCart() {
   // Prevent duplicate items in same cart
   if (reqCart.find(function(c) { return c.itemId === itemId; })) { errEl.textContent = 'This item is already in the request.'; return; }
   var item = db.items.find(function(i) { return i.id === itemId; });
+  // Block out-of-stock items outright
+  if (item && (item.qty || 0) <= 0) {
+    errEl.textContent = '⛔ ' + item.name + ' is out of stock and cannot be requested.';
+    return;
+  }
   reqCart.push({ itemId: itemId, itemName: item ? item.name : itemId, unit: item ? (item.unit||'') : '', qty: qty, priority: priority, notes: notes, station: station });
   errEl.textContent = '';
   // Reset add form
@@ -5325,9 +5330,12 @@ function renderReqCart() {
   if (count === 0) { listEl.innerHTML = ''; return; }
   var priorityLabels = { normal: '', urgent: '🔴 Urgent', low: '🔵 Low' };
   listEl.innerHTML = reqCart.map(function(c, idx) {
-    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:7px">'
+    // Flag anything that has gone out of stock since it was added
+    var cItem = db.items.find(function(i){ return i.id === c.itemId; });
+    var cOOS  = !!(cItem && (cItem.qty || 0) <= 0);
+    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:' + (cOOS ? 'rgba(220,38,38,.08)' : 'var(--surface2)') + ';border:1px solid ' + (cOOS ? 'rgba(220,38,38,.35)' : 'var(--border)') + ';border-radius:7px">'
       + '<div style="flex:1;min-width:0">'
-      + '<div style="font-size:13px;font-weight:600">' + esc(c.itemName) + '</div>'
+      + '<div style="font-size:13px;font-weight:600">' + esc(c.itemName) + (cOOS ? ' <span style="color:#dc2626;font-size:11px;font-weight:700">⛔ Out of stock</span>' : '') + '</div>'
       + '<div style="font-size:11px;color:var(--muted);margin-top:1px">'
       + '<strong>' + fmtInt(c.qty) + ' ' + esc(c.unit) + '</strong>'
       + (c.station ? ' · <span style="background:rgba(37,99,235,.1);color:#2563eb;padding:1px 6px;border-radius:4px;font-weight:600">📦 ' + esc(c.station) + '</span>' : '')
@@ -5354,6 +5362,8 @@ function openNewRequestModal(preItemId) {
   document.getElementById('req-error').textContent = '';
   var oosEl = document.getElementById('req-oos-warning');
   if (oosEl) oosEl.style.display = 'none';
+  var addBtn0 = document.getElementById('btn-add-to-req');
+  if (addBtn0) { addBtn0.disabled = false; addBtn0.style.opacity = ''; addBtn0.style.cursor = ''; addBtn0.textContent = '+ Add to Request'; }
   // Show/hide QC station row
   var stationRow = document.getElementById('req-station-row');
   if (stationRow) {
@@ -5407,10 +5417,18 @@ function selectReqItem(id, name, unit) {
   document.getElementById('req-item-search').value = name;
   document.getElementById('req-unit').value         = unit;
   closeReqItemDropdown();
-  // Show OOS warning if item has no stock
+  // Show OOS warning and disable Add if the item has no stock
   var item = db.items.find(function(i){ return i.id === id; });
+  var isOOS = !!(item && (item.qty || 0) <= 0);
   var oosEl = document.getElementById('req-oos-warning');
-  if (oosEl) oosEl.style.display = (item && item.qty <= 0) ? '' : 'none';
+  if (oosEl) oosEl.style.display = isOOS ? '' : 'none';
+  var addBtn = document.getElementById('btn-add-to-req');
+  if (addBtn) {
+    addBtn.disabled = isOOS;
+    addBtn.style.opacity = isOOS ? '.5' : '';
+    addBtn.style.cursor  = isOOS ? 'not-allowed' : '';
+    addBtn.textContent   = isOOS ? '⛔ Out of Stock' : '+ Add to Request';
+  }
   document.getElementById('req-qty').focus();
 }
 
@@ -5423,6 +5441,19 @@ async function submitRequest() {
   if (checkStocktakeLock()) return;
   var errEl = document.getElementById('req-error');
   if (reqCart.length === 0) { errEl.textContent = 'Add at least one item to the request.'; return; }
+
+  // Re-check stock at submit — an item may have gone to zero since it was added,
+  // and this covers batch (multi-item) carts as well as single requests
+  var oos = reqCart.filter(function(c) {
+    var it = db.items.find(function(i){ return i.id === c.itemId; });
+    return it && (it.qty || 0) <= 0;
+  });
+  if (oos.length) {
+    errEl.innerHTML = '⛔ Out of stock — remove before submitting: <strong>'
+      + oos.map(function(c){ return esc(c.itemName); }).join(', ') + '</strong>';
+    renderReqCart();
+    return;
+  }
 
   var batchId = reqCart.length > 1 ? ('batch_' + Date.now() + '_' + Math.random().toString(36).slice(2,7)) : null;
   var now = new Date();
@@ -5482,16 +5513,24 @@ async function withdrawRequest(reqId) {
   var req = db_reqs.find(r => r.id === reqId);
   if (!req || req.status !== 'pending') return;
   var label = req.reqNumber ? req.reqNumber + ' — ' + req.itemName : req.itemName;
-  showConfirm('Withdraw Request', 'Withdraw ' + label + '?\n\nThis cannot be undone.', async function() {
+  // Different wording depending on whether it's your own request or one you're approving
+  var isOwn = currentUser && req.requestedBy === currentUser.username;
+  var siblings = req.batchId ? db_reqs.filter(function(r){ return r.batchId === req.batchId && r.status === 'pending' && r.id !== reqId; }).length : 0;
+  var title = isOwn ? 'Withdraw Request' : 'Remove Line';
+  var msg = (isOwn ? 'Withdraw ' : 'Remove ') + label + '?\n\n'
+    + (siblings ? 'The other ' + siblings + ' item' + (siblings===1?'':'s') + ' in this batch stay pending.\n\n' : '')
+    + 'This cannot be undone.';
+  showConfirm(title, msg, async function() {
     db_reqs = db_reqs.filter(r => r.id !== reqId);
     saveReqsLocal();
     if (sb && REQ_TABLE_OK !== false) {
       try { await sb.from('supply_requests').delete().eq('id', reqId); } catch(e) {}
     }
-    logAudit('Request withdrawn', label + ' (by ' + (currentUser?.username || '') + ')');
+    logAudit(isOwn ? 'Request withdrawn' : 'Request line removed',
+      label + ' (by ' + (currentUser?.username || '') + (isOwn ? '' : '; requested by ' + req.requestedBy) + ')');
     updateRequestBadge();
     renderRequests();
-  }, { danger: true, confirmLabel: 'Withdraw' });
+  }, { danger: true, confirmLabel: isOwn ? 'Withdraw' : 'Remove Line' });
 }
 
 async function withdrawBatch(batchId) {
@@ -5654,6 +5693,13 @@ async function saveEditRequest() {
   if (!qty || qty < 1) { errEl.textContent = 'Quantity must be at least 1.'; return; }
 
   var item = db.items.find(i => i.id === itemId);
+  // Block SWITCHING to an out-of-stock item. If the request's own item has since
+  // gone out of stock, editing is still allowed so the qty can be reduced,
+  // notes corrected, or the request tidied up before withdrawing.
+  if (item && (item.qty || 0) <= 0 && itemId !== req.itemId) {
+    errEl.textContent = '⛔ ' + item.name + ' is out of stock — pick a different item.';
+    return;
+  }
   req.itemId    = itemId;
   req.itemName  = item ? item.name : itemId;
   req.unit      = item ? (item.unit || '') : '';
@@ -6168,14 +6214,17 @@ alter publication supabase_realtime add table settings;</pre>
       var reqNumLabel = reqNums.length >= 2 ? (reqNums[reqNums.length-1] + ' – ' + reqNums[0]) : (reqNums[0] || '');
       // Action buttons for batch
       var batchActions = '';
-      if (isOwnPending && currentRole === 'user') {
+      // Owner of a pending batch — covers Requestor as well as User
+      if (isOwnPending && (currentRole === 'user' || !isAdmin)) {
         batchActions = `<div class="req-card-actions">
           <button class="btn btn-danger" style="font-size:12px;padding:5px 12px" onclick="withdrawBatch('${group.batchId}')">✕ Withdraw Batch</button>
-        </div>`;
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic">Use ✏️ / ✕ on a line above to change or remove a single item.</div>`;
       } else if (isAdmin && batchStatus === 'pending' && canConfirm) {
         batchActions = `<div class="req-card-actions">
           <button class="btn btn-primary" style="font-size:12px;padding:5px 12px" onclick="openBatchConfirmModal('${group.batchId}')">Review & Confirm Batch</button>
-        </div>`;
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic">Can't fulfil a line? Use ✕ to drop it — the rest of the batch stays pending.</div>`;
       } else if (isAdmin && batchStatus === 'pending' && !canConfirm) {
         batchActions = `<div style="font-size:11px;color:var(--muted);margin-top:8px;font-style:italic">Awaiting superuser approval</div>`;
       } else if (batchStatus === 'confirmed') {
@@ -6199,12 +6248,22 @@ alter publication supabase_realtime add table settings;</pre>
         <div style="background:var(--surface2);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px;margin-bottom:4px">
           ${items.map(function(r, idx) {
             var itemStockTag = stockInlineTag(r.itemId, r.qty);
+            // The requester can edit their own lines; an approver can drop a line
+            // they can't fulfil, rather than rejecting the whole batch.
+            var isLineOwner  = r.status === 'pending' && currentUser && r.requestedBy === currentUser.username;
+            var canEditLine  = isLineOwner;
+            var canDropLine  = r.status === 'pending' && (isLineOwner || (isAdmin && canConfirm));
+            var lineActions = (canEditLine || canDropLine) ? `<div style="display:flex;gap:4px;flex-shrink:0">
+                ${canEditLine ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 8px" title="Edit this item" onclick="event.stopPropagation();openEditRequest('${r.id}')">✏️</button>` : ''}
+                ${canDropLine ? `<button class="btn btn-danger" style="font-size:11px;padding:3px 8px" title="${isLineOwner ? 'Remove this item from the batch' : 'Remove this line — the rest of the batch stays'}" onclick="event.stopPropagation();withdrawRequest('${r.id}')">✕</button>` : ''}
+              </div>` : '';
             return `<div style="display:flex;align-items:flex-start;gap:8px;font-size:13px;${idx < items.length-1 ? 'border-bottom:1px solid var(--border);padding-bottom:6px;' : ''}">
               <span style="font-size:11px;color:var(--muted);min-width:22px;padding-top:2px">${idx+1}.</span>
-              <div style="flex:1">
+              <div style="flex:1;min-width:0">
                 <div style="font-weight:600">${esc(r.itemName)} ${itemStockTag}</div>
                 <div style="font-size:11px;color:var(--muted)">Qty: ${fmtInt(r.qty)} ${esc(r.unit||'')}${r.notes ? ' · <em>' + esc(r.notes) + '</em>' : ''}</div>
               </div>
+              ${lineActions}
             </div>`;
           }).join('')}
         </div>
