@@ -172,6 +172,7 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
   /* Empty state */
+  .hidden { display: none !important; }
   .empty { text-align: center; padding: 48px 24px; color: var(--muted); }
   .empty .icon { font-size: 3rem; margin-bottom: 10px; }
 
@@ -651,6 +652,12 @@
       </span>
     </div>
   </header>
+  <!-- FIFO SCHEMA WARNING -->
+  <div id="fifo-warning" style="display:none;background:#dc2626;color:#fff;padding:10px 16px;font-size:13px;font-weight:600;text-align:center">
+    ⚠ Database is missing the FIFO columns — batch costing is not being saved.
+    Run <code style="background:rgba(255,255,255,.2);padding:1px 5px;border-radius:4px">fifo_setup.sql</code> in Supabase → SQL Editor.
+  </div>
+
   <!-- STOCKTAKE LOCK BANNER -->
   <div id="stocktake-banner">
     🔒 Stocktake in Progress — All transactions are locked
@@ -2375,6 +2382,59 @@ async function _sbDeleteItem(id) {
 }
 async function _sbDeleteReorder(id) { if (sb) await sb.from('reorders').delete().eq('id', id); }
 async function _sbDeleteAccount(id) { if (sb) await sb.from('accounts').delete().eq('id', id); }
+// ─── SUPABASE WRITE HELPERS ──────────────────────────────────────────────────
+// The Supabase client RESOLVES with {data, error} instead of throwing, so a bare
+// try/catch silently swallows failures — the change lands locally, never reaches
+// the database, and vanishes on the next refresh. These helpers check .error and
+// degrade gracefully if the FIFO columns haven't been added to the schema yet.
+var _fifoColsOK = null; // null = untested, true = present, false = missing
+
+function _errMentions(err, col) {
+  return ((err && (err.message || err.hint || err.details)) + '').toLowerCase().indexOf(col.toLowerCase()) !== -1;
+}
+
+function _warnFifoMissing() {
+  if (_fifoColsOK === false) return;
+  _fifoColsOK = false;
+  console.warn('SupplyBase: FIFO columns missing in Supabase. Run fifo_setup.sql — batch costing will not persist until you do.');
+  var b = document.getElementById('fifo-warning');
+  if (b) b.style.display = '';
+}
+
+// Update one item row. Returns true on success.
+async function sbUpdateItem(item, extra) {
+  if (!sb || !item) return false;
+  var base = Object.assign({ qty: item.qty, cost: item.cost, updatedAt: item.updatedAt }, extra || {});
+  if (_fifoColsOK !== false) {
+    var r = await sb.from('items').update(Object.assign({}, base, { "costLayers": item.costLayers || [] })).eq('id', item.id);
+    if (!r.error) { _fifoColsOK = true; return true; }
+    if (!_errMentions(r.error, 'costLayers')) { console.warn('Item update failed:', r.error.message); return false; }
+    _warnFifoMissing();
+  }
+  var r2 = await sb.from('items').update(base).eq('id', item.id);
+  if (r2.error) { console.warn('Item update failed:', r2.error.message); return false; }
+  return true;
+}
+
+// Insert log rows, stripping FIFO fields if the columns don't exist.
+async function sbInsertLogs(entries) {
+  if (!sb || !entries || !entries.length) return false;
+  if (_fifoColsOK !== false) {
+    var r = await sb.from('logs').insert(entries);
+    if (!r.error) { return true; }
+    if (!_errMentions(r.error, 'costAmount') && !_errMentions(r.error, 'costDetail')) {
+      console.warn('Log insert failed:', r.error.message); return false;
+    }
+    _warnFifoMissing();
+  }
+  var stripped = entries.map(function(e) {
+    var c = Object.assign({}, e); delete c.costAmount; delete c.costDetail; return c;
+  });
+  var r2 = await sb.from('logs').insert(stripped);
+  if (r2.error) { console.warn('Log insert failed:', r2.error.message); return false; }
+  return true;
+}
+
 async function _sbClearLogsAndReorders() {
   if (!sb) return;
   await sb.from('logs').delete().not('id', 'is', null);
@@ -3586,8 +3646,8 @@ async function saveLog() {
   updateSummary();
   if (sb) {
     try {
-      await sb.from('items').update({ qty: item.qty, cost: item.cost, updatedAt: item.updatedAt, "maxRef": item.maxRef, "costLayers": item.costLayers }).eq('id', item.id);
-      await sb.from('logs').insert([logEntry]);
+      await sbUpdateItem(item, { "maxRef": item.maxRef });
+      await sbInsertLogs([logEntry]);
     } catch(e) { save(); } // fallback to bulk save on error
   } else {
     save();
@@ -5607,7 +5667,7 @@ async function confirmBatchIssuance() {
       item.updatedAt = now;
       syncItemCost(item);
       if (sb) {
-        try { await sb.from('logs').insert([logEntry]); await sb.from('items').update({ qty: item.qty, cost: item.cost, updatedAt: item.updatedAt, "costLayers": item.costLayers }).eq('id', item.id); } catch(e) {}
+        await sbInsertLogs([logEntry]); await sbUpdateItem(item);
       }
     }
     req.status = 'confirmed'; req.confirmedBy = currentUser.username; req.confirmedAt = now;
@@ -5785,7 +5845,7 @@ async function confirmIssuance() {
     };
     db.logs.push(logEntry);
     if (sb) {
-      try { await sb.from('logs').insert([logEntry]); await sb.from('items').update({ qty: item.qty, cost: item.cost, updatedAt: item.updatedAt, "costLayers": item.costLayers }).eq('id', item.id); } catch(e) {}
+      await sbInsertLogs([logEntry]); await sbUpdateItem(item);
     }
     save();
   }
@@ -5908,7 +5968,7 @@ async function massConfirmRequests() {
           };
           db.logs.push(logEntry);
           if (sb) {
-            try { await sb.from('logs').insert([logEntry]); await sb.from('items').update({ qty: item.qty, updatedAt: item.updatedAt }).eq('id', item.id); } catch(e) {}
+            await sbInsertLogs([logEntry]); await sbUpdateItem(item);
           }
         }
 
@@ -8268,7 +8328,7 @@ async function bookCompareVariance() {
     save();
     if (sb) {
       try {
-        await sb.from('logs').insert(newLogs);
+        await sbInsertLogs(newLogs);
         for (var i = 0; i < changedItems.length; i++) {
           await sb.from('items').update({ qty: changedItems[i].qty, updatedAt: changedItems[i].updatedAt }).eq('id', changedItems[i].id);
         }
@@ -8664,7 +8724,7 @@ async function applyImport() {
         var newLogs = db.logs.filter(function(l) {
           return createdItems.some(function(ci){ return ci.id === l.itemId; });
         });
-        if (newLogs.length) await sb.from('logs').insert(newLogs);
+        if (newLogs.length) await sbInsertLogs(newLogs);
       }
       // Delete from Supabase
       for (var d = 0; d < toDelete.length; d++) {
@@ -8675,7 +8735,7 @@ async function applyImport() {
       // Update in Supabase
       for (var u = 0; u < toUpdate.length; u++) {
         var r = toUpdate[u];
-        await sb.from('items').update({ qty: r.item.qty, cost: r.item.cost, supplier: r.item.supplier, category: r.item.category, "baselineQty": r.item.baselineQty, "costLayers": r.item.costLayers }).eq('id', r.item.id);
+        await sbUpdateItem(r.item, { supplier: r.item.supplier, category: r.item.category, "baselineQty": r.item.baselineQty });
       }
     } catch(e) {}
   }
