@@ -1212,6 +1212,7 @@
     </div>
     <div id="import-preview-wrap" style="display:none">
       <div id="import-summary-bar" style="font-size:12px;font-weight:600;margin-bottom:10px;padding:8px 12px;border-radius:8px;background:var(--surface2)"></div>
+      <div id="import-variance-bar" style="display:none;margin-bottom:10px;padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border)"></div>
       <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
@@ -1219,6 +1220,8 @@
               <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Item</th>
               <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Current Stock</th>
               <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">New Stock</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Variance</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Cost Impact</th>
               <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Current Cost</th>
               <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">New Cost</th>
               <th style="padding:8px 12px;text-align:center;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Status</th>
@@ -7667,6 +7670,8 @@ function resetImportModal() {
   document.getElementById('import-unmatched-wrap').style.display = 'none';
   var bw = document.getElementById('import-blocked-wrap');
   if (bw) bw.style.display = 'none';
+  var vb = document.getElementById('import-variance-bar');
+  if (vb) vb.style.display = 'none';
   document.getElementById('import-preview-body').innerHTML = '';
   // reset both file inputs so the same file can be re-selected
   document.getElementById('import-file-input').value = '';
@@ -7864,6 +7869,8 @@ function previewImport(rows) {
       + '</td>'
       + '<td style="text-align:right;color:var(--muted)">—</td>'
       + '<td style="text-align:right;color:#16a34a;font-weight:700">' + fmtInt(r.qty) + '</td>'
+      + '<td style="text-align:right;color:var(--muted)">new</td>'
+      + '<td style="text-align:right;color:var(--muted)">—</td>'
       + '<td style="text-align:right;color:var(--muted)">—</td>'
       + '<td style="text-align:right;color:#16a34a;font-weight:700">₱' + fmt(r.cost) + '</td>'
       + '<td style="padding:8px 12px;text-align:center"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(22,163,74,.15);color:#16a34a">✚ Will create</span></td>'
@@ -7874,7 +7881,7 @@ function previewImport(rows) {
     if (r.toDelete) {
       return '<tr style="border-bottom:1px solid var(--border);background:rgba(220,38,38,.05)">'
         + '<td style="padding:8px 12px;font-weight:600;font-size:12px;color:var(--danger)">' + esc(r.item.name) + (r.item.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.item.sku) + '</span>' : '') + '</td>'
-        + '<td colspan="4" style="padding:8px 12px;color:var(--muted);font-size:11px">Stock: ' + fmtInt(r.item.qty) + ' · Category: ' + esc(r.item.category||'—') + '</td>'
+        + '<td colspan="6" style="padding:8px 12px;color:var(--muted);font-size:11px">Stock: ' + fmtInt(r.item.qty) + ' · Category: ' + esc(r.item.category||'—') + '</td>'
         + '<td style="padding:8px 12px;text-align:center"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(220,38,38,.12);color:var(--danger)">🗑 Will delete</span></td>'
         + '</tr>';
     }
@@ -7902,12 +7909,27 @@ function previewImport(rows) {
       ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(22,163,74,.1);color:#16a34a">Will update</span>'
       : '<span style="font-size:10px;color:var(--muted)">No change</span>';
 
+    // Variance = counted (new) minus system (current)
+    var varCells;
+    if (qtyChanged) {
+      var diff = r.newQty - r.item.qty;
+      var impact = diff * (r.item.cost || 0);
+      var vColor = diff < 0 ? '#dc2626' : '#16a34a';
+      varCells = '<td style="text-align:right;font-weight:700;color:' + vColor + '">'
+          + (diff > 0 ? '+' : '') + fmtInt(diff) + '</td>'
+        + '<td style="text-align:right;color:' + vColor + '">'
+          + (impact ? (impact > 0 ? '+' : '−') + '₱' + fmt(Math.abs(impact)) : '<span style="color:var(--muted)">—</span>') + '</td>';
+    } else {
+      varCells = '<td style="text-align:right;color:var(--muted)">—</td><td style="text-align:right;color:var(--muted)">—</td>';
+    }
+
     var supplierNote = supplierChanged ? '<br><span style="font-size:10px;color:var(--accent)">Supplier → ' + esc(r.newSupplier) + '</span>' : '';
     var categoryNote = categoryChanged ? '<br><span style="font-size:10px;color:var(--accent)">Category: ' + esc(r.item.category||'—') + ' → ' + esc(r.newCategory) + '</span>' : '';
 
     return '<tr style="border-bottom:1px solid var(--border);' + rowBg + '">'
       + '<td style="padding:8px 12px;font-weight:600;font-size:12px">' + esc(r.item.name) + (r.item.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.item.sku) + '</span>' : '') + categoryNote + supplierNote + '</td>'
       + cell(r.item.qty,  r.newQty,  qtyChanged,  false)
+      + varCells
       + cell(r.item.cost, r.newCost, costChanged, true)
       + '<td style="padding:8px 12px;text-align:center">' + statusBadge + '</td>'
       + '</tr>';
@@ -7924,6 +7946,32 @@ function previewImport(rows) {
   if (blockedNew.length) parts.push('<span style="color:var(--warn)">🔒 <strong>' + blockedNew.length + '</strong> new item' + (blockedNew.length===1?'':'s') + ' blocked</span>');
   if (unmatched.length) parts.push('<span style="color:var(--muted)">' + unmatched.length + ' skipped (no name)</span>');
   document.getElementById('import-summary-bar').innerHTML = parts.join(' &nbsp;·&nbsp; ');
+
+  // Variance totals — the stocktake check
+  var vRows = matched.filter(function(r){ return !r.toDelete && r.newQty !== undefined && r.newQty !== r.item.qty; });
+  var vBar = document.getElementById('import-variance-bar');
+  if (vBar) {
+    if (vRows.length) {
+      var shortCount = 0, overCount = 0, shortUnits = 0, overUnits = 0, shortCost = 0, overCost = 0;
+      vRows.forEach(function(r) {
+        var d = r.newQty - r.item.qty;
+        var c = d * (r.item.cost || 0);
+        if (d < 0) { shortCount++; shortUnits += -d; shortCost += -c; }
+        else       { overCount++;  overUnits  +=  d; overCost  +=  c; }
+      });
+      var netCost = overCost - shortCost;
+      vBar.style.display = '';
+      vBar.innerHTML =
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Count variance</div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:14px;font-size:12px">'
+        + '<span style="color:#dc2626">⬇ Shortage: <strong>' + shortCount + '</strong> item' + (shortCount===1?'':'s') + ', ' + fmtInt(shortUnits) + ' units, ₱' + fmt(shortCost) + '</span>'
+        + '<span style="color:#16a34a">⬆ Excess: <strong>' + overCount + '</strong> item' + (overCount===1?'':'s') + ', ' + fmtInt(overUnits) + ' units, ₱' + fmt(overCost) + '</span>'
+        + '<span style="font-weight:700;color:' + (netCost < 0 ? '#dc2626' : 'var(--text)') + '">Net: ' + (netCost < 0 ? '−' : '+') + '₱' + fmt(Math.abs(netCost)) + '</span>'
+        + '</div>';
+    } else {
+      vBar.style.display = 'none';
+    }
+  }
 
   // Blocked-new notice — explain why, so it isn't mistaken for a bug
   var blockedWrap = document.getElementById('import-blocked-wrap');
@@ -8027,7 +8075,10 @@ async function applyImport() {
         by:     currentUser.username,
         date:   new Date().toISOString(),
         ref:    '',
-        notes:  'Import update — was ' + r.item.qty + (r.item.unit ? ' ' + r.item.unit : '')
+        notes:  'Import update — was ' + r.item.qty + (r.item.unit ? ' ' + r.item.unit : ''),
+        // Feed the Variance Adjustments report (signed: negative = shortage)
+        variance:       diff,
+        varianceReason: 'Physical count (import)'
       };
       db.logs.push(logEntry);
       var prevQty = r.item.qty;
