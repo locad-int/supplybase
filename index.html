@@ -486,6 +486,20 @@
     padding: 3px 10px; border-radius: 6px; cursor: pointer;
   }
 
+  /* ─── TEST MODE BANNER ───────────────────────────────────────────────────── */
+  #testmode-banner {
+    display: none; background: #7c3aed; color: #fff;
+    text-align: center; font-size: 13px; font-weight: 700;
+    padding: 10px 16px; letter-spacing: .02em;
+    position: sticky; top: 0; z-index: 39;
+  }
+  #testmode-banner.active { display: block; }
+  #testmode-banner button {
+    margin-left: 12px; background: rgba(255,255,255,.2); border: none;
+    color: #fff; font-weight: 700; font-size: 12px;
+    padding: 3px 10px; border-radius: 6px; cursor: pointer;
+  }
+
   /* ─── BIOMETRIC LOGIN BUTTON ─────────────────────────────────────────────── */
   #bio-login-btn {
     display: none; width: 100%; justify-content: center; align-items: center; gap: 10px;
@@ -620,6 +634,7 @@
       <button id="btn-contact-admin" class="sidebar-action-btn" onclick="openContactAdmin()">📞 Contact Admin</button>
       <button id="btn-refresh" class="sidebar-action-btn" onclick="refreshData()">↻ Refresh</button>
       <button id="btn-stocktake-lock" class="sidebar-action-btn" onclick="toggleStocktakeLock()" style="display:none">🔒 Lock for Stocktake</button>
+      <button id="btn-testmode-settings" class="sidebar-action-btn" onclick="openSettings()" style="display:none">🧪 Test Mode</button>
       <button id="btn-reset" class="sidebar-action-btn sidebar-action-danger" onclick="confirmReset()">↺ Reset</button>
       <button id="btn-install-app" class="sidebar-action-btn" onclick="openInstallModal()" style="display:none;color:#38bdf8">📲 Install App</button>
       <button class="sidebar-action-btn sidebar-action-signout" onclick="logout()">Sign out</button>
@@ -662,6 +677,12 @@
   <div id="stocktake-banner">
     🔒 Stocktake in Progress — All transactions are locked
     <button id="stocktake-unlock-btn" onclick="toggleStocktakeLock()" style="display:none">Unlock</button>
+  </div>
+
+  <!-- TEST MODE BANNER -->
+  <div id="testmode-banner">
+    🧪 Test Mode Active — showing <span id="testmode-count">0</span> of <span id="testmode-total">0</span> items
+    <button id="testmode-off-btn" onclick="toggleTestMode()" style="display:none">Turn Off</button>
   </div>
   <main>
 
@@ -1851,6 +1872,18 @@
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-audit" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('audit',this.checked)">Audit Log</label>
     </div>
 
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+    <p style="color:var(--muted);font-size:13px;margin-bottom:4px">🧪 <strong>Test Mode</strong></p>
+    <p style="color:var(--muted);font-size:11px;margin-bottom:10px">Shows only the items you pick below — everywhere, for every account (Inventory, pickers, reports, requests, exports). Nothing is deleted; turning it off restores the full catalog instantly.</p>
+    <div id="testmode-status" style="font-size:12px;font-weight:600;margin-bottom:8px"></div>
+    <div style="position:relative;margin-bottom:8px">
+      <input type="text" id="tm-item-search" placeholder="Type to add an item…" autocomplete="off"
+        oninput="filterTestModeDropdown()" onfocus="filterTestModeDropdown()" onblur="setTimeout(()=>closeTestModeDropdown(),180)">
+      <div id="tm-item-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 8px 20px rgba(0,0,0,.15)"></div>
+    </div>
+    <div id="tm-item-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+    <button class="btn btn-secondary" id="tm-toggle-btn" onclick="toggleTestMode()" style="font-size:13px">Turn Test Mode On</button>
+
     <p id="settings-msg" style="color:var(--ok);font-size:12px;min-height:18px;margin-top:8px"></p>
     <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
       <button class="btn btn-danger btn-sm" onclick="reconnectSupabase()" title="Change Supabase connection">🔌 Change database</button>
@@ -1945,6 +1978,23 @@ const SESSION_ROLE_KEY  = 'consumables_tracker_session_role';
 const SESSION_USER_KEY  = 'consumables_tracker_session_user';
 let sb = null;
 var stocktakeLock = false; // when true, all transactions are blocked
+
+// ─── TEST MODE (global item-visibility whitelist) ─────────────────────────────
+var testModeActive = false;
+var testModeItemIds = []; // item ids allowed to be visible while active
+
+// The single choke point every "browse the catalog" surface should read from
+// instead of db.items directly, so hidden items disappear everywhere at once.
+function catalogItems() {
+  if (!testModeActive) return db.items;
+  return db.items.filter(function(i) { return testModeItemIds.indexOf(i.id) !== -1; });
+}
+function isLogVisible(l) {
+  return !testModeActive || testModeItemIds.indexOf(l.itemId) !== -1;
+}
+function isReqVisible(r) {
+  return !testModeActive || testModeItemIds.indexOf(r.itemId) !== -1;
+}
 
 // Hardcoded credentials — no setup required on new devices
 const HARDCODED_SUPABASE_URL = 'https://tkasifllaagsxhpcpzrf.supabase.co';
@@ -2172,6 +2222,16 @@ async function loadGlobalSettings() {
       stocktakeLock = settingsMap['stocktakeLock'] === 'true';
       applyStocktakeLock();
     }
+    if (settingsMap['testModeItemIds'] !== undefined) {
+      try {
+        var idsParsed = JSON.parse(settingsMap['testModeItemIds']);
+        if (Array.isArray(idsParsed)) testModeItemIds = idsParsed;
+      } catch(e) {}
+    }
+    if (settingsMap['testModeActive'] !== undefined) {
+      testModeActive = settingsMap['testModeActive'] === 'true';
+    }
+    applyTestMode();
   } catch(e) {} // settings table may not exist yet — silently ignore
 }
 async function saveRefreshIntervalGlobal(mins) {
@@ -2248,6 +2308,16 @@ function startRealtime() {
               renderRequests();
             }
           } catch(e) {}
+        }
+        if (row.key === 'testModeItemIds') {
+          try {
+            var idsRt = JSON.parse(row.value);
+            if (Array.isArray(idsRt)) { testModeItemIds = idsRt; applyTestMode(); }
+          } catch(e) {}
+        }
+        if (row.key === 'testModeActive') {
+          testModeActive = row.value === 'true';
+          applyTestMode();
         }
       })
       .on('presence', { event: 'sync' }, function() {
@@ -2892,8 +2962,8 @@ function updateSummary() {
   const isBrand = currentRole === 'brand';
   const brandName = isBrand ? getBrandName().toLowerCase() : '';
   const visibleItems = isBrand
-    ? db.items.filter(i => brandName && i.name.toLowerCase().includes(brandName))
-    : db.items;
+    ? catalogItems().filter(i => brandName && i.name.toLowerCase().includes(brandName))
+    : catalogItems();
   const total = visibleItems.length;
   const out = visibleItems.filter(i => i.qty <= 0).length;
   const low = visibleItems.filter(i => stockStatus(i) === 'warn').length;
@@ -2926,7 +2996,7 @@ function renderInventory() {
   const q = document.getElementById('inv-search').value.toLowerCase();
   const activeStatuses = getActiveStatusFilters();
   const fc = document.getElementById('inv-filter-cat').value;
-  let items = db.items.filter(i => {
+  let items = catalogItems().filter(i => {
     // Brand users only see their own items
     if (isBrand && brandName && !i.name.toLowerCase().includes(brandName)) return false;
     if (q && !i.name.toLowerCase().includes(q) && !i.category?.toLowerCase().includes(q) && !i.sku?.toLowerCase().includes(q)) return false;
@@ -3068,7 +3138,7 @@ function sortBy(field) {
 }
 
 function updateCatFilter() {
-  const cats = [...new Set(db.items.map(i => i.category).filter(Boolean))].sort();
+  const cats = [...new Set(catalogItems().map(i => i.category).filter(Boolean))].sort();
   const sel = document.getElementById('inv-filter-cat');
   const cur = sel.value;
   sel.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)}</option>`).join('');
@@ -3206,6 +3276,7 @@ function renderLogs() {
 
   let logs = db.logs.filter(l => {
     const item = db.items.find(i => i.id === l.itemId);
+    if (!isLogVisible(l)) return false;
     if (fi && l.itemId !== fi) return false;
     if (activeTypes.length && !activeTypes.includes(l.type)) return false;
     if (from && new Date(l.date) < from) return false;
@@ -3279,7 +3350,7 @@ function renderLogs() {
   // Update item filter
   const sel = document.getElementById('log-filter-item');
   const cur = sel.value;
-  sel.innerHTML = '<option value="">All Items</option>' + db.items.map(i => `<option value="${i.id}"${i.id===cur?' selected':''}>${esc(i.name)}</option>`).join('');
+  sel.innerHTML = '<option value="">All Items</option>' + catalogItems().map(i => `<option value="${i.id}"${i.id===cur?' selected':''}>${esc(i.name)}</option>`).join('');
 }
 
 function deleteLogEntry(logId) {
@@ -3718,7 +3789,7 @@ function renderReorder() {
     if (!r.receivedAt && r.status === 'received') r.receivedAt = r.updatedAt || null;
   });
   const f = document.getElementById('reorder-filter').value;
-  let reorders = db.reorders.filter(r => !f || r.status === f || (f==='needed' && r.status==='needed'));
+  let reorders = db.reorders.filter(r => (!testModeActive || testModeItemIds.indexOf(r.itemId) !== -1) && (!f || r.status === f || (f==='needed' && r.status==='needed')));
   reorders.sort((a, b) => new Date(b.orderDate||0) - new Date(a.orderDate||0));
 
   const tbody = document.getElementById('reorder-tbody');
@@ -4217,7 +4288,7 @@ function filterRoItemDropdown() {
   var q = document.getElementById('rf-item-search').value.toLowerCase();
   var dd = document.getElementById('ro-item-dropdown');
   if (!q.trim()) { dd.style.display = 'none'; return; }
-  var matches = db.items.filter(function(i) { return i.name.toLowerCase().includes(q) || (i.sku && i.sku.toLowerCase().includes(q)); }).slice(0, 30);
+  var matches = catalogItems().filter(function(i) { return i.name.toLowerCase().includes(q) || (i.sku && i.sku.toLowerCase().includes(q)); }).slice(0, 30);
   if (!matches.length) {
     dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No items found</div>';
   } else {
@@ -4251,7 +4322,7 @@ function closeRoItemDropdown() {
 function filterItemDropdown() {
   const q = document.getElementById('lf-item-search').value.toLowerCase();
   const dd = document.getElementById('lf-item-dropdown');
-  const matches = db.items.filter(i => i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
+  const matches = catalogItems().filter(i => i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
   if (!matches.length) {
     dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No items found</div>';
   } else {
@@ -4415,7 +4486,7 @@ function renderReport() {
   const to = toVal ? new Date(toVal + 'T23:59:59') : null;
 
   // Update category filter
-  const cats = [...new Set(db.items.map(i => i.category).filter(Boolean))].sort();
+  const cats = [...new Set(catalogItems().map(i => i.category).filter(Boolean))].sort();
   const catSel = document.getElementById('rpt-cat');
   const curCat = catSel.value;
   catSel.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${esc(c)}"${c===curCat?' selected':''}>${esc(c)}</option>`).join('');
@@ -4423,6 +4494,7 @@ function renderReport() {
   // Filter logs
   const logs = db.logs.filter(l => {
     if (!types.includes(l.type)) return false;
+    if (!isLogVisible(l)) return false;
     const d = new Date(l.date);
     if (from && d < from) return false;
     if (to && d > to) return false;
@@ -4565,6 +4637,7 @@ function exportDetailedCSV() {
 
   const filtered = db.logs.filter(l => {
     if (!types.includes(l.type)) return false;
+    if (!isLogVisible(l)) return false;
     const d = new Date(l.date);
     if (from && d < from) return false;
     if (to   && d > to)   return false;
@@ -4617,6 +4690,7 @@ function exportAllLogsCSV() {
   const TYPE_LABELS = { use: 'Consumption', damage: 'Damage / Loss', restock: 'Restock', adjust: 'Adjustment' };
 
   const filtered = db.logs.filter(l => {
+    if (!isLogVisible(l)) return false;
     const d = new Date(l.date);
     if (from && d < from) return false;
     if (to   && d > to)   return false;
@@ -4670,6 +4744,7 @@ function renderVariance() {
   let logs = db.logs.filter(l => {
     if (l.type !== 'adjust') return false;
     if (!l.variance) return false; // zero/blank variance = confirmed match, not a discrepancy
+    if (!isLogVisible(l)) return false;
     const d = new Date(l.date);
     if (from && d < from) return false;
     if (to   && d > to)   return false;
@@ -4738,6 +4813,7 @@ function exportVarianceCSV() {
   const logs = db.logs.filter(l => {
     if (l.type !== 'adjust') return false;
     if (!l.variance) return false; // zero/blank variance = confirmed match, not a discrepancy
+    if (!isLogVisible(l)) return false;
     const d = new Date(l.date);
     if (from && d < from) return false;
     if (to   && d > to)   return false;
@@ -4824,6 +4900,7 @@ function renderDashboard() {
 
   const spendLogs = db.logs.filter(l => {
     if (l.type !== 'use' && l.type !== 'damage') return false;
+    if (!isLogVisible(l)) return false;
     const d = new Date(l.date);
     return d >= from && d <= to;
   });
@@ -4844,6 +4921,7 @@ function renderDashboard() {
   // KPI: Restock cost
   const restockLogs = db.logs.filter(l => {
     if (l.type !== 'restock') return false;
+    if (!isLogVisible(l)) return false;
     const d = new Date(l.date);
     return d >= from && d <= to;
   });
@@ -4863,6 +4941,7 @@ function renderDashboard() {
   const prevTo   = new Date(from); prevTo.setDate(prevTo.getDate() - 1); prevTo.setHours(23,59,59,999);
   const prevSpend = db.logs.filter(l => {
     if (l.type !== 'use' && l.type !== 'damage') return false;
+    if (!isLogVisible(l)) return false;
     const d = new Date(l.date);
     return d >= prevFrom && d <= prevTo;
   }).reduce((s, l) => {
@@ -4904,6 +4983,7 @@ function renderDashboard() {
       .reduce((s, l) => { const item = db.items.find(i => i.id === l.itemId); return s + (l.qty||0)*(item?.cost||0); }, 0);
     const restockTotal = db.logs.filter(l => {
       if (l.type !== 'restock') return false;
+      if (!isLogVisible(l)) return false;
       const d = new Date(l.date); return d >= bFrom && d <= bTo;
     }).reduce((s, l) => { const item = db.items.find(i => i.id === l.itemId); return s + (l.qty||0)*(item?.cost||0); }, 0);
     buckets.push({ label, total, restockTotal });
@@ -5122,9 +5202,9 @@ function updateRequestBadge() {
   var count = 0;
   if (currentUser) {
     if (currentRole === 'superuser' || currentRole === 'user') {
-      count = db_reqs.filter(r => r.status === 'pending').length;
+      count = db_reqs.filter(r => r.status === 'pending' && isReqVisible(r)).length;
     } else if (currentRole === 'requestor') {
-      count = db_reqs.filter(r => r.requestedBy === currentUser.username && (r.status === 'confirmed' || r.status === 'rejected') && !r.seenByRequestor).length;
+      count = db_reqs.filter(r => r.requestedBy === currentUser.username && (r.status === 'confirmed' || r.status === 'rejected') && !r.seenByRequestor && isReqVisible(r)).length;
     }
   }
   var badge = document.getElementById('req-nav-badge');
@@ -5579,7 +5659,7 @@ function filterReqItemDropdown() {
   var q  = document.getElementById('req-item-search').value.toLowerCase();
   var dd = document.getElementById('req-item-dropdown');
   if (!q.trim()) { dd.style.display = 'none'; return; }
-  var matches = db.items.filter(i => i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
+  var matches = catalogItems().filter(i => i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
   if (!matches.length) {
     dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No items found</div>';
   } else {
@@ -6209,7 +6289,7 @@ function renderRequests() {
 
   // Show/hide mass action bar (requires confirm_requests permission)
   var massBar = document.getElementById('req-mass-bar');
-  var pendingCount = db_reqs.filter(function(r) { return r.status === 'pending'; }).length;
+  var pendingCount = db_reqs.filter(function(r) { return r.status === 'pending' && isReqVisible(r); }).length;
   if (massBar) massBar.style.display = (can('confirm_requests') && pendingCount > 0) ? 'flex' : 'none';
   // Prune stale selections
   selectedReqIds.forEach(function(id) { if (!db_reqs.find(function(r) { return r.id === id && r.status === 'pending'; })) selectedReqIds.delete(id); });
@@ -6231,9 +6311,10 @@ function renderRequests() {
   }
 
   // Filter by role
-  var reqs = isAdmin
+  var reqs = (isAdmin
     ? db_reqs.slice()
-    : db_reqs.filter(r => r.requestedBy === currentUser?.username);
+    : db_reqs.filter(r => r.requestedBy === currentUser?.username)
+  ).filter(isReqVisible);
 
   if (currentReqFilter !== 'all') reqs = reqs.filter(r => r.status === currentReqFilter);
 
@@ -7122,8 +7203,8 @@ function dismissBiometricOffer() {
 
 function showCriticalStockAlert() {
   if (currentRole !== 'user' && currentRole !== 'superuser') return;
-  var danger = db.items.filter(function(i) { return i.qty <= 0; });
-  var warn   = db.items.filter(function(i) { return stockStatus(i) === 'warn'; });
+  var danger = catalogItems().filter(function(i) { return i.qty <= 0; });
+  var warn   = catalogItems().filter(function(i) { return stockStatus(i) === 'warn'; });
   if (!danger.length && !warn.length) return;
 
   var listEl = document.getElementById('csa-list');
@@ -7246,6 +7327,7 @@ function applyRoleUI() {
   show('btn-reset',         currentRole === 'superuser');
   show('btn-stocktake-lock', canManageStocktake());
   applyStocktakeLock(); // sync label after role is known
+  show('btn-testmode-settings', currentRole === 'superuser');
   show('btn-settings',      currentRole === 'superuser');
   show('btn-change-pass',   !!currentRole);
   show('btn-contact-admin', false);
@@ -7384,6 +7466,127 @@ function checkStocktakeLock() {
   return true;
 }
 
+// ─── TEST MODE ────────────────────────────────────────────────────────────────
+function applyTestMode() {
+  var banner = document.getElementById('testmode-banner');
+  var offBtn = document.getElementById('testmode-off-btn');
+  if (banner) banner.classList.toggle('active', testModeActive);
+  if (offBtn) offBtn.style.display = (testModeActive && currentRole === 'superuser') ? '' : 'none';
+  var countEl = document.getElementById('testmode-count');
+  var totalEl = document.getElementById('testmode-total');
+  if (countEl) countEl.textContent = fmtInt(testModeItemIds.length);
+  if (totalEl) totalEl.textContent = fmtInt(db.items.length);
+  var sidebarBtn = document.getElementById('btn-testmode-settings');
+  if (sidebarBtn) sidebarBtn.style.display = currentRole === 'superuser' ? '' : 'none';
+  // Re-render every "browse the catalog" surface so hidden items disappear immediately
+  if (typeof renderInventory === 'function') renderInventory();
+  if (typeof updateCatFilter === 'function') updateCatFilter();
+  if (typeof updateSummary === 'function') updateSummary();
+  if (document.getElementById('tab-report') && document.getElementById('tab-report').classList.contains('active')) {
+    if (typeof renderReport === 'function') renderReport();
+    if (typeof renderVariance === 'function') renderVariance();
+  }
+  if (document.getElementById('tab-dashboard') && document.getElementById('tab-dashboard').classList.contains('active')) {
+    if (typeof renderDashboard === 'function') renderDashboard();
+  }
+  if (typeof renderRequests === 'function') renderRequests();
+  if (typeof renderReorder === 'function') renderReorder();
+  if (typeof renderTestModeSettings === 'function') renderTestModeSettings();
+}
+
+async function saveTestModeGlobal() {
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', 'testModeActive');
+    await sb.from('settings').insert([{ key: 'testModeActive', value: testModeActive ? 'true' : 'false' }]);
+    await sb.from('settings').delete().eq('key', 'testModeItemIds');
+    await sb.from('settings').insert([{ key: 'testModeItemIds', value: JSON.stringify(testModeItemIds) }]);
+  } catch(e) {}
+}
+
+async function toggleTestMode() {
+  if (currentRole !== 'superuser') return;
+  if (!testModeActive && !testModeItemIds.length) {
+    alert('Select at least one item first, then turn Test Mode on.');
+    return;
+  }
+  testModeActive = !testModeActive;
+  applyTestMode();
+  await saveTestModeGlobal();
+  logAudit('Test Mode ' + (testModeActive ? 'enabled' : 'disabled'), testModeItemIds.length + ' item(s) whitelisted');
+}
+
+function setTestModeItems(ids) {
+  testModeItemIds = ids.slice();
+  applyTestMode();
+  saveTestModeGlobal();
+}
+
+// ─── TEST MODE SETTINGS PANEL ─────────────────────────────────────────────────
+function renderTestModeSettings() {
+  var statusEl = document.getElementById('testmode-status');
+  var chipsEl  = document.getElementById('tm-item-chips');
+  var btnEl    = document.getElementById('tm-toggle-btn');
+  if (!statusEl || !chipsEl || !btnEl) return; // settings modal not open yet
+
+  statusEl.textContent = testModeActive
+    ? '🧪 Active — ' + testModeItemIds.length + ' of ' + db.items.length + ' items visible'
+    : 'Off — everyone sees the full catalog (' + db.items.length + ' items)';
+  statusEl.style.color = testModeActive ? '#7c3aed' : 'var(--muted)';
+
+  chipsEl.innerHTML = testModeItemIds.map(function(id) {
+    var item = db.items.find(function(i){ return i.id === id; });
+    var name = item ? item.name : '(deleted item)';
+    return '<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:4px 6px 4px 12px;font-size:12px">'
+      + esc(name)
+      + '<button onclick="removeTestModeItem(\'' + id + '\')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px" title="Remove">×</button>'
+      + '</span>';
+  }).join('') || '<span style="font-size:12px;color:var(--muted);font-style:italic">No items selected yet</span>';
+
+  btnEl.textContent = testModeActive ? '🧪 Turn Test Mode Off' : 'Turn Test Mode On';
+  btnEl.className = testModeActive ? 'btn btn-danger' : 'btn btn-secondary';
+}
+
+function filterTestModeDropdown() {
+  var q = document.getElementById('tm-item-search').value.toLowerCase();
+  var dd = document.getElementById('tm-item-dropdown');
+  if (!q.trim()) { dd.style.display = 'none'; return; }
+  var matches = db.items.filter(function(i) {
+    return testModeItemIds.indexOf(i.id) === -1
+      && (i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q));
+  }).slice(0, 30);
+  if (!matches.length) {
+    dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No matching items</div>';
+  } else {
+    dd.innerHTML = matches.map(function(i) {
+      return '<div onclick="addTestModeItem(\'' + i.id + '\')" '
+        + 'style="padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)" '
+        + 'onmouseover="this.style.background=\'var(--surface2)\'" onmouseout="this.style.background=\'\'">'
+        + esc(i.name) + (i.sku ? ' <span style="color:var(--muted);font-size:11px">(' + esc(i.sku) + ')</span>' : '')
+        + '</div>';
+    }).join('');
+  }
+  dd.style.display = 'block';
+}
+function closeTestModeDropdown() {
+  var dd = document.getElementById('tm-item-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+function addTestModeItem(id) {
+  if (testModeItemIds.indexOf(id) === -1) testModeItemIds.push(id);
+  document.getElementById('tm-item-search').value = '';
+  closeTestModeDropdown();
+  renderTestModeSettings();
+  saveTestModeGlobal();
+  if (testModeActive) applyTestMode();
+}
+function removeTestModeItem(id) {
+  testModeItemIds = testModeItemIds.filter(function(i){ return i !== id; });
+  renderTestModeSettings();
+  saveTestModeGlobal();
+  if (testModeActive) applyTestMode();
+}
+
 async function confirmFullReset() {
   if (currentRole !== 'superuser') return;
   showConfirm('Full Reset', 'This will:\n\n• Set ALL item quantities to 0\n• Clear the import baseline\n• Delete all logs, reorders, and requests\n\nAfter this, import a new file to set the starting inventory.\n\nThis cannot be undone.', async function() {
@@ -7449,6 +7652,7 @@ function openSettings() {
     if (cb) cb.checked = !!userPermissions[k];
   });
   applyTabVisibility(); // sync the tab-access checkboxes
+  renderTestModeSettings();
   openModal('settings-modal');
 }
 
@@ -8106,7 +8310,7 @@ function exportInventoryCSV() {
   ].filter(function(c) { return !c.col || !isColHidden(c.col); });
 
   var rows = [cols.map(function(c){ return c.header; })];
-  db.items.forEach(function(item, i) {
+  catalogItems().forEach(function(item, i) {
     rows.push(cols.map(function(c){ return c.val(item, i); }));
   });
   downloadCSV('inventory_' + new Date().toISOString().split('T')[0] + '.csv', rows);
@@ -8163,7 +8367,7 @@ function clearLog() {
 
 function exportLogsCSV() {
   var rows = [['Date','Item','SKU','Type','Qty','Performed By','Notes']];
-  var logs = db.logs.slice().sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
+  var logs = db.logs.filter(isLogVisible).sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
   logs.forEach(function(log) {
     var item = db.items.find(function(i){ return i.id === log.itemId; });
     rows.push([
@@ -8182,7 +8386,7 @@ function exportLogsCSV() {
 function exportCostReportCSV() {
   var rows = [['Item','Category','Unit Cost','Units Used','Total Cost']];
   var costMap = {};
-  db.logs.filter(function(l){ return l.type === 'use' || l.type === 'damage'; }).forEach(function(log) {
+  db.logs.filter(function(l){ return (l.type === 'use' || l.type === 'damage') && isLogVisible(l); }).forEach(function(log) {
     if (!costMap[log.itemId]) costMap[log.itemId] = { qty: 0, cost: 0 };
     var item = db.items.find(function(i){ return i.id === log.itemId; });
     costMap[log.itemId].qty += log.qty || 0;
@@ -8547,7 +8751,7 @@ function renderSnapshot() {
   var cutoffTime = cutoff.getTime();
   var isNow = cutoffTime >= Date.now();
 
-  _snapRows = db.items.map(function(item) {
+  _snapRows = catalogItems().map(function(item) {
     // Item didn't exist yet at the chosen time
     if (item.createdAt && new Date(item.createdAt).getTime() > cutoffTime) {
       return { item: item, qty: null, notYet: true };
@@ -9018,7 +9222,7 @@ function renderMonthlyReport() {
     months.push({ label: d.toLocaleDateString('en-PH', { month: 'short', year: '2-digit' }), year: d.getFullYear(), month: d.getMonth(), total: 0 });
   }
 
-  db.logs.filter(function(l){ return l.type === 'use' || l.type === 'damage'; }).forEach(function(log) {
+  db.logs.filter(function(l){ return (l.type === 'use' || l.type === 'damage') && isLogVisible(l); }).forEach(function(log) {
     var d = new Date(log.date);
     var item = db.items.find(function(i){ return i.id === log.itemId; });
     var cost = logCostOf(log, item);
@@ -9047,7 +9251,7 @@ function renderUserReport() {
   if (!el) return;
 
   var userMap = {};
-  db.logs.forEach(function(log) {
+  db.logs.filter(isLogVisible).forEach(function(log) {
     var u = log.by || '—';
     if (!userMap[u]) userMap[u] = { txns: 0, units: 0, cost: 0 };
     userMap[u].txns++;
