@@ -900,6 +900,7 @@
         <h3 style="margin:0;font-size:1rem;color:var(--text)">📊 Variance Adjustments</h3>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-secondary" id="btn-compare-files" onclick="openCompareModal()" style="font-size:12px;display:none">⚖ Compare Count Files</button>
+          <button class="btn btn-secondary" id="btn-inv-snapshot" onclick="openSnapshotModal()" style="font-size:12px;display:none">🕒 Inventory Snapshot</button>
           <select id="var-type" onchange="renderVariance()" style="width:auto;flex:0 0 auto">
             <option value="">All Variances</option>
             <option value="negative">Negative (Shortage)</option>
@@ -1318,6 +1319,52 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('compare-modal')">Close</button>
       <button class="btn btn-secondary" onclick="exportCompareCSV()" id="cmp-export-btn" style="display:none">⬇ Export Report</button>
+    </div>
+  </div>
+</div>
+
+<!-- INVENTORY SNAPSHOT MODAL -->
+<div class="modal-bg" id="snapshot-modal">
+  <div class="modal" style="max-width:820px">
+    <h2>🕒 Inventory Snapshot</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+      See what every item's quantity was at a specific date and time, reconstructed from the transaction log.
+    </p>
+
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">Date &amp; time</label>
+        <input type="datetime-local" id="snap-datetime" style="font-size:13px">
+      </div>
+      <button class="btn btn-primary" onclick="renderSnapshot()" style="font-size:13px">Show Snapshot</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+      Quantities are reconstructed from logged transactions as of the moment chosen — accuracy depends on every
+      transaction having been logged. Items created after this time are marked "Not yet added." Deleted items
+      aren't included. Unit cost/value shown uses <em>today's</em> cost, not the cost in effect at that time.
+    </div>
+
+    <div id="snap-results" style="display:none">
+      <div id="snap-summary" style="margin-bottom:10px;padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:13px"></div>
+      <div style="max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--surface2);position:sticky;top:0">
+              <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Item</th>
+              <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">SKU</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Qty</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Unit Cost (today)</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Est. Value (today's cost)</th>
+            </tr>
+          </thead>
+          <tbody id="snap-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('snapshot-modal')">Close</button>
+      <button class="btn btn-secondary" onclick="exportSnapshotCSV()" id="snap-export-btn" style="display:none">⬇ Export CSV</button>
     </div>
   </div>
 </div>
@@ -2609,6 +2656,7 @@ function openMobileMoreMenu() {
   }
   if (currentRole === 'superuser') {
     html += '<div class="mm-item" onclick="closeMobileMoreMenu();openCompareModal()">⚖ Compare Count Files</div>';
+    html += '<div class="mm-item" onclick="closeMobileMoreMenu();openSnapshotModal()">🕒 Inventory Snapshot</div>';
   }
   html += '<div class="mm-item" onclick="openSettings();closeMobileMoreMenu()">⚙ Settings</div>';
   html += '<div class="mm-item" onclick="openChangePassword();closeMobileMoreMenu()">🔑 Change Password</div>';
@@ -7177,6 +7225,7 @@ function applyRoleUI() {
 
   show('btn-clear-audit', currentRole === 'superuser');
   show('btn-compare-files', currentRole === 'superuser');
+  show('btn-inv-snapshot', currentRole === 'superuser');
 
   // Import button: controlled by userPermissions for user role
   show('btn-import-file', can('import_inventory'));
@@ -8432,6 +8481,85 @@ function exportCompareCSV() {
     rows.push([r.name, r.sku||'', r.beforeQty, r.afterQty, r.variance, r.cost, Math.round(r.costImpact*100)/100, r.item ? 'yes' : 'no']);
   });
   downloadCSV('count_variance_' + new Date().toISOString().split('T')[0] + '.csv', rows);
+}
+
+// ─── INVENTORY SNAPSHOT (point-in-time reconstruction) ───────────────────────
+var _snapRows = [];
+
+function openSnapshotModal() {
+  if (currentRole !== 'superuser') return;
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var localVal = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate())
+    + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+  document.getElementById('snap-datetime').value = localVal;
+  document.getElementById('snap-results').style.display = 'none';
+  document.getElementById('snap-export-btn').style.display = 'none';
+  _snapRows = [];
+  openModal('snapshot-modal');
+}
+
+function renderSnapshot() {
+  var val = document.getElementById('snap-datetime').value;
+  if (!val) { alert('Choose a date & time.'); return; }
+  var cutoff = new Date(val);
+  var cutoffTime = cutoff.getTime();
+  var isNow = cutoffTime >= Date.now();
+
+  _snapRows = db.items.map(function(item) {
+    // Item didn't exist yet at the chosen time
+    if (item.createdAt && new Date(item.createdAt).getTime() > cutoffTime) {
+      return { item: item, qty: null, notYet: true };
+    }
+    if (isNow) return { item: item, qty: item.qty, notYet: false };
+    // Most recent log at or before the cutoff carries the resulting qty (absQty)
+    var relevant = db.logs.filter(function(l) {
+      return l.itemId === item.id && new Date(l.date).getTime() <= cutoffTime;
+    });
+    relevant.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+    var qty = (relevant.length && relevant[0].absQty != null) ? relevant[0].absQty
+      : (item.baselineQty != null ? item.baselineQty : 0);
+    return { item: item, qty: qty, notYet: false };
+  }).sort(function(a, b) { return (a.item.name || '').localeCompare(b.item.name || ''); });
+
+  var tbody = document.getElementById('snap-body');
+  tbody.innerHTML = '';
+  var countedItems = 0, totalValue = 0, hasCost = false;
+  _snapRows.forEach(function(r) {
+    var tr = document.createElement('tr');
+    if (r.notYet) {
+      tr.innerHTML = '<td>' + esc(r.item.name) + '</td><td>' + esc(r.item.sku || '—') + '</td>'
+        + '<td colspan="3" style="text-align:center;color:var(--muted);font-style:italic">Not yet added</td>';
+    } else {
+      countedItems++;
+      var val2 = (r.qty || 0) * (r.item.cost || 0);
+      if (r.item.cost) { hasCost = true; totalValue += val2; }
+      tr.innerHTML = '<td>' + esc(r.item.name) + '</td><td>' + esc(r.item.sku || '—') + '</td>'
+        + '<td style="text-align:right">' + fmtInt(r.qty) + ' ' + esc(r.item.unit || '') + '</td>'
+        + '<td style="text-align:right">' + (r.item.cost ? fmtPHP(r.item.cost) : '—') + '</td>'
+        + '<td style="text-align:right">' + (r.item.cost ? fmtPHP(val2) : '—') + '</td>';
+    }
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('snap-summary').innerHTML =
+    '<strong>' + countedItems + '</strong> item(s) as of <strong>'
+    + cutoff.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+    + '</strong>' + (hasCost ? ' — est. value ' + fmtPHP(totalValue) + ' (today\'s unit cost)' : '');
+
+  document.getElementById('snap-results').style.display = '';
+  document.getElementById('snap-export-btn').style.display = '';
+}
+
+function exportSnapshotCSV() {
+  if (!_snapRows.length) return;
+  var val = document.getElementById('snap-datetime').value || 'now';
+  var rows = [['Item', 'SKU', 'Qty', 'Unit', 'Unit Cost (today)', 'Est. Value (today\'s cost)']];
+  _snapRows.forEach(function(r) {
+    if (r.notYet) { rows.push([r.item.name, r.item.sku || '', 'not yet added', '', '', '']); return; }
+    rows.push([r.item.name, r.item.sku || '', r.qty, r.item.unit || '', r.item.cost || 0, Math.round((r.qty || 0) * (r.item.cost || 0) * 100) / 100]);
+  });
+  downloadCSV('inventory_snapshot_' + val.replace(/[:T]/g, '-') + '.csv', rows);
 }
 
 function previewImport(rows) {
