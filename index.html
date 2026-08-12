@@ -897,7 +897,9 @@
     <!-- VARIANCE SECTION -->
     <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-        <h3 style="margin:0;font-size:1rem;color:var(--text)">📊 Variance Adjustments</h3>
+        <h3 style="margin:0;font-size:1rem;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:6px" onclick="toggleVarianceSection()">
+          <span id="var-collapse-chevron">▾</span> 📊 Variance Adjustments
+        </h3>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-secondary" id="btn-compare-files" onclick="openCompareModal()" style="font-size:12px;display:none">⚖ Compare Count Files</button>
           <button class="btn btn-secondary" id="btn-inv-snapshot" onclick="openSnapshotModal()" style="font-size:12px;display:none">🕒 Inventory Snapshot</button>
@@ -907,37 +909,40 @@
             <option value="positive">Positive (Excess)</option>
           </select>
           <button class="btn btn-secondary" onclick="exportVarianceCSV()">⬇ Export CSV</button>
+          <button class="btn btn-secondary" id="var-collapse-btn" onclick="toggleVarianceSection()" style="font-size:12px">Collapse</button>
         </div>
       </div>
 
-      <div class="summary" style="margin-bottom:18px">
-        <div class="card"><div class="label">Total Adjustments</div><div class="value" id="var-total">0</div></div>
-        <div class="card danger"><div class="label">⬇ Shortage (count)</div><div class="value" id="var-neg">0</div></div>
-        <div class="card danger"><div class="label">⬇ Cost of Shortage</div><div class="value" id="var-neg-cost" style="font-size:1.2rem">₱0</div></div>
-        <div class="card ok"><div class="label">⬆ Excess (count)</div><div class="value" id="var-pos">0</div></div>
-        <div class="card ok"><div class="label">⬆ Cost of Excess</div><div class="value" id="var-pos-cost" style="font-size:1.2rem">₱0</div></div>
-        <div class="card"><div class="label">Net Variance</div><div class="value" id="var-net">0</div></div>
-      </div>
+      <div id="var-section-body">
+        <div class="summary" style="margin-bottom:18px">
+          <div class="card"><div class="label">Total Adjustments</div><div class="value" id="var-total">0</div></div>
+          <div class="card danger"><div class="label">⬇ Shortage (count)</div><div class="value" id="var-neg">0</div></div>
+          <div class="card danger"><div class="label">⬇ Cost of Shortage</div><div class="value" id="var-neg-cost" style="font-size:1.2rem">₱0</div></div>
+          <div class="card ok"><div class="label">⬆ Excess (count)</div><div class="value" id="var-pos">0</div></div>
+          <div class="card ok"><div class="label">⬆ Cost of Excess</div><div class="value" id="var-pos-cost" style="font-size:1.2rem">₱0</div></div>
+          <div class="card"><div class="label">Net Variance</div><div class="value" id="var-net">0</div></div>
+        </div>
 
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Date & Time</th>
-              <th>Item</th>
-              <th>Category</th>
-              <th>Expected</th>
-              <th>Actual</th>
-              <th>Variance</th>
-              <th>Cost Impact</th>
-              <th>Reason</th>
-              <th>Performed By</th>
-            </tr>
-          </thead>
-          <tbody id="var-tbody"></tbody>
-        </table>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date & Time</th>
+                <th>Item</th>
+                <th>Category</th>
+                <th>Expected</th>
+                <th>Actual</th>
+                <th>Variance</th>
+                <th>Cost Impact</th>
+                <th>Reason</th>
+                <th>Performed By</th>
+              </tr>
+            </thead>
+            <tbody id="var-tbody"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="var-empty"><div class="icon">📊</div><p>No variance adjustments for this period.</p></div>
       </div>
-      <div class="empty hidden" id="var-empty"><div class="icon">📊</div><p>No variance adjustments for this period.</p></div>
     </div>
 
     <div style="margin-top:28px">
@@ -4069,6 +4074,14 @@ async function applyAdjust() {
 
   if (diff !== 0 && !reasonSel) { alert('A variance reason is required when there is a discrepancy.'); return; }
 
+  // No discrepancy — nothing to log. Without this, confirming a matching count
+  // during a stocktake creates a zero-variance "adjust" entry for every single
+  // item, which floods the Variance Adjustments report with noise.
+  if (diff === 0) {
+    closeModal('adjust-modal');
+    return;
+  }
+
   const notes = [
     'System qty: ' + sysQty,
     isVarianceMode ? 'Variance entered: ' + (diff >= 0 ? '+' : '') + diff : 'Physical count: ' + phys,
@@ -4369,6 +4382,28 @@ function initReportDates() {
   document.getElementById('rpt-from').value = from.toISOString().slice(0,10);
 }
 
+// ─── VARIANCE SECTION COLLAPSE ────────────────────────────────────────────────
+var VAR_COLLAPSE_KEY = 'sb_varianceCollapsed';
+function initVarianceCollapse() {
+  var collapsed = localStorage.getItem(VAR_COLLAPSE_KEY) === '1';
+  applyVarianceCollapse(collapsed);
+}
+function toggleVarianceSection() {
+  var body = document.getElementById('var-section-body');
+  var collapsed = body.style.display !== 'none';
+  applyVarianceCollapse(collapsed);
+  localStorage.setItem(VAR_COLLAPSE_KEY, collapsed ? '1' : '0');
+}
+function applyVarianceCollapse(collapsed) {
+  var body = document.getElementById('var-section-body');
+  var chevron = document.getElementById('var-collapse-chevron');
+  var btn = document.getElementById('var-collapse-btn');
+  if (!body) return;
+  body.style.display = collapsed ? 'none' : '';
+  if (chevron) chevron.textContent = collapsed ? '▸' : '▾';
+  if (btn) btn.textContent = collapsed ? 'Expand' : 'Collapse';
+}
+
 function renderReport() {
   const fromVal = document.getElementById('rpt-from').value;
   const toVal = document.getElementById('rpt-to').value;
@@ -4634,6 +4669,7 @@ function renderVariance() {
 
   let logs = db.logs.filter(l => {
     if (l.type !== 'adjust') return false;
+    if (!l.variance) return false; // zero/blank variance = confirmed match, not a discrepancy
     const d = new Date(l.date);
     if (from && d < from) return false;
     if (to   && d > to)   return false;
@@ -4701,6 +4737,7 @@ function exportVarianceCSV() {
 
   const logs = db.logs.filter(l => {
     if (l.type !== 'adjust') return false;
+    if (!l.variance) return false; // zero/blank variance = confirmed match, not a discrepancy
     const d = new Date(l.date);
     if (from && d < from) return false;
     if (to   && d > to)   return false;
@@ -7715,6 +7752,7 @@ document.addEventListener('DOMContentLoaded', function() {
   initPWA();
   initPullToRefresh();
   initBiometricLoginCheck();
+  initVarianceCollapse();
   // Re-render inventory on resize (desktop ↔ mobile switch)
   window.addEventListener('resize', function() {
     if (document.getElementById('tab-inventory').classList.contains('active')) renderInventory();
@@ -8411,14 +8449,15 @@ function runCompare() {
     nmEl.innerHTML = '<strong>⚠ In only one file (ignored):</strong> ' + esc(notMatched.slice(0,30).join(', ')) + (notMatched.length > 30 ? ' …and ' + (notMatched.length-30) + ' more' : '');
   } else nmEl.style.display = 'none';
 
-  var bookable = _cmpRows.filter(function(r){ return r.item; });
+  var bookable = _cmpRows.filter(function(r){ return r.item && r.variance; });
   var qtyChanges = bookable.filter(function(r){ return r.item.qty !== r.afterQty; });
+  var skipped = _cmpRows.length - bookable.length;
   document.getElementById('cmp-book-note').innerHTML =
     'Creates ' + bookable.length + ' adjustment record' + (bookable.length===1?'':'s') + ' dated to the count date, so the cost lands in that week\'s expenses.<br>'
     + (qtyChanges.length
         ? '<span style="color:var(--warn)">⚠ ' + qtyChanges.length + ' item' + (qtyChanges.length===1?'':'s') + ' will also have stock updated to the after-count figure.</span>'
         : '<span style="color:var(--ok)">✓ Stock already matches the after-count figures — no quantities will change.</span>')
-    + (_cmpRows.length - bookable.length ? '<br><span style="color:var(--muted)">' + (_cmpRows.length - bookable.length) + ' row(s) not found in the system and will be skipped.</span>' : '');
+    + (skipped ? '<br><span style="color:var(--muted)">' + skipped + ' row(s) skipped (no variance, or not found in the system).</span>' : '');
 
   document.getElementById('cmp-book-btn').style.display = (currentRole === 'superuser' && bookable.length) ? '' : 'none';
   document.getElementById('cmp-results').style.display = '';
@@ -8430,8 +8469,10 @@ async function bookCompareVariance() {
   if (currentRole !== 'superuser') return;
   var dateVal = document.getElementById('cmp-book-date').value;
   if (!dateVal) { document.getElementById('cmp-error').textContent = 'Choose a count date first.'; return; }
-  var bookable = _cmpRows.filter(function(r){ return r.item; });
-  if (!bookable.length) return;
+  // Only rows with an actual discrepancy — booking zero-variance rows just
+  // floods the Variance Adjustments report with no-op entries.
+  var bookable = _cmpRows.filter(function(r){ return r.item && r.variance; });
+  if (!bookable.length) { document.getElementById('cmp-error').textContent = 'No variances to book — every matched item already ties out.'; return; }
 
   var qtyChanges = bookable.filter(function(r){ return r.item.qty !== r.afterQty; });
   var msg = 'Book ' + bookable.length + ' variance record' + (bookable.length===1?'':'s') + ' dated ' + dateVal + '?\n\n'
