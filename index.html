@@ -8284,8 +8284,10 @@ function downloadCSV(filename, rows) {
 
 function exportInventoryCSV() {
   // Respect per-role hidden columns so the export can't be used to read concealed data
+  var exportedAt = new Date().toISOString();
   var cols = [
     { key: 'seq',      header: '#',         col: null,        val: function(it,i){ return i+1; } },
+    { key: 'exportedAt', header: 'Exported At', col: null,     val: function(){ return exportedAt; } },
     { key: 'name',     header: 'Name',      col: null,        val: function(it){ return it.name; } },
     { key: 'sku',      header: 'SKU',       col: 'sku',       val: function(it){ return it.sku||''; } },
     { key: 'category', header: 'Category',  col: 'category',  val: function(it){ return it.category||''; } },
@@ -8492,6 +8494,7 @@ function normalizeHeader(h) { return (h || '').toLowerCase().replace(/[\s\/\-_]/
 
 // ─── COMPARE COUNT FILES ─────────────────────────────────────────────────────
 var _cmpBefore = null, _cmpAfter = null, _cmpRows = [];
+var _cmpBeforeAsOf = null, _cmpAfterAsOf = null; // timestamp read from an "Exported At" column, if present
 
 function openCompareModal() {
   resetCompareModal();
@@ -8504,6 +8507,7 @@ function openCompareModal() {
 
 function resetCompareModal() {
   _cmpBefore = null; _cmpAfter = null; _cmpRows = [];
+  _cmpBeforeAsOf = null; _cmpAfterAsOf = null;
   ['before','after'].forEach(function(w) {
     var inp = document.getElementById('cmp-' + w + '-input');
     if (inp) inp.value = '';
@@ -8543,7 +8547,7 @@ function parseAnyFile(file, cb) {
   if (ext === 'csv') reader.readAsText(file); else reader.readAsArrayBuffer(file);
 }
 
-// Turn parsed rows into { key -> {name, sku, qty, cost} }
+// Turn parsed rows into { map: { key -> {name, sku, qty, cost} }, asOf: ISO string | null }
 function extractCountMap(rows) {
   if (!rows.length) return null;
   var origKeys = Object.keys(rows[0]);
@@ -8557,7 +8561,18 @@ function extractCountMap(rows) {
   var cSku  = findCol(['sku','code','itemcode','skucode']);
   var cQty  = findCol(['stock','qty','quantity','currentstock','currentqty']);
   var cCost = findCol(['costunit','cost','unitcost','costperunit','price']);
+  var cAsOf = findCol(['exportedat','exportdate','asof','asofdate','snapshotdate']);
   if (!cName && !cSku) return null;
+
+  // "As of" comes from SupplyBase's own inventory export — every row carries
+  // the same timestamp, so the first non-empty value is the file's snapshot time.
+  var asOf = null;
+  if (cAsOf) {
+    for (var i = 0; i < rows.length; i++) {
+      var v = String(rows[i][cAsOf] || '').trim();
+      if (v) { var d = new Date(v); if (!isNaN(d.getTime())) { asOf = d.toISOString(); } break; }
+    }
+  }
 
   var map = {};
   rows.forEach(function(r) {
@@ -8569,7 +8584,11 @@ function extractCountMap(rows) {
     var key = (sku ? 's:' + sku.toLowerCase() : 'n:' + name.toLowerCase());
     map[key] = { name: name, sku: sku, qty: isNaN(qty) ? null : qty, cost: isNaN(cost) ? null : cost };
   });
-  return map;
+  return { map: map, asOf: asOf };
+}
+
+function fmtAsOf(iso) {
+  return new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 function handleCompareFile(input, which) {
@@ -8579,11 +8598,14 @@ function handleCompareFile(input, which) {
   errEl.textContent = '';
   parseAnyFile(file, function(rows, err) {
     if (err) { errEl.textContent = err; return; }
-    var map = extractCountMap(rows);
-    if (!map) { errEl.textContent = 'The ' + which + ' file needs a Name or SKU column, plus Stock/Qty.'; return; }
-    if (which === 'before') _cmpBefore = map; else _cmpAfter = map;
+    var result = extractCountMap(rows);
+    if (!result) { errEl.textContent = 'The ' + which + ' file needs a Name or SKU column, plus Stock/Qty.'; return; }
+    var map = result.map, asOf = result.asOf;
+    if (which === 'before') { _cmpBefore = map; _cmpBeforeAsOf = asOf; }
+    else                    { _cmpAfter  = map; _cmpAfterAsOf  = asOf; }
     var drop = document.getElementById('cmp-' + which + '-drop');
-    drop.innerHTML = '✓ ' + esc(file.name) + '<br><span style="font-size:10px">' + Object.keys(map).length + ' rows</span>';
+    drop.innerHTML = '✓ ' + esc(file.name) + '<br><span style="font-size:10px">' + Object.keys(map).length + ' rows</span>'
+      + (asOf ? '<br><span style="font-size:10px;font-weight:700;color:var(--accent)">As of ' + fmtAsOf(asOf) + '</span>' : '');
     drop.style.borderColor = 'var(--ok)';
     if (_cmpBefore && _cmpAfter) runCompare();
   });
@@ -8641,11 +8663,26 @@ function runCompare() {
   var net = oCost - sCost;
   document.getElementById('cmp-summary').innerHTML =
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Variance summary</div>'
+    + (_cmpBeforeAsOf || _cmpAfterAsOf
+        ? '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'
+          + (_cmpBeforeAsOf ? 'Before as of <strong style="color:var(--text)">' + fmtAsOf(_cmpBeforeAsOf) + '</strong>' : 'Before: no timestamp in file')
+          + '  →  '
+          + (_cmpAfterAsOf ? 'After as of <strong style="color:var(--text)">' + fmtAsOf(_cmpAfterAsOf) + '</strong>' : 'After: no timestamp in file')
+          + '</div>'
+        : '')
     + '<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px">'
     + '<span style="color:#dc2626">⬇ Shortage: <strong>' + sC + '</strong> items · ' + fmtInt(sU) + ' units · ₱' + fmt(sCost) + '</span>'
     + '<span style="color:#16a34a">⬆ Excess: <strong>' + oC + '</strong> items · ' + fmtInt(oU) + ' units · ₱' + fmt(oCost) + '</span>'
     + '<span style="font-weight:700">Net: ' + (net < 0 ? '−' : '+') + '₱' + fmt(Math.abs(net)) + '</span>'
     + '</div>';
+
+  // Default the count date to the after-file's own "as of" timestamp when we
+  // have one — more accurate than guessing "most recent Saturday".
+  var asOfForBooking = _cmpAfterAsOf || _cmpBeforeAsOf;
+  if (asOfForBooking) {
+    var bookDateEl = document.getElementById('cmp-book-date');
+    if (bookDateEl) bookDateEl.value = new Date(asOfForBooking).toISOString().split('T')[0];
+  }
 
   var nmEl = document.getElementById('cmp-notmatched');
   if (notMatched.length) {
