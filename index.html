@@ -8284,7 +8284,8 @@ function downloadCSV(filename, rows) {
 
 function exportInventoryCSV() {
   // Respect per-role hidden columns so the export can't be used to read concealed data
-  var exportedAt = new Date().toISOString();
+  // Local time, human-readable directly in Excel/Sheets — no UTC conversion needed.
+  var exportedAt = new Date().toLocaleString('en-PH', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
   var cols = [
     { key: 'seq',      header: '#',         col: null,        val: function(it,i){ return i+1; } },
     { key: 'exportedAt', header: 'Exported At', col: null,     val: function(){ return exportedAt; } },
