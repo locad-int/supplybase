@@ -1884,6 +1884,22 @@
     <div id="tm-item-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
     <button class="btn btn-secondary" id="tm-toggle-btn" onclick="toggleTestMode()" style="font-size:13px">Turn Test Mode On</button>
 
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+    <p style="color:var(--muted);font-size:13px;margin-bottom:4px">🗄 <strong>Automatic Backups</strong></p>
+    <p style="color:var(--muted);font-size:11px;margin-bottom:8px">Snapshots of inventory levels run independently of the app. Download the latest one here.</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:2px">Daily — 6:00 PM</div>
+        <div id="backup-status-daily" style="font-size:12px;color:var(--muted);margin-bottom:6px">Checking…</div>
+        <button class="btn btn-secondary" onclick="downloadBackup('inventory_backup.csv','backup-status-daily')" style="font-size:13px">⬇ Download</button>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:2px">Saturday — 4:00 PM (pre-count reference)</div>
+        <div id="backup-status-saturday" style="font-size:12px;color:var(--muted);margin-bottom:6px">Checking…</div>
+        <button class="btn btn-secondary" onclick="downloadBackup('saturday_4pm_backup.csv','backup-status-saturday')" style="font-size:13px">⬇ Download</button>
+      </div>
+    </div>
+
     <p id="settings-msg" style="color:var(--ok);font-size:12px;min-height:18px;margin-top:8px"></p>
     <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
       <button class="btn btn-danger btn-sm" onclick="reconnectSupabase()" title="Change Supabase connection">🔌 Change database</button>
@@ -7587,6 +7603,50 @@ function removeTestModeItem(id) {
   if (testModeActive) applyTestMode();
 }
 
+// ─── AUTOMATIC BACKUPS (Supabase Storage) ─────────────────────────────────────
+var _backupBlobs = {}; // filename -> Blob, cached after the last successful check
+
+async function checkBackupStatus(filename, statusElId) {
+  var statusEl = document.getElementById(statusElId);
+  if (!statusEl) return;
+  if (!sb) { statusEl.textContent = 'Not connected to Supabase.'; return; }
+  statusEl.textContent = 'Checking…';
+  try {
+    var r = await sb.storage.from('backups').download(filename);
+    if (r.error || !r.data) {
+      statusEl.textContent = 'No backup found yet, or this app can\'t read it — see setup notes.';
+      delete _backupBlobs[filename];
+      return;
+    }
+    _backupBlobs[filename] = r.data;
+    var text = await r.data.text();
+    var lines = text.split(/\r?\n/).filter(function(l){ return l.trim(); });
+    var asOfText = '';
+    if (lines.length > 1) {
+      var headerCells = parseCSVLine(lines[0]);
+      var idx = headerCells.findIndex(function(h){ return normalizeHeader(h) === 'exportedat'; });
+      if (idx !== -1) asOfText = parseCSVLine(lines[1])[idx] || '';
+    }
+    statusEl.textContent = asOfText ? ('Last backup: ' + asOfText) : 'Backup found, but could not read its timestamp.';
+  } catch(e) {
+    statusEl.textContent = 'Error checking backup: ' + e.message;
+    delete _backupBlobs[filename];
+  }
+}
+
+async function downloadBackup(filename, statusElId) {
+  if (!_backupBlobs[filename]) {
+    await checkBackupStatus(filename, statusElId);
+    if (!_backupBlobs[filename]) return; // checkBackupStatus already showed the error
+  }
+  var url = URL.createObjectURL(_backupBlobs[filename]);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 async function confirmFullReset() {
   if (currentRole !== 'superuser') return;
   showConfirm('Full Reset', 'This will:\n\n• Set ALL item quantities to 0\n• Clear the import baseline\n• Delete all logs, reorders, and requests\n\nAfter this, import a new file to set the starting inventory.\n\nThis cannot be undone.', async function() {
@@ -7653,6 +7713,8 @@ function openSettings() {
   });
   applyTabVisibility(); // sync the tab-access checkboxes
   renderTestModeSettings();
+  checkBackupStatus('inventory_backup.csv', 'backup-status-daily');
+  checkBackupStatus('saturday_4pm_backup.csv', 'backup-status-saturday');
   openModal('settings-modal');
 }
 
