@@ -1320,6 +1320,7 @@
               <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Before</th>
               <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">After</th>
               <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Variance</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Accuracy %</th>
               <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Unit Cost</th>
               <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Cost Impact</th>
               <th style="padding:8px 12px;text-align:center;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">In system</th>
@@ -8911,10 +8912,16 @@ function runCompare() {
     if (b.sku) item = db.items.find(function(i){ return i.sku && i.sku.toLowerCase() === b.sku.toLowerCase(); });
     if (!item && b.name) item = db.items.find(function(i){ return i.name.toLowerCase() === b.name.toLowerCase(); });
     var cost = (b.cost !== null && b.cost > 0) ? b.cost : (item ? (item.cost || 0) : 0);
+    // Per-line accuracy: how close the count landed relative to the system qty.
+    // 0/0 (both files agree on zero stock) counts as a perfect match; any variance
+    // against a zero baseline can't be expressed as a proportion, so it's 0%.
+    // Floored at 0% — a count that's more than 100% off is still just "0% accurate",
+    // not a negative number.
+    var lineAccuracy = b.qty === 0 ? (a.qty === 0 ? 100 : 0) : Math.max(0, (1 - Math.abs(variance) / b.qty) * 100);
     _cmpRows.push({
       name: a.name || b.name, sku: a.sku || b.sku,
       beforeQty: b.qty, afterQty: a.qty, variance: variance,
-      cost: cost, costImpact: variance * cost,
+      cost: cost, costImpact: variance * cost, lineAccuracy: lineAccuracy,
       item: item, costFromFile: (b.cost !== null && b.cost > 0)
     });
   });
@@ -8924,16 +8931,18 @@ function runCompare() {
   var tbody = document.getElementById('cmp-body');
   tbody.innerHTML = _cmpRows.map(function(r) {
     var col = r.variance < 0 ? '#dc2626' : r.variance > 0 ? '#16a34a' : 'var(--muted)';
+    var accColor = r.lineAccuracy >= 95 ? '#16a34a' : r.lineAccuracy >= 85 ? 'var(--warn)' : '#dc2626';
     return '<tr style="border-bottom:1px solid var(--border)">'
       + '<td style="padding:8px 12px;font-weight:600">' + esc(r.name) + (r.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.sku) + '</span>' : '') + '</td>'
       + '<td style="text-align:right">' + fmtInt(r.beforeQty) + '</td>'
       + '<td style="text-align:right">' + fmtInt(r.afterQty) + '</td>'
       + '<td style="text-align:right;font-weight:700;color:' + col + '">' + (r.variance === 0 ? '0' : (r.variance > 0 ? '+' : '') + fmtInt(r.variance)) + '</td>'
+      + '<td style="text-align:right;font-weight:700;color:' + accColor + '">' + r.lineAccuracy.toFixed(1) + '%</td>'
       + '<td style="text-align:right;color:var(--muted)">' + (r.cost ? '₱' + fmt(r.cost) : '—') + '</td>'
       + '<td style="text-align:right;font-weight:700;color:' + col + '">' + (r.costImpact ? (r.costImpact > 0 ? '+' : '−') + '₱' + fmt(Math.abs(r.costImpact)) : '—') + '</td>'
       + '<td style="text-align:center">' + (r.item ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--warn)" title="Not found — cannot be booked">—</span>') + '</td>'
       + '</tr>';
-  }).join('') || '<tr><td colspan="7" style="padding:16px;text-align:center;color:var(--muted)">No matching items found between the two files.</td></tr>';
+  }).join('') || '<tr><td colspan="8" style="padding:16px;text-align:center;color:var(--muted)">No matching items found between the two files.</td></tr>';
 
   // Totals
   var sC=0,oC=0,sU=0,oU=0,sCost=0,oCost=0,matchedC=0;
@@ -8943,9 +8952,11 @@ function runCompare() {
     else                      { matchedC++; }
   });
   var net = oCost - sCost;
-  // Inventory Accuracy % — the share of compared items whose physical count
-  // matched the system exactly (SKU/item-level accuracy, the standard stocktake metric).
-  var accuracyPct = _cmpRows.length ? (matchedC / _cmpRows.length * 100) : null;
+  // Inventory Accuracy % — average of every line's own accuracy % (see lineAccuracy
+  // above). Unlike a plain match rate, this gives partial credit for near-misses:
+  // a line at 95% still contributes 95%, not 0%, so a handful of small discrepancies
+  // don't drag the overall number down as hard as a strict "matched or not" count would.
+  var accuracyPct = _cmpRows.length ? (_cmpRows.reduce(function(s, r){ return s + r.lineAccuracy; }, 0) / _cmpRows.length) : null;
   var accuracyColor = accuracyPct == null ? 'var(--muted)' : accuracyPct >= 95 ? '#16a34a' : accuracyPct >= 85 ? 'var(--warn)' : '#dc2626';
   document.getElementById('cmp-summary').innerHTML =
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Variance summary</div>'
@@ -8960,7 +8971,7 @@ function runCompare() {
         ? '<div style="margin-bottom:8px;padding:8px 10px;border-radius:6px;background:var(--surface);border:1px solid var(--border);display:inline-block">'
           + '<span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">📊 Inventory Accuracy</span> '
           + '<strong style="font-size:1.05rem;color:' + accuracyColor + '">' + accuracyPct.toFixed(1) + '%</strong> '
-          + '<span style="font-size:11px;color:var(--muted)">(' + matchedC + ' of ' + _cmpRows.length + ' items matched exactly)</span>'
+          + '<span style="font-size:11px;color:var(--muted)">(average across ' + _cmpRows.length + ' items · ' + matchedC + ' matched exactly)</span>'
           + '</div>'
         : '')
     + '<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px">'
@@ -9051,9 +9062,9 @@ async function bookCompareVariance() {
 }
 
 function exportCompareCSV() {
-  var rows = [['Item','SKU','Before','After','Variance','Unit Cost','Cost Impact','In System']];
+  var rows = [['Item','SKU','Before','After','Variance','Accuracy %','Unit Cost','Cost Impact','In System']];
   _cmpRows.forEach(function(r) {
-    rows.push([r.name, r.sku||'', r.beforeQty, r.afterQty, r.variance, r.cost, Math.round(r.costImpact*100)/100, r.item ? 'yes' : 'no']);
+    rows.push([r.name, r.sku||'', r.beforeQty, r.afterQty, r.variance, Math.round(r.lineAccuracy*10)/10, r.cost, Math.round(r.costImpact*100)/100, r.item ? 'yes' : 'no']);
   });
   downloadCSV('count_variance_' + new Date().toISOString().split('T')[0] + '.csv', rows);
 }
