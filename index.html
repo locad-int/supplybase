@@ -924,6 +924,7 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-secondary" id="btn-compare-files" onclick="openCompareModal()" style="font-size:12px;display:none">⚖ Compare Count Files</button>
           <button class="btn btn-secondary" id="btn-inv-snapshot" onclick="openSnapshotModal()" style="font-size:12px;display:none">🕒 Inventory Snapshot</button>
+          <button class="btn btn-secondary" id="btn-reconciliation" onclick="openReconListModal()" style="font-size:12px;display:none">🧾 Reconciliation</button>
           <select id="var-type" onchange="renderVariance()" style="width:auto;flex:0 0 auto">
             <option value="">All Variances</option>
             <option value="negative">Negative (Shortage)</option>
@@ -1391,6 +1392,100 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('snapshot-modal')">Close</button>
       <button class="btn btn-secondary" onclick="exportSnapshotCSV()" id="snap-export-btn" style="display:none">⬇ Export CSV</button>
+    </div>
+  </div>
+</div>
+
+<!-- RECONCILIATION — superuser-only formal sign-off records -->
+<datalist id="recon-reason-options">
+  <option value="Damaged / unusable">
+  <option value="Lost / missing">
+  <option value="Previous miscount">
+  <option value="Unrecorded usage">
+  <option value="Found stock (overage)">
+  <option value="Data entry error">
+  <option value="Theft / pilferage">
+  <option value="Other">
+</datalist>
+
+<div class="modal-bg" id="recon-list-modal">
+  <div class="modal" style="max-width:900px">
+    <h2>🧾 Reconciliation Records</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+      Formal, signed-off reconciliations of system quantity vs. physical count. Superuser only — separate from routine adjustments and Compare Count Files.
+    </p>
+    <div style="margin-bottom:12px">
+      <button class="btn btn-primary" onclick="openNewRecon()" style="font-size:13px">+ New Reconciliation</button>
+    </div>
+    <div style="max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="background:var(--surface2);position:sticky;top:0">
+            <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">As Of</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Status</th>
+            <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Items</th>
+            <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Net Variance</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Created By</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Finalized</th>
+            <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="recon-list-body"></tbody>
+      </table>
+    </div>
+    <div class="empty hidden" id="recon-list-empty"><div class="icon">🧾</div><p>No reconciliation records yet.</p></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('recon-list-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="recon-modal">
+  <div class="modal" style="max-width:1000px">
+    <h2 id="recon-title">🧾 New Reconciliation</h2>
+    <div id="recon-locked-banner" style="display:none;margin-bottom:12px;padding:10px 12px;border-radius:8px;background:rgba(77,255,110,0.08);border:1px solid rgba(77,255,110,0.25);font-size:13px"></div>
+
+    <div id="recon-setup-row" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:10px">
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">As of date &amp; time</label>
+        <input type="datetime-local" id="recon-datetime" style="font-size:13px">
+      </div>
+      <button class="btn btn-primary" onclick="loadReconSystemQty()" style="font-size:13px">Load System Quantities</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+      System quantities are reconstructed from the transaction log as of the chosen moment (same method as Inventory Snapshot). Enter the physical count and a reason for every item with a discrepancy, then Save Draft to keep working on it, or Finalize &amp; Sign Off to lock it in as an official record.
+    </div>
+
+    <div id="recon-results" style="display:none">
+      <div id="recon-summary" style="margin-bottom:10px;padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);font-size:13px"></div>
+      <div style="max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--surface2);position:sticky;top:0">
+              <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Item</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">System Qty</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Counted Qty</th>
+              <th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Variance</th>
+              <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Reason</th>
+            </tr>
+          </thead>
+          <tbody id="recon-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="recon-apply-row" style="display:none;margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border)">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="recon-apply-checkbox" style="width:auto">
+        Also post these variances as inventory adjustments now (updates live stock, same as a manual adjustment)
+      </label>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('recon-modal')">Close</button>
+      <button class="btn btn-secondary" onclick="exportReconCSV(_reconEditingId)" id="recon-export-btn" style="display:none">⬇ Export CSV</button>
+      <button class="btn btn-secondary" onclick="saveReconDraft()" id="recon-save-draft-btn" style="display:none">💾 Save Draft</button>
+      <button class="btn btn-primary" onclick="finalizeReconciliation()" id="recon-finalize-btn" style="display:none">🔒 Finalize &amp; Sign Off</button>
     </div>
   </div>
 </div>
@@ -1979,7 +2074,7 @@
 <script>
 
 // ─── DATA STORE ────────────────────────────────────────────────────────────────
-let db = { items: [], logs: [], reorders: [], accounts: [] };
+let db = { items: [], logs: [], reorders: [], accounts: [], reconciliations: [] };
 let currentUser = null; // { username, role }
 let editItemId = null;
 let editReorderId = null;
@@ -2041,16 +2136,18 @@ async function refreshData() {
   if (btn) { btn.textContent = '↻ Refreshing…'; btn.disabled = true; }
   if (!sb) { if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; } return; }
   try {
-    var [r1, r2, r3, r4] = await Promise.all([
+    var [r1, r2, r3, r4, r5] = await Promise.all([
       sb.from('items').select('*').order('seq'),
       sb.from('logs').select('*'),
       sb.from('reorders').select('*'),
       sb.from('accounts').select('*'),
+      sb.from('reconciliations').select('*'),
     ]);
     if (r1.data) db.items    = r1.data;
     if (r2.data) db.logs     = r2.data;
     if (r3.data) db.reorders = r3.data;
     if (r4.data) db.accounts = r4.data;
+    if (r5.data) db.reconciliations = r5.data; // graceful — table may not exist yet
     await loadMessages();
     await loadRequests();
     updateSummary();
@@ -2508,6 +2605,7 @@ async function _sbUpsertAll() {
     if (db.logs.length)     ops.push(sb.from('logs').upsert(db.logs));
     if (db.reorders.length) ops.push(sb.from('reorders').upsert(db.reorders));
     if (db.accounts.length) ops.push(sb.from('accounts').upsert(db.accounts));
+    if (db.reconciliations.length) ops.push(sb.from('reconciliations').upsert(db.reconciliations));
     if (ops.length) await Promise.all(ops);
   } catch(e) { console.error('Supabase sync error:', e); }
 }
@@ -2615,17 +2713,19 @@ async function load() {
   if (!sb) { if (!initSupabase()) { showSetupOverlay(''); return; } }
   document.getElementById('supa-setup-error').textContent = 'Loading data…';
   try {
-    var [r1, r2, r3, r4] = await Promise.all([
+    var [r1, r2, r3, r4, r5] = await Promise.all([
       sb.from('items').select('*').order('seq'),
       sb.from('logs').select('*'),
       sb.from('reorders').select('*'),
       sb.from('accounts').select('*'),
+      sb.from('reconciliations').select('*'),
     ]);
     if (r1.error) throw new Error(r1.error.message);
     db.items    = r1.data || [];
     db.logs     = r2.data || [];
     db.reorders = r3.data || [];
     db.accounts = r4.data || [];
+    db.reconciliations = r5.data || []; // graceful — feature works locally even if table isn't set up yet
     // Load credentials from Supabase before showing login screen (cross-device support)
     await loadGlobalSettings();
     await loadMessages(); // graceful — won't throw if table missing
@@ -7434,6 +7534,7 @@ function applyRoleUI() {
   show('btn-clear-audit', currentRole === 'superuser');
   show('btn-compare-files', currentRole === 'superuser');
   show('btn-inv-snapshot', currentRole === 'superuser');
+  show('btn-reconciliation', currentRole === 'superuser');
 
   // Import button: controlled by userPermissions for user role
   show('btn-import-file', can('import_inventory'));
@@ -8993,6 +9094,325 @@ function exportSnapshotCSV() {
     rows.push([r.item.name, r.item.sku || '', r.qty, r.item.unit || '', r.item.cost || 0, Math.round((r.qty || 0) * (r.item.cost || 0) * 100) / 100]);
   });
   downloadCSV('inventory_snapshot_' + val.replace(/[:T]/g, '-') + '.csv', rows);
+}
+
+// ─── RECONCILIATION (superuser-only formal sign-off records) ────────────────────
+// A Reconciliation is distinct from Compare Count Files and routine Adjustments:
+// it's a persisted, auditable record — system qty vs. physical count vs. reason,
+// captured as of a chosen moment, that can be saved as a draft and then locked in
+// ("Finalize & Sign Off") so it can't be silently changed afterward.
+var _reconRows = [];        // working rows for the record currently open in the builder
+var _reconEditingId = null; // id of the record being edited/viewed, or null for a brand-new one
+
+function openReconListModal() {
+  if (currentRole !== 'superuser') return;
+  renderReconList();
+  openModal('recon-list-modal');
+}
+
+function reconNetVariance(rec) {
+  return (rec.lines || []).reduce(function(s, l) { return s + (l.variance || 0); }, 0);
+}
+
+function renderReconList() {
+  var tbody = document.getElementById('recon-list-body');
+  var empty = document.getElementById('recon-list-empty');
+  tbody.innerHTML = '';
+  var recs = (db.reconciliations || []).slice().sort(function(a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+  if (!recs.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  recs.forEach(function(rec) {
+    var asOfStr = rec.asOfDate ? new Date(rec.asOfDate).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '—';
+    var net = reconNetVariance(rec);
+    var netColor = net < 0 ? 'var(--danger)' : net > 0 ? 'var(--ok)' : 'var(--muted)';
+    var statusBadge = rec.status === 'finalized'
+      ? '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(77,255,110,0.12);color:var(--ok)">Finalized</span>'
+      : '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(255,255,255,0.06);color:var(--muted)">Draft</span>';
+    var finalizedStr = rec.status === 'finalized'
+      ? esc(rec.finalizedBy || '—') + '<div style="color:var(--muted);font-size:11px">' + (rec.finalizedAt ? new Date(rec.finalizedAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '') + '</div>'
+      : '—';
+    var tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--border)';
+    tr.innerHTML =
+      '<td style="padding:8px 12px;font-size:12px;white-space:nowrap">' + asOfStr + '</td>' +
+      '<td style="padding:8px 12px">' + statusBadge + '</td>' +
+      '<td style="padding:8px 12px;text-align:right">' + (rec.lines ? rec.lines.length : 0) + '</td>' +
+      '<td style="padding:8px 12px;text-align:right;font-weight:700;color:' + netColor + '">' + (net >= 0 ? '+' : '') + fmtInt(net) + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px">' + esc(rec.createdBy || '—') + '</td>' +
+      '<td style="padding:8px 12px;font-size:12px">' + finalizedStr + '</td>' +
+      '<td style="padding:8px 12px;text-align:right;white-space:nowrap">' +
+        '<button class="btn btn-secondary btn-sm" onclick="openReconRecord(\'' + rec.id + '\')" style="font-size:11px">' + (rec.status === 'finalized' ? 'View' : 'Continue') + '</button> ' +
+        '<button class="btn btn-secondary btn-sm" onclick="exportReconCSV(\'' + rec.id + '\')" style="font-size:11px">⬇</button> ' +
+        (rec.status !== 'finalized' ? '<button class="btn btn-icon btn-sm btn-danger" title="Delete draft" onclick="deleteReconDraft(\'' + rec.id + '\')">🗑</button>' : '') +
+      '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function openNewRecon() {
+  if (currentRole !== 'superuser') return;
+  _reconEditingId = null;
+  _reconRows = [];
+  document.getElementById('recon-title').textContent = '🧾 New Reconciliation';
+  document.getElementById('recon-locked-banner').style.display = 'none';
+  document.getElementById('recon-setup-row').style.display = '';
+  document.getElementById('recon-results').style.display = 'none';
+  document.getElementById('recon-apply-row').style.display = 'none';
+  document.getElementById('recon-apply-checkbox').checked = false;
+  document.getElementById('recon-export-btn').style.display = 'none';
+  document.getElementById('recon-save-draft-btn').style.display = 'none';
+  document.getElementById('recon-finalize-btn').style.display = 'none';
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  document.getElementById('recon-datetime').value = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate())
+    + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+  closeModal('recon-list-modal');
+  openModal('recon-modal');
+}
+
+function openReconRecord(id) {
+  if (currentRole !== 'superuser') return;
+  var rec = (db.reconciliations || []).find(function(r) { return r.id === id; });
+  if (!rec) return;
+  _reconEditingId = id;
+  _reconRows = (rec.lines || []).map(function(l) { return Object.assign({}, l); });
+  var locked = rec.status === 'finalized';
+
+  document.getElementById('recon-title').textContent = '🧾 Reconciliation — ' + (rec.asOfDate ? new Date(rec.asOfDate).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '');
+  document.getElementById('recon-setup-row').style.display = 'none';
+  document.getElementById('recon-apply-row').style.display = 'none';
+  document.getElementById('recon-apply-checkbox').checked = false;
+
+  if (locked) {
+    document.getElementById('recon-locked-banner').style.display = '';
+    document.getElementById('recon-locked-banner').innerHTML =
+      '🔒 Finalized by <strong>' + esc(rec.finalizedBy || '—') + '</strong> on '
+      + (rec.finalizedAt ? new Date(rec.finalizedAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '—')
+      + '. This record is locked and read-only.'
+      + (rec.applied ? ' Variances were posted as inventory adjustments at the time of sign-off.' : ' Variances were NOT posted to inventory — this is an audit record only.');
+    document.getElementById('recon-save-draft-btn').style.display = 'none';
+    document.getElementById('recon-finalize-btn').style.display = 'none';
+  } else {
+    document.getElementById('recon-locked-banner').style.display = 'none';
+    document.getElementById('recon-save-draft-btn').style.display = '';
+    document.getElementById('recon-finalize-btn').style.display = '';
+  }
+
+  document.getElementById('recon-export-btn').style.display = '';
+  document.getElementById('recon-summary').textContent =
+    (rec.lines ? rec.lines.length : 0) + ' item(s) — created by ' + (rec.createdBy || '—')
+    + (rec.createdAt ? ' on ' + new Date(rec.createdAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '');
+  document.getElementById('recon-results').style.display = '';
+  renderReconTable(!locked);
+  closeModal('recon-list-modal');
+  openModal('recon-modal');
+}
+
+// Build the working row set from current system quantities, reconstructed as of
+// the chosen date/time using the same backward-walk method as Inventory Snapshot.
+function loadReconSystemQty() {
+  var val = document.getElementById('recon-datetime').value;
+  if (!val) { alert('Choose a date & time.'); return; }
+  var cutoff = new Date(val);
+  var cutoffTime = cutoff.getTime();
+  var isNow = cutoffTime >= Date.now();
+
+  _reconRows = catalogItems().filter(function(item) {
+    return !(item.createdAt && new Date(item.createdAt).getTime() > cutoffTime); // skip items that didn't exist yet
+  }).map(function(item) {
+    var systemQty;
+    if (isNow) { systemQty = item.qty; }
+    else {
+      var futureDelta = db.logs.reduce(function(sum, l) {
+        if (l.itemId !== item.id) return sum;
+        if (new Date(l.date).getTime() <= cutoffTime) return sum;
+        return sum + logDelta(l);
+      }, 0);
+      systemQty = item.qty - futureDelta;
+    }
+    return { itemId: item.id, itemName: item.name, sku: item.sku || '', unit: item.unit || '', systemQty: systemQty, countedQty: null, variance: 0, reason: '' };
+  }).sort(function(a, b) { return (a.itemName || '').localeCompare(b.itemName || ''); });
+
+  document.getElementById('recon-summary').textContent =
+    _reconRows.length + ' item(s) as of ' + cutoff.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  document.getElementById('recon-results').style.display = '';
+  document.getElementById('recon-save-draft-btn').style.display = '';
+  document.getElementById('recon-finalize-btn').style.display = '';
+  document.getElementById('recon-export-btn').style.display = '';
+  renderReconTable(true);
+}
+
+function renderReconTable(editable) {
+  var tbody = document.getElementById('recon-body');
+  tbody.innerHTML = '';
+  _reconRows.forEach(function(l, idx) {
+    var vColor = l.variance < 0 ? 'var(--danger)' : l.variance > 0 ? 'var(--ok)' : 'var(--muted)';
+    var vSign = l.variance > 0 ? '+' : '';
+    var tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--border)';
+    var countedCell = editable
+      ? '<input type="number" step="1" value="' + (l.countedQty != null ? l.countedQty : '') + '" style="width:90px;text-align:right;font-size:12px;padding:3px 6px" oninput="updateReconLine(' + idx + ', this.value, null)">'
+      : (l.countedQty != null ? fmtInt(l.countedQty) : '—');
+    var reasonCell = editable
+      ? '<input type="text" list="recon-reason-options" value="' + esc(l.reason || '') + '" placeholder="Required if variance ≠ 0" style="width:100%;font-size:12px;padding:3px 6px" oninput="updateReconLine(' + idx + ', null, this.value)">'
+      : esc(l.reason || '—');
+    tr.innerHTML =
+      '<td style="padding:8px 10px;font-size:12px">' + esc(l.itemName) + (l.sku ? '<span style="color:var(--muted);font-size:11px;margin-left:6px">' + esc(l.sku) + '</span>' : '') + '</td>' +
+      '<td style="padding:8px 10px;text-align:right;font-size:12px">' + fmtInt(l.systemQty) + ' ' + esc(l.unit || '') + '</td>' +
+      '<td style="padding:8px 10px;text-align:right" id="recon-counted-' + idx + '">' + countedCell + '</td>' +
+      '<td style="padding:8px 10px;text-align:right;font-weight:700;color:' + vColor + '" id="recon-variance-' + idx + '">' + vSign + fmtInt(l.variance) + '</td>' +
+      '<td style="padding:8px 10px" id="recon-reason-' + idx + '">' + reasonCell + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function updateReconLine(idx, countedVal, reasonVal) {
+  var l = _reconRows[idx];
+  if (!l) return;
+  if (countedVal !== null) {
+    var n = parseFloat(countedVal);
+    l.countedQty = (countedVal === '' || isNaN(n)) ? null : n;
+    l.variance = (l.countedQty != null) ? (l.countedQty - l.systemQty) : 0;
+    var vCell = document.getElementById('recon-variance-' + idx);
+    if (vCell) {
+      var vColor = l.variance < 0 ? 'var(--danger)' : l.variance > 0 ? 'var(--ok)' : 'var(--muted)';
+      var vSign = l.variance > 0 ? '+' : '';
+      vCell.style.color = vColor;
+      vCell.textContent = vSign + fmtInt(l.variance);
+    }
+  }
+  if (reasonVal !== null) { l.reason = reasonVal; }
+}
+
+function saveReconDraft() {
+  if (currentRole !== 'superuser') return;
+  if (!_reconRows.length) { alert('Load system quantities first.'); return; }
+  var now = new Date().toISOString();
+  var existing = _reconEditingId ? db.reconciliations.find(function(r) { return r.id === _reconEditingId; }) : null;
+  var rec = {
+    id: existing ? existing.id : uid(),
+    asOfDate: existing ? existing.asOfDate : new Date(document.getElementById('recon-datetime').value).toISOString(),
+    createdBy: existing ? existing.createdBy : ((currentUser && currentUser.username) || 'superuser'),
+    createdAt: existing ? existing.createdAt : now,
+    status: 'draft',
+    finalizedBy: null,
+    finalizedAt: null,
+    applied: false,
+    lines: _reconRows.map(function(l) { return Object.assign({}, l); })
+  };
+  if (existing) { var idx = db.reconciliations.indexOf(existing); db.reconciliations[idx] = rec; }
+  else { db.reconciliations.push(rec); }
+  _reconEditingId = rec.id;
+  save();
+  alert('Draft saved. You can continue it later from the Reconciliation Records list.');
+  closeModal('recon-modal');
+  openReconListModal();
+}
+
+async function finalizeReconciliation() {
+  if (currentRole !== 'superuser') return;
+  if (!_reconRows.length) { alert('Load system quantities first.'); return; }
+  var missingReason = _reconRows.some(function(l) { return l.countedQty != null && l.variance !== 0 && !(l.reason || '').trim(); });
+  if (missingReason) { alert('Every item with a variance needs a reason before this can be finalized.'); return; }
+  var uncounted = _reconRows.filter(function(l) { return l.countedQty == null; }).length;
+  if (uncounted && !confirm(uncounted + ' item(s) have no counted quantity entered. Finalize anyway?')) return;
+
+  var applyToInventory = document.getElementById('recon-apply-checkbox') ? document.getElementById('recon-apply-checkbox').checked : false;
+  if (!confirm('Finalize and sign off this reconciliation? Once finalized it cannot be edited.' + (applyToInventory ? ' Variances will also be posted as inventory adjustments now.' : ''))) return;
+
+  var now = new Date().toISOString();
+  var existing = _reconEditingId ? db.reconciliations.find(function(r) { return r.id === _reconEditingId; }) : null;
+  var reconId = existing ? existing.id : uid();
+
+  if (applyToInventory) {
+    var toApply = _reconRows.filter(function(l) { return l.countedQty != null && l.variance !== 0; });
+    for (var i = 0; i < toApply.length; i++) {
+      var line = toApply[i];
+      var item = db.items.find(function(it) { return it.id === line.itemId; });
+      if (!item) continue;
+      // Refresh live qty first — the reconciliation may have been built earlier,
+      // and other transactions could have landed on this item since then. Applying
+      // against a stale system qty would silently clobber those changes.
+      if (sb) {
+        try {
+          var fresh = await sb.from('items').select('qty').eq('id', item.id).single();
+          if (fresh.data && !fresh.error && fresh.data.qty !== undefined) item.qty = fresh.data.qty;
+        } catch (e) {}
+      }
+      var liveSysQty = item.qty;
+      var diff = line.countedQty - liveSysQty;
+      if (diff === 0) continue;
+      getLayers(item);
+      var aCost = null, aDetail = '';
+      if (diff < 0) { aDetail = describeConsumption(item, -diff); aCost = consumeLayers(item, -diff); }
+      else { aCost = addFoundStock(item, diff); }
+      var adjLog = {
+        id: uid(), itemId: item.id, type: 'adjust',
+        qty: line.countedQty, absQty: line.countedQty, variance: diff, sysQty: liveSysQty,
+        varianceReason: line.reason || 'Reconciliation',
+        by: (currentUser && currentUser.username) || 'superuser',
+        date: now,
+        notes: 'Reconciliation sign-off — ' + line.reason, ref: 'recon:' + reconId,
+        costAmount: aCost, costDetail: aDetail
+      };
+      db.logs.push(adjLog);
+      item.qty = line.countedQty;
+      item.updatedAt = now;
+      syncItemCost(item);
+      if (sb) { try { await sbUpdateItem(item); await sbInsertLogs([adjLog]); } catch (e) {} }
+    }
+    updateSummary();
+    renderInventory();
+  }
+
+  var rec = {
+    id: reconId,
+    asOfDate: existing ? existing.asOfDate : new Date(document.getElementById('recon-datetime').value).toISOString(),
+    createdBy: existing ? existing.createdBy : ((currentUser && currentUser.username) || 'superuser'),
+    createdAt: existing ? existing.createdAt : now,
+    status: 'finalized',
+    finalizedBy: (currentUser && currentUser.username) || 'superuser',
+    finalizedAt: now,
+    applied: applyToInventory,
+    lines: _reconRows.map(function(l) { return Object.assign({}, l); })
+  };
+  if (existing) { var idx = db.reconciliations.indexOf(existing); db.reconciliations[idx] = rec; }
+  else { db.reconciliations.push(rec); }
+  _reconEditingId = rec.id;
+  save();
+  closeModal('recon-modal');
+  openReconListModal();
+}
+
+function deleteReconDraft(id) {
+  if (currentRole !== 'superuser') return;
+  var rec = db.reconciliations.find(function(r) { return r.id === id; });
+  if (!rec || rec.status === 'finalized') return; // finalized records are permanent
+  if (!confirm('Delete this draft reconciliation? This cannot be undone.')) return;
+  db.reconciliations = db.reconciliations.filter(function(r) { return r.id !== id; });
+  if (sb) { sb.from('reconciliations').delete().eq('id', id).then(function(){}).catch(function(){}); }
+  save();
+  renderReconList();
+}
+
+function exportReconCSV(id) {
+  var rec = db.reconciliations.find(function(r) { return r.id === id; });
+  if (!rec) return;
+  var rows = [
+    ['Reconciliation as of', rec.asOfDate ? new Date(rec.asOfDate).toLocaleString('en-PH', { hour12: true }) : ''],
+    ['Status', rec.status],
+    ['Created by', rec.createdBy || ''],
+    ['Created at', rec.createdAt ? new Date(rec.createdAt).toLocaleString('en-PH', { hour12: true }) : ''],
+    ['Finalized by', rec.finalizedBy || ''],
+    ['Finalized at', rec.finalizedAt ? new Date(rec.finalizedAt).toLocaleString('en-PH', { hour12: true }) : ''],
+    ['Applied to inventory', rec.applied ? 'Yes' : 'No'],
+    [],
+    ['Item', 'SKU', 'Unit', 'System Qty', 'Counted Qty', 'Variance', 'Reason']
+  ];
+  (rec.lines || []).forEach(function(l) {
+    rows.push([l.itemName, l.sku || '', l.unit || '', l.systemQty, l.countedQty != null ? l.countedQty : '', l.variance, l.reason || '']);
+  });
+  downloadCSV('reconciliation_' + (rec.asOfDate || rec.id).replace(/[:T.]/g, '-') + '.csv', rows);
 }
 
 function previewImport(rows) {
