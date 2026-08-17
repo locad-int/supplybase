@@ -8904,7 +8904,8 @@ function runCompare() {
     if (!b || !a) { notMatched.push((a || b).name || (a || b).sku); return; }
     if (b.qty === null || a.qty === null) return;
     var variance = a.qty - b.qty;
-    if (variance === 0) return; // only show differences
+    // Every matched item is shown, not just discrepancies — needed to compute
+    // Inventory Accuracy % below, and to give a full picture of every active item.
     // Cost basis: before-file cost, falling back to the item's current cost
     var item = null;
     if (b.sku) item = db.items.find(function(i){ return i.sku && i.sku.toLowerCase() === b.sku.toLowerCase(); });
@@ -8922,25 +8923,30 @@ function runCompare() {
 
   var tbody = document.getElementById('cmp-body');
   tbody.innerHTML = _cmpRows.map(function(r) {
-    var col = r.variance < 0 ? '#dc2626' : '#16a34a';
+    var col = r.variance < 0 ? '#dc2626' : r.variance > 0 ? '#16a34a' : 'var(--muted)';
     return '<tr style="border-bottom:1px solid var(--border)">'
       + '<td style="padding:8px 12px;font-weight:600">' + esc(r.name) + (r.sku ? '<br><span style="font-size:10px;color:var(--muted)">SKU: ' + esc(r.sku) + '</span>' : '') + '</td>'
       + '<td style="text-align:right">' + fmtInt(r.beforeQty) + '</td>'
       + '<td style="text-align:right">' + fmtInt(r.afterQty) + '</td>'
-      + '<td style="text-align:right;font-weight:700;color:' + col + '">' + (r.variance > 0 ? '+' : '') + fmtInt(r.variance) + '</td>'
+      + '<td style="text-align:right;font-weight:700;color:' + col + '">' + (r.variance === 0 ? '0' : (r.variance > 0 ? '+' : '') + fmtInt(r.variance)) + '</td>'
       + '<td style="text-align:right;color:var(--muted)">' + (r.cost ? '₱' + fmt(r.cost) : '—') + '</td>'
       + '<td style="text-align:right;font-weight:700;color:' + col + '">' + (r.costImpact ? (r.costImpact > 0 ? '+' : '−') + '₱' + fmt(Math.abs(r.costImpact)) : '—') + '</td>'
       + '<td style="text-align:center">' + (r.item ? '<span style="color:var(--ok)">✓</span>' : '<span style="color:var(--warn)" title="Not found — cannot be booked">—</span>') + '</td>'
       + '</tr>';
-  }).join('') || '<tr><td colspan="7" style="padding:16px;text-align:center;color:var(--muted)">No differences between the two files.</td></tr>';
+  }).join('') || '<tr><td colspan="7" style="padding:16px;text-align:center;color:var(--muted)">No matching items found between the two files.</td></tr>';
 
   // Totals
-  var sC=0,oC=0,sU=0,oU=0,sCost=0,oCost=0;
+  var sC=0,oC=0,sU=0,oU=0,sCost=0,oCost=0,matchedC=0;
   _cmpRows.forEach(function(r) {
-    if (r.variance < 0) { sC++; sU += -r.variance; sCost += -r.costImpact; }
-    else                { oC++; oU +=  r.variance; oCost +=  r.costImpact; }
+    if (r.variance < 0)      { sC++; sU += -r.variance; sCost += -r.costImpact; }
+    else if (r.variance > 0) { oC++; oU +=  r.variance; oCost +=  r.costImpact; }
+    else                      { matchedC++; }
   });
   var net = oCost - sCost;
+  // Inventory Accuracy % — the share of compared items whose physical count
+  // matched the system exactly (SKU/item-level accuracy, the standard stocktake metric).
+  var accuracyPct = _cmpRows.length ? (matchedC / _cmpRows.length * 100) : null;
+  var accuracyColor = accuracyPct == null ? 'var(--muted)' : accuracyPct >= 95 ? '#16a34a' : accuracyPct >= 85 ? 'var(--warn)' : '#dc2626';
   document.getElementById('cmp-summary').innerHTML =
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Variance summary</div>'
     + (_cmpBeforeAsOf || _cmpAfterAsOf
@@ -8948,6 +8954,13 @@ function runCompare() {
           + (_cmpBeforeAsOf ? 'Before as of <strong style="color:var(--text)">' + fmtAsOf(_cmpBeforeAsOf) + '</strong>' : 'Before: no timestamp in file')
           + '  →  '
           + (_cmpAfterAsOf ? 'After as of <strong style="color:var(--text)">' + fmtAsOf(_cmpAfterAsOf) + '</strong>' : 'After: no timestamp in file')
+          + '</div>'
+        : '')
+    + (accuracyPct != null
+        ? '<div style="margin-bottom:8px;padding:8px 10px;border-radius:6px;background:var(--surface);border:1px solid var(--border);display:inline-block">'
+          + '<span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">📊 Inventory Accuracy</span> '
+          + '<strong style="font-size:1.05rem;color:' + accuracyColor + '">' + accuracyPct.toFixed(1) + '%</strong> '
+          + '<span style="font-size:11px;color:var(--muted)">(' + matchedC + ' of ' + _cmpRows.length + ' items matched exactly)</span>'
           + '</div>'
         : '')
     + '<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px">'
