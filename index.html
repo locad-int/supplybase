@@ -8977,7 +8977,7 @@ function runCompare() {
     + '<div style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px">'
     + '<span style="color:#dc2626">⬇ Shortage: <strong>' + sC + '</strong> items · ' + fmtInt(sU) + ' units · ₱' + fmt(sCost) + '</span>'
     + '<span style="color:#16a34a">⬆ Excess: <strong>' + oC + '</strong> items · ' + fmtInt(oU) + ' units · ₱' + fmt(oCost) + '</span>'
-    + '<span style="font-weight:700">Net: ' + (net < 0 ? '−' : '+') + '₱' + fmt(Math.abs(net)) + '</span>'
+    + '<span style="font-weight:700;color:' + (net < 0 ? '#dc2626' : net > 0 ? '#16a34a' : 'var(--text)') + '">Net: ' + (net < 0 ? '−' : net > 0 ? '+' : '') + '₱' + fmt(Math.abs(net)) + '</span>'
     + '</div>';
 
   // Default the count date to the after-file's own "as of" timestamp when we
