@@ -1445,6 +1445,48 @@
     <h2 id="recon-title">🧾 New Reconciliation</h2>
     <div id="recon-locked-banner" style="display:none;margin-bottom:12px;padding:10px 12px;border-radius:8px;background:rgba(77,255,110,0.08);border:1px solid rgba(77,255,110,0.25);font-size:13px"></div>
 
+    <!-- Daily Activity — backtrack any date range (a week or more) and see, per item
+         per day: beginning inventory, deliveries (restocks), usage, and ending inventory.
+         Purely informational context — always available, even on locked records. -->
+    <div style="margin-bottom:16px;padding:12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2)">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">📅 Daily Activity (beginning · delivery · usage · ending)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:8px">
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">From</label>
+          <input type="date" id="recon-daily-from" style="font-size:13px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">To</label>
+          <input type="date" id="recon-daily-to" style="font-size:13px">
+        </div>
+        <button class="btn btn-secondary" onclick="setReconDailyRange(7)" style="font-size:12px">Last 7 days</button>
+        <button class="btn btn-secondary" onclick="setReconDailyRange(14)" style="font-size:12px">Last 14 days</button>
+        <button class="btn btn-primary" onclick="showReconDailyActivity()" style="font-size:13px">Show Daily Activity</button>
+        <input type="text" id="recon-daily-search" placeholder="Filter by item name/SKU…" oninput="renderReconDailyTable()" style="font-size:12px;width:180px;display:none">
+      </div>
+      <div id="recon-daily-results" style="display:none">
+        <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:var(--surface);position:sticky;top:0">
+                <th style="padding:6px 10px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Item</th>
+                <th style="padding:6px 10px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Date</th>
+                <th style="padding:6px 10px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Beginning</th>
+                <th style="padding:6px 10px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Delivery</th>
+                <th style="padding:6px 10px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Usage</th>
+                <th style="padding:6px 10px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Ending</th>
+              </tr>
+            </thead>
+            <tbody id="recon-daily-body"></tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">Ending also reflects any manual adjustments logged that day, even though only Delivery and Usage are broken out as their own columns.</div>
+      </div>
+      <div style="margin-top:8px">
+        <button class="btn btn-secondary" onclick="exportReconDailyCSV()" id="recon-daily-export-btn" style="display:none;font-size:12px">⬇ Export Daily Activity CSV</button>
+      </div>
+    </div>
+
     <div id="recon-setup-row" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:10px">
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">As of date &amp; time</label>
@@ -9149,6 +9191,121 @@ function renderReconList() {
   });
 }
 
+// ─── RECONCILIATION — Daily Activity (backtrack a week or more) ─────────────────
+// Per item, per calendar day: beginning inventory, deliveries (restocks), usage
+// (consumption + damage/loss), and ending inventory. Walks backward from each
+// item's current (always-accurate) live qty using logDelta — same method as
+// Inventory Snapshot and Item History — so it stays correct even when entries
+// were logged out of chronological order.
+var _reconDailyRows = []; // [{ item, days: [{ dateKey, beginning, delivery, usage, ending, notYet }] }]
+
+function setReconDailyRange(days) {
+  var to = new Date();
+  var from = new Date();
+  from.setDate(from.getDate() - (days - 1));
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var fmt = function(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+  document.getElementById('recon-daily-from').value = fmt(from);
+  document.getElementById('recon-daily-to').value = fmt(to);
+}
+
+function computeReconDailyLedger(fromVal, toVal) {
+  var days = [];
+  var d = new Date(fromVal + 'T00:00:00');
+  var toDate = new Date(toVal + 'T00:00:00');
+  while (d <= toDate) { days.push(new Date(d)); d.setDate(d.getDate() + 1); }
+  if (!days.length) return [];
+
+  var toDayEndTime = new Date(toVal + 'T23:59:59.999').getTime();
+  var cutoffForEnd = Math.min(toDayEndTime, Date.now()); // can't reconstruct the future
+
+  return catalogItems().map(function(item) {
+    // Ending qty as of the end of the "To" day — same backward-walk as Snapshot.
+    var futureDelta = db.logs.reduce(function(sum, l) {
+      if (l.itemId !== item.id) return sum;
+      if (new Date(l.date).getTime() <= cutoffForEnd) return sum;
+      return sum + logDelta(l);
+    }, 0);
+    var runningEnding = item.qty - futureDelta;
+
+    var dayRows = [];
+    for (var i = days.length - 1; i >= 0; i--) {
+      var day = days[i];
+      var dayKey = historyDateKey(day.toISOString());
+      var dayEndMs = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59, 999).getTime();
+      var notYet = !!(item.createdAt && new Date(item.createdAt).getTime() > dayEndMs);
+
+      var dayLogs = db.logs.filter(function(l) { return l.itemId === item.id && historyDateKey(l.date) === dayKey; });
+      var delivery = dayLogs.filter(function(l) { return l.type === 'restock'; }).reduce(function(s, l) { return s + (l.qty || 0); }, 0);
+      var usage    = dayLogs.filter(function(l) { return l.type === 'use' || l.type === 'damage'; }).reduce(function(s, l) { return s + (l.qty || 0); }, 0);
+      var dayNetDelta = dayLogs.reduce(function(s, l) { return s + logDelta(l); }, 0);
+
+      var ending = runningEnding;
+      var beginning = ending - dayNetDelta;
+      dayRows.unshift({ dateKey: dayKey, beginning: beginning, delivery: delivery, usage: usage, ending: ending, notYet: notYet });
+      runningEnding = beginning; // this day's beginning = the previous day's ending
+    }
+    return { item: item, days: dayRows };
+  }).sort(function(a, b) { return (a.item.name || '').localeCompare(b.item.name || ''); });
+}
+
+function showReconDailyActivity() {
+  var from = document.getElementById('recon-daily-from').value;
+  var to = document.getElementById('recon-daily-to').value;
+  if (!from || !to) { alert('Choose both From and To dates.'); return; }
+  if (new Date(from) > new Date(to)) { alert('"From" must be before "To".'); return; }
+  _reconDailyRows = computeReconDailyLedger(from, to);
+  document.getElementById('recon-daily-results').style.display = '';
+  document.getElementById('recon-daily-search').style.display = '';
+  document.getElementById('recon-daily-export-btn').style.display = '';
+  renderReconDailyTable();
+}
+
+function renderReconDailyTable() {
+  var q = (document.getElementById('recon-daily-search').value || '').toLowerCase();
+  var tbody = document.getElementById('recon-daily-body');
+  tbody.innerHTML = '';
+  _reconDailyRows.forEach(function(entry) {
+    if (q && !(entry.item.name || '').toLowerCase().includes(q) && !(entry.item.sku || '').toLowerCase().includes(q)) return;
+    entry.days.forEach(function(d, idx) {
+      var tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid var(--border)';
+      var itemCell = idx === 0
+        ? '<strong>' + esc(entry.item.name) + '</strong>' + (entry.item.sku ? ' <span style="color:var(--muted);font-size:11px">' + esc(entry.item.sku) + '</span>' : '')
+        : '';
+      if (d.notYet) {
+        tr.innerHTML =
+          '<td style="padding:6px 10px">' + itemCell + '</td>' +
+          '<td style="padding:6px 10px;color:var(--muted)">' + esc(d.dateKey) + '</td>' +
+          '<td colspan="4" style="padding:6px 10px;text-align:center;color:var(--muted);font-style:italic">Not yet added</td>';
+      } else {
+        tr.innerHTML =
+          '<td style="padding:6px 10px">' + itemCell + '</td>' +
+          '<td style="padding:6px 10px;color:var(--muted)">' + esc(d.dateKey) + '</td>' +
+          '<td style="padding:6px 10px;text-align:right">' + fmtInt(d.beginning) + ' ' + esc(entry.item.unit || '') + '</td>' +
+          '<td style="padding:6px 10px;text-align:right;color:var(--ok)">' + (d.delivery ? '+' + fmtInt(d.delivery) : '—') + '</td>' +
+          '<td style="padding:6px 10px;text-align:right;color:var(--danger)">' + (d.usage ? '−' + fmtInt(d.usage) : '—') + '</td>' +
+          '<td style="padding:6px 10px;text-align:right;font-weight:700">' + fmtInt(d.ending) + ' ' + esc(entry.item.unit || '') + '</td>';
+      }
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+function exportReconDailyCSV() {
+  if (!_reconDailyRows.length) return;
+  var rows = [['Item', 'SKU', 'Date', 'Beginning', 'Delivery', 'Usage', 'Ending']];
+  _reconDailyRows.forEach(function(entry) {
+    entry.days.forEach(function(d) {
+      if (d.notYet) { rows.push([entry.item.name, entry.item.sku || '', d.dateKey, 'not yet added', '', '', '']); return; }
+      rows.push([entry.item.name, entry.item.sku || '', d.dateKey, d.beginning, d.delivery, d.usage, d.ending]);
+    });
+  });
+  var from = document.getElementById('recon-daily-from').value;
+  var to = document.getElementById('recon-daily-to').value;
+  downloadCSV('daily_activity_' + from + '_to_' + to + '.csv', rows);
+}
+
 function openNewRecon() {
   if (currentRole !== 'superuser') return;
   _reconEditingId = null;
@@ -9166,6 +9323,7 @@ function openNewRecon() {
   var pad = function(n) { return String(n).padStart(2, '0'); };
   document.getElementById('recon-datetime').value = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate())
     + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+  resetReconDailyActivity();
   closeModal('recon-list-modal');
   openModal('recon-modal');
 }
@@ -9204,8 +9362,21 @@ function openReconRecord(id) {
     + (rec.createdAt ? ' on ' + new Date(rec.createdAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '');
   document.getElementById('recon-results').style.display = '';
   renderReconTable(!locked);
+  resetReconDailyActivity();
   closeModal('recon-list-modal');
   openModal('recon-modal');
+}
+
+// Reset the Daily Activity panel to its default (last 7 days, collapsed) —
+// called whenever the Reconciliation builder is opened, for a new record or
+// an existing draft/finalized one alike.
+function resetReconDailyActivity() {
+  _reconDailyRows = [];
+  setReconDailyRange(7);
+  document.getElementById('recon-daily-results').style.display = 'none';
+  document.getElementById('recon-daily-search').style.display = 'none';
+  document.getElementById('recon-daily-search').value = '';
+  document.getElementById('recon-daily-export-btn').style.display = 'none';
 }
 
 // Build the working row set from current system quantities, reconstructed as of
