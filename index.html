@@ -3323,7 +3323,10 @@ function renderLogs() {
 
   logs.forEach(log => {
     const item = db.items.find(i => i.id === log.itemId);
-    const qtySign = log.type === 'use' || log.type === 'damage' ? '-' : log.qty >= 0 ? '+' : '';
+    // For 'adjust' logs, l.qty may hold an absolute quantity (inline qty edit,
+    // physical count) rather than a delta — l.variance is the reliable change.
+    const logQtyForDisplay = log.type === 'adjust' ? (log.variance != null ? log.variance : log.qty) : log.qty;
+    const qtySign = log.type === 'use' || log.type === 'damage' ? '-' : logQtyForDisplay >= 0 ? '+' : '';
     const div = document.createElement('div');
     div.className = 'log-entry';
     div.style.cursor = 'pointer';
@@ -3348,7 +3351,7 @@ function renderLogs() {
       + (log.notes ? '<div style="color:var(--muted);font-size:12px;margin-top:3px">' + esc(log.notes) + '</div>' : '')
       + '</div>'
       + '<div style="text-align:right">'
-      + '<div class="log-qty" style="color:' + typeColors[log.type] + '">' + qtySign + fmtInt(Math.abs(log.qty)) + ' ' + esc(item ? (item.unit||'') : '') + '</div>'
+      + '<div class="log-qty" style="color:' + typeColors[log.type] + '">' + qtySign + fmtInt(Math.abs(logQtyForDisplay)) + ' ' + esc(item ? (item.unit||'') : '') + '</div>'
       + '<div style="color:var(--muted);font-size:11px;margin-top:2px">' + (log.absQty != null ? 'Stock: ' + log.absQty : '') + '</div>'
       + '<div style="margin-top:4px"><span class="badge ' + badgeClass + '">' + log.type + '</span></div>'
       + (currentRole === 'superuser' ? '<div style="margin-top:6px"><button class="btn btn-icon btn-sm btn-danger" title="Delete log entry" onclick="event.stopPropagation();deleteLogEntry(\'' + log.id + '\')">🗑</button></div>' : '')
@@ -3612,13 +3615,21 @@ function filterItemHistory() {
     var meta = TYPE_META[l.type] || { label: l.type, color: 'var(--muted)', bg: 'transparent', sign: '' };
     var dateStr = l.date ? new Date(l.date).toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }) : '—';
     var notesStr = [l.notes, l.ref ? ('Ref: ' + l.ref) : ''].filter(Boolean).join(' · ');
-    var qtySign  = (l.type === 'use' || l.type === 'damage') ? '−' : (l.type === 'restock' ? '+' : '±');
+    // For 'adjust' rows, l.qty is NOT reliably a delta — some entry points (inline qty
+    // edit, physical count adjustment) store the absolute new/physical quantity in
+    // l.qty, while only l.variance is guaranteed to be the true before→after change.
+    // Using l.qty here made large absolute values (e.g. 1368) display as if they were
+    // the change amount, contradicting the Stock After column. Show the real delta.
+    var qtySign, qtyShown;
+    if (l.type === 'use' || l.type === 'damage') { qtySign = '−'; qtyShown = l.qty; }
+    else if (l.type === 'restock') { qtySign = '+'; qtyShown = l.qty; }
+    else { var _v = (l.variance != null) ? l.variance : l.qty; qtySign = _v < 0 ? '−' : '+'; qtyShown = Math.abs(_v); }
     var tr = document.createElement('tr');
     tr.style.borderBottom = '1px solid var(--border)';
     tr.innerHTML =
       '<td style="padding:8px 10px;color:var(--muted);font-size:12px;white-space:nowrap">' + dateStr + '</td>' +
       '<td style="padding:8px 10px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:' + meta.bg + ';color:' + meta.color + '">' + meta.label + '</span></td>' +
-      '<td style="padding:8px 10px;text-align:right;font-weight:700;color:' + meta.color + '">' + qtySign + fmtInt(l.qty) + '</td>' +
+      '<td style="padding:8px 10px;text-align:right;font-weight:700;color:' + meta.color + '">' + qtySign + fmtInt(qtyShown) + '</td>' +
       '<td style="padding:8px 10px;text-align:right;color:var(--muted);font-size:12px">' + (l._balanceAfter != null ? fmtInt(l._balanceAfter) : '—') + '</td>' +
       '<td style="padding:8px 10px;font-size:12px">' + esc(l.by||'—') + '</td>' +
       '<td style="padding:8px 10px;font-size:12px;color:var(--muted)">' + esc(notesStr||'—') + '</td>';
@@ -3663,10 +3674,16 @@ function exportItemHistoryCSV() {
 
     var meta = TYPE_META[l.type] || { label: l.type };
     var isCost = l.type === 'use' || l.type === 'damage';
+    // Same fix as the on-screen table: for 'adjust' rows, l.qty can be an absolute
+    // quantity (inline edit / physical count) rather than a delta — l.variance is
+    // the reliable before→after change, so export that instead for adjust rows.
+    var qtyOut = (l.type === 'adjust' || l.type === 'edit' || l.type === 'adjustment')
+      ? (l.variance != null ? l.variance : l.qty)
+      : l.qty;
     var line = [
       l.date ? new Date(l.date).toLocaleString('en-PH',{hour12:true}) : '',
       item.name, item.sku||'', item.unit||'',
-      meta.label, l.qty,
+      meta.label, qtyOut,
       l._balanceAfter != null ? l._balanceAfter : '',
       item.cost||0,
       isCost ? ((l.qty*(item.cost||0)).toFixed(2)) : '',
