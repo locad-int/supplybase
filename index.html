@@ -3508,25 +3508,18 @@ function openItemHistory(itemId) {
     .filter(function(l) { return l.itemId === itemId; })
     .sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
 
-  // compute running stock after each entry
-  var running = item.qty;
-  // walk backward from current qty
-  // first compute current qty as "running end", then walk forward
-  var withBalance = [];
-  // rebuild forward: start from earliest, accumulate
-  // We don't have a definitive opening stock, so we compute backwards:
-  // currentQty = qty after last log; walk backward to reconstruct
+  // Walk backward from the current (always-accurate) qty, undoing each
+  // log's net effect via logDelta — correct for every type, including
+  // adjust/variance entries (the old version silently skipped reversing
+  // those, so "Stock After" could be wrong for any row after an adjustment).
   var reversed = allLogs.slice().reverse();
   var bal = item.qty;
   var balArr = [];
   reversed.forEach(function(l) {
-    balArr.unshift(bal);
-    var qty = l.qty || 0;
-    if (l.type === 'use' || l.type === 'damage') bal += qty;
-    else if (l.type === 'restock') bal -= qty;
-    else if (l.type === 'adjust' && l.absQty != null) bal = l.absQty - (l.absQty - bal);
-    // adjust: absQty is stock after; qty is delta — we just restore
+    balArr.unshift(bal);      // qty AFTER this log
+    bal -= logDelta(l);       // undo it to get qty BEFORE this log
   });
+  var beginningInventory = bal; // qty before the very first log in this history
 
   _historyLogs = allLogs.map(function(l, idx) {
     return Object.assign({}, l, { _balanceAfter: balArr[idx] });
@@ -3540,6 +3533,8 @@ function openItemHistory(itemId) {
 
   document.getElementById('ihistory-title').textContent = '📋 ' + item.name + ' — History';
   document.getElementById('ihistory-summary').innerHTML =
+    '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">BEGINNING INVENTORY</span><strong style="font-size:1.1rem">' + fmtInt(beginningInventory) + ' ' + esc(item.unit||'') + '</strong></div>' +
+    '<div style="width:1px;background:var(--border)"></div>' +
     '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">CURRENT STOCK</span><strong style="font-size:1.1rem">' + fmtInt(item.qty) + ' ' + esc(item.unit||'') + '</strong></div>' +
     '<div style="width:1px;background:var(--border)"></div>' +
     '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">TOTAL CONSUMED</span><strong style="color:#dc2626">' + fmtInt(totalUse) + ' ' + esc(item.unit||'') + '</strong></div>' +
