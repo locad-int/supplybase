@@ -8844,6 +8844,20 @@ function openSnapshotModal() {
   openModal('snapshot-modal');
 }
 
+// Net qty change a single log entry represents, independent of when it was
+// actually entered into the system. Needed because trusting a log's stored
+// "resulting qty" (absQty) breaks whenever a transaction is backdated —
+// e.g. a Compare Count Files booking or a manual adjustment with a custom
+// date — since that field gets computed from whatever the live qty happened
+// to be at the moment of entry, not the qty that truly existed on the
+// labeled date if other transactions landed in between.
+function logDelta(l) {
+  if (l.type === 'restock') return l.qty || 0;
+  if (l.type === 'use' || l.type === 'damage') return -(l.qty || 0);
+  if (l.type === 'adjust' || l.type === 'edit' || l.type === 'adjustment') return (l.variance != null) ? l.variance : 0;
+  return 0;
+}
+
 function renderSnapshot() {
   var val = document.getElementById('snap-datetime').value;
   if (!val) { alert('Choose a date & time.'); return; }
@@ -8857,14 +8871,15 @@ function renderSnapshot() {
       return { item: item, qty: null, notYet: true };
     }
     if (isNow) return { item: item, qty: item.qty, notYet: false };
-    // Most recent log at or before the cutoff carries the resulting qty (absQty)
-    var relevant = db.logs.filter(function(l) {
-      return l.itemId === item.id && new Date(l.date).getTime() <= cutoffTime;
-    });
-    relevant.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
-    var qty = (relevant.length && relevant[0].absQty != null) ? relevant[0].absQty
-      : (item.baselineQty != null ? item.baselineQty : 0);
-    return { item: item, qty: qty, notYet: false };
+    // Work backward from the item's current (always-accurate) qty, undoing
+    // every logged change dated after the cutoff — this stays correct even
+    // when entries were logged out of chronological order (see logDelta).
+    var futureDelta = db.logs.reduce(function(sum, l) {
+      if (l.itemId !== item.id) return sum;
+      if (new Date(l.date).getTime() <= cutoffTime) return sum;
+      return sum + logDelta(l);
+    }, 0);
+    return { item: item, qty: item.qty - futureDelta, notYet: false };
   }).sort(function(a, b) { return (a.item.name || '').localeCompare(b.item.name || ''); });
 
   var tbody = document.getElementById('snap-body');
