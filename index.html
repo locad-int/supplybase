@@ -7244,6 +7244,27 @@ async function isBiometricAvailable() {
   catch(e) { return false; }
 }
 
+// Works out what to call the platform authenticator and which icon fits it —
+// used for both the desktop (Touch ID on Mac, Windows Hello on PC) and mobile
+// (Face ID / Touch ID / fingerprint) cases. isBiometricAvailable() above is
+// what actually gates whether the feature is offered at all; this is purely
+// for labeling once we know a platform authenticator exists.
+function detectBioType() {
+  var ua = navigator.userAgent;
+  var isIOS = /iPhone|iPad/i.test(ua);
+  var isIPad = /iPad/i.test(ua);
+  var isMac = /Macintosh|Mac OS X/i.test(ua) && !isIOS;
+  var isWindows = /Windows/i.test(ua);
+  if (isIOS) {
+    var screenRatio = Math.max(screen.width, screen.height) / Math.min(screen.width, screen.height);
+    var isFaceID = !isIPad && screenRatio >= 2.0;
+    return { label: isFaceID ? 'Face ID' : 'Touch ID', icon: isFaceID ? BIO_ICON_FACEID : BIO_ICON_FINGERPRINT };
+  }
+  if (isMac)     return { label: 'Touch ID',       icon: BIO_ICON_FINGERPRINT };
+  if (isWindows) return { label: 'Windows Hello',  icon: BIO_ICON_FINGERPRINT };
+  return { label: 'biometric login', icon: BIO_ICON_FINGERPRINT };
+}
+
 // ── Biometric icon SVGs (Apple-style) ───────────────────────────────────────
 var BIO_ICON_FACEID = '<svg width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle">'
   + '<path d="M3 9V5a2 2 0 012-2h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
@@ -7277,14 +7298,9 @@ async function initBiometricLoginCheck() {
   var icon = document.getElementById('bio-btn-icon');
   var label = document.getElementById('bio-btn-label');
   if (!btn) return;
-  // Detect Face ID vs Touch ID via screen aspect ratio.
-  // Face ID iPhones (X onward, excl. SE) have ratio >= 2.0; SE models are ~1.78.
-  var isIOS = /iPhone|iPad/i.test(navigator.userAgent);
-  var isIPad = /iPad/i.test(navigator.userAgent);
-  var screenRatio = Math.max(screen.width, screen.height) / Math.min(screen.width, screen.height);
-  var isFaceID = isIOS && !isIPad && screenRatio >= 2.0;
-  var bioType = isFaceID ? 'Face ID' : (isIOS ? 'Touch ID' : 'Fingerprint');
-  if (icon) icon.innerHTML = isFaceID ? BIO_ICON_FACEID : BIO_ICON_FINGERPRINT;
+  var bio = detectBioType();
+  if (icon) icon.innerHTML = bio.icon;
+  if (label) label.textContent = bio.label + ' Log-In';
   btn.style.display = 'flex';
   if (divider) divider.style.display = 'block';
 }
@@ -7363,18 +7379,16 @@ async function offerBiometricRegistration(username) {
   var creds = getBioCreds();
   // Don't offer if already registered for this user
   if (creds.find(function(c) { return c.username === username; })) return;
-  // Don't offer on desktop
-  if (window.innerWidth > 768 && !(/Mobi|Android/i.test(navigator.userAgent))) return;
-  var isIOS = /iPhone|iPad/i.test(navigator.userAgent);
-  var isIPad = /iPad/i.test(navigator.userAgent);
-  var screenRatio = Math.max(screen.width, screen.height) / Math.min(screen.width, screen.height);
-  var isFaceID = isIOS && !isIPad && screenRatio >= 2.0;
-  var bioType = isFaceID ? 'Face ID' : (isIOS ? 'Touch ID' : 'fingerprint');
+  // Desktop is intentionally included here — isBiometricAvailable() already
+  // confirmed a real platform authenticator exists (Touch ID on Mac, Windows
+  // Hello on PC, etc.), so there's no reason to hide the offer just because
+  // the screen is wide.
+  var bio = detectBioType();
   var offerIcon = document.getElementById('bio-offer-icon');
   var offerText = document.getElementById('bio-offer-text');
   var banner = document.getElementById('bio-offer-banner');
-  if (offerIcon) offerIcon.innerHTML = isFaceID ? BIO_ICON_FACEID : BIO_ICON_FINGERPRINT;
-  if (offerText) offerText.textContent = 'Sign in faster next time with ' + bioType + '?';
+  if (offerIcon) offerIcon.innerHTML = bio.icon;
+  if (offerText) offerText.textContent = 'Sign in faster next time with ' + bio.label + '?';
   _bioPendingUsername = username;
   if (banner) banner.style.display = 'block';
   // Auto-dismiss after 15s
