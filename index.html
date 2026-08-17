@@ -1474,13 +1474,14 @@
                 <th style="padding:6px 10px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Beginning</th>
                 <th style="padding:6px 10px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Delivery</th>
                 <th style="padding:6px 10px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Usage</th>
+                <th style="padding:6px 10px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Adjustments</th>
                 <th style="padding:6px 10px;text-align:right;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Ending</th>
               </tr>
             </thead>
             <tbody id="recon-daily-body"></tbody>
           </table>
         </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:6px">Ending also reflects any manual adjustments logged that day, even though only Delivery and Usage are broken out as their own columns.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">Adjustments covers manual qty edits, physical-count corrections, and reconciliation sign-offs logged that day — the sign shows whether it increased (+) or decreased (−) inventory.</div>
       </div>
       <div style="margin-top:8px">
         <button class="btn btn-secondary" onclick="exportReconDailyCSV()" id="recon-daily-export-btn" style="display:none;font-size:12px">⬇ Export Daily Activity CSV</button>
@@ -9238,11 +9239,16 @@ function computeReconDailyLedger(fromVal, toVal) {
       var dayLogs = db.logs.filter(function(l) { return l.itemId === item.id && historyDateKey(l.date) === dayKey; });
       var delivery = dayLogs.filter(function(l) { return l.type === 'restock'; }).reduce(function(s, l) { return s + (l.qty || 0); }, 0);
       var usage    = dayLogs.filter(function(l) { return l.type === 'use' || l.type === 'damage'; }).reduce(function(s, l) { return s + (l.qty || 0); }, 0);
+      // Adjustments: manual qty edits, physical-count corrections, and reconciliation
+      // sign-offs — anything logged as type 'adjust'/'edit'/'adjustment'. Uses the same
+      // net-delta field (variance) as logDelta, so it always ties out with Ending.
+      var adjustment = dayLogs.filter(function(l) { return l.type === 'adjust' || l.type === 'edit' || l.type === 'adjustment'; })
+        .reduce(function(s, l) { return s + (l.variance != null ? l.variance : 0); }, 0);
       var dayNetDelta = dayLogs.reduce(function(s, l) { return s + logDelta(l); }, 0);
 
       var ending = runningEnding;
       var beginning = ending - dayNetDelta;
-      dayRows.unshift({ dateKey: dayKey, beginning: beginning, delivery: delivery, usage: usage, ending: ending, notYet: notYet });
+      dayRows.unshift({ dateKey: dayKey, beginning: beginning, delivery: delivery, usage: usage, adjustment: adjustment, ending: ending, notYet: notYet });
       runningEnding = beginning; // this day's beginning = the previous day's ending
     }
     return { item: item, days: dayRows };
@@ -9277,14 +9283,17 @@ function renderReconDailyTable() {
         tr.innerHTML =
           '<td style="padding:6px 10px">' + itemCell + '</td>' +
           '<td style="padding:6px 10px;color:var(--muted)">' + esc(d.dateKey) + '</td>' +
-          '<td colspan="4" style="padding:6px 10px;text-align:center;color:var(--muted);font-style:italic">Not yet added</td>';
+          '<td colspan="5" style="padding:6px 10px;text-align:center;color:var(--muted);font-style:italic">Not yet added</td>';
       } else {
+        var adjColor = d.adjustment < 0 ? 'var(--danger)' : d.adjustment > 0 ? 'var(--ok)' : 'var(--muted)';
+        var adjSign = d.adjustment > 0 ? '+' : '';
         tr.innerHTML =
           '<td style="padding:6px 10px">' + itemCell + '</td>' +
           '<td style="padding:6px 10px;color:var(--muted)">' + esc(d.dateKey) + '</td>' +
           '<td style="padding:6px 10px;text-align:right">' + fmtInt(d.beginning) + ' ' + esc(entry.item.unit || '') + '</td>' +
           '<td style="padding:6px 10px;text-align:right;color:var(--ok)">' + (d.delivery ? '+' + fmtInt(d.delivery) : '—') + '</td>' +
           '<td style="padding:6px 10px;text-align:right;color:var(--danger)">' + (d.usage ? '−' + fmtInt(d.usage) : '—') + '</td>' +
+          '<td style="padding:6px 10px;text-align:right;color:' + adjColor + '">' + (d.adjustment ? adjSign + fmtInt(d.adjustment) : '—') + '</td>' +
           '<td style="padding:6px 10px;text-align:right;font-weight:700">' + fmtInt(d.ending) + ' ' + esc(entry.item.unit || '') + '</td>';
       }
       tbody.appendChild(tr);
@@ -9294,11 +9303,11 @@ function renderReconDailyTable() {
 
 function exportReconDailyCSV() {
   if (!_reconDailyRows.length) return;
-  var rows = [['Item', 'SKU', 'Date', 'Beginning', 'Delivery', 'Usage', 'Ending']];
+  var rows = [['Item', 'SKU', 'Date', 'Beginning', 'Delivery', 'Usage', 'Adjustments', 'Ending']];
   _reconDailyRows.forEach(function(entry) {
     entry.days.forEach(function(d) {
-      if (d.notYet) { rows.push([entry.item.name, entry.item.sku || '', d.dateKey, 'not yet added', '', '', '']); return; }
-      rows.push([entry.item.name, entry.item.sku || '', d.dateKey, d.beginning, d.delivery, d.usage, d.ending]);
+      if (d.notYet) { rows.push([entry.item.name, entry.item.sku || '', d.dateKey, 'not yet added', '', '', '', '']); return; }
+      rows.push([entry.item.name, entry.item.sku || '', d.dateKey, d.beginning, d.delivery, d.usage, d.adjustment, d.ending]);
     });
   });
   var from = document.getElementById('recon-daily-from').value;
