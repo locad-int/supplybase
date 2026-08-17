@@ -9131,10 +9131,16 @@ function renderSnapshot() {
 function exportSnapshotCSV() {
   if (!_snapRows.length) return;
   var val = document.getElementById('snap-datetime').value || 'now';
-  var rows = [['Item', 'SKU', 'Qty', 'Unit', 'Unit Cost (today)', 'Est. Value (today\'s cost)']];
+  // Embed the snapshot's own "as of" moment as a recognized column, same as a
+  // regular inventory export does with "Exported At" — so if this CSV later gets
+  // used as a Before/After file in Compare Count Files, its timestamp is read
+  // automatically instead of showing "no timestamp in file".
+  var asOfDate = document.getElementById('snap-datetime').value ? new Date(document.getElementById('snap-datetime').value) : new Date();
+  var asOfStr = asOfDate.toLocaleString('en-PH', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+  var rows = [['As Of', 'Item', 'SKU', 'Qty', 'Unit', 'Unit Cost (today)', 'Est. Value (today\'s cost)']];
   _snapRows.forEach(function(r) {
-    if (r.notYet) { rows.push([r.item.name, r.item.sku || '', 'not yet added', '', '', '']); return; }
-    rows.push([r.item.name, r.item.sku || '', r.qty, r.item.unit || '', r.item.cost || 0, Math.round((r.qty || 0) * (r.item.cost || 0) * 100) / 100]);
+    if (r.notYet) { rows.push([asOfStr, r.item.name, r.item.sku || '', 'not yet added', '', '', '']); return; }
+    rows.push([asOfStr, r.item.name, r.item.sku || '', r.qty, r.item.unit || '', r.item.cost || 0, Math.round((r.qty || 0) * (r.item.cost || 0) * 100) / 100]);
   });
   downloadCSV('inventory_snapshot_' + val.replace(/[:T]/g, '-') + '.csv', rows);
 }
