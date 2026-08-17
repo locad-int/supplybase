@@ -3490,6 +3490,8 @@ function openItemModalFromDetail() {
 // ─── ITEM HISTORY ──────────────────────────────────────────────────────────────
 var _historyItemId = null;
 var _historyLogs = [];
+var _historyBeginningInventory = 0;
+var _historyItemUnit = '';
 
 var TYPE_META = {
   use:     { label: 'Consumption', color: '#dc2626', bg: 'rgba(220,38,38,.08)',   sign: '-' },
@@ -3519,7 +3521,8 @@ function openItemHistory(itemId) {
     balArr.unshift(bal);      // qty AFTER this log
     bal -= logDelta(l);       // undo it to get qty BEFORE this log
   });
-  var beginningInventory = bal; // qty before the very first log in this history
+  _historyBeginningInventory = bal; // qty before the very first log in this history
+  _historyItemUnit = item.unit || '';
 
   _historyLogs = allLogs.map(function(l, idx) {
     return Object.assign({}, l, { _balanceAfter: balArr[idx] });
@@ -3533,8 +3536,6 @@ function openItemHistory(itemId) {
 
   document.getElementById('ihistory-title').textContent = '📋 ' + item.name + ' — History';
   document.getElementById('ihistory-summary').innerHTML =
-    '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">BEGINNING INVENTORY</span><strong style="font-size:1.1rem">' + fmtInt(beginningInventory) + ' ' + esc(item.unit||'') + '</strong></div>' +
-    '<div style="width:1px;background:var(--border)"></div>' +
     '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">CURRENT STOCK</span><strong style="font-size:1.1rem">' + fmtInt(item.qty) + ' ' + esc(item.unit||'') + '</strong></div>' +
     '<div style="width:1px;background:var(--border)"></div>' +
     '<div style="display:flex;flex-direction:column;gap:2px"><span style="color:var(--muted);font-size:11px">TOTAL CONSUMED</span><strong style="color:#dc2626">' + fmtInt(totalUse) + ' ' + esc(item.unit||'') + '</strong></div>' +
@@ -3565,7 +3566,12 @@ function filterItemHistory() {
   var empty = document.getElementById('ihistory-empty');
   tbody.innerHTML = '';
 
-  if (rows.length === 0) { empty.classList.remove('hidden'); return; }
+  // "Beginning Inventory" isn't a transaction, so it isn't subject to the
+  // search/type filters above — it's context that belongs at the bottom of
+  // the table (oldest first) whenever this item has any history at all.
+  var showBeginning = _historyLogs.length > 0;
+
+  if (rows.length === 0 && !showBeginning) { empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
 
   rows.forEach(function(l) {
@@ -3584,6 +3590,20 @@ function filterItemHistory() {
       '<td style="padding:8px 10px;font-size:12px;color:var(--muted)">' + esc(notesStr||'—') + '</td>';
     tbody.appendChild(tr);
   });
+
+  if (showBeginning) {
+    var btr = document.createElement('tr');
+    btr.style.borderTop = '2px solid var(--border)';
+    btr.style.background = 'var(--surface2)';
+    btr.innerHTML =
+      '<td style="padding:8px 10px;color:var(--muted);font-size:12px">—</td>' +
+      '<td style="padding:8px 10px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--surface);color:var(--muted)">Beginning</span></td>' +
+      '<td style="padding:8px 10px;text-align:right;color:var(--muted);font-size:12px">—</td>' +
+      '<td style="padding:8px 10px;text-align:right;font-weight:700">' + fmtInt(_historyBeginningInventory) + ' ' + esc(_historyItemUnit) + '</td>' +
+      '<td style="padding:8px 10px;font-size:12px">—</td>' +
+      '<td style="padding:8px 10px;font-size:12px;color:var(--muted)">Beginning inventory (before the earliest transaction shown above)</td>';
+    tbody.appendChild(btr);
+  }
 }
 
 function exportItemHistoryCSV() {
@@ -3616,6 +3636,15 @@ function exportItemHistoryCSV() {
     ].map(function(v){ return '"'+String(v).replace(/"/g,'""')+'"'; });
     lines.push(line.join(','));
   });
+
+  if (_historyLogs.length > 0) {
+    var beginLine = [
+      '', item.name, item.sku||'', item.unit||'',
+      'Beginning', '', _historyBeginningInventory, '', '', '',
+      'Beginning inventory (before the earliest transaction above)', ''
+    ].map(function(v){ return '"'+String(v).replace(/"/g,'""')+'"'; });
+    lines.push(beginLine.join(','));
+  }
 
   var blob = new Blob([lines.join('\n')], {type:'text/csv'});
   var a = document.createElement('a');
