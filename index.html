@@ -3492,6 +3492,11 @@ var _historyItemId = null;
 var _historyLogs = [];
 var _historyBeginningInventory = 0;
 var _historyItemUnit = '';
+var _historyDailyOpening = {}; // dateKey (e.g. "Aug 15, 2026") -> stock at the start of that day
+
+function historyDateKey(dateStr) {
+  return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 var TYPE_META = {
   use:     { label: 'Consumption', color: '#dc2626', bg: 'rgba(220,38,38,.08)',   sign: '-' },
@@ -3523,6 +3528,18 @@ function openItemHistory(itemId) {
   });
   _historyBeginningInventory = bal; // qty before the very first log in this history
   _historyItemUnit = item.unit || '';
+
+  // Opening balance for each calendar day that has at least one transaction —
+  // the balance right before that day's earliest (oldest) logged entry.
+  _historyDailyOpening = {};
+  var prevDateKey = null;
+  allLogs.forEach(function(l, idx) {
+    var dateKey = historyDateKey(l.date);
+    if (dateKey !== prevDateKey) {
+      _historyDailyOpening[dateKey] = idx === 0 ? _historyBeginningInventory : balArr[idx - 1];
+      prevDateKey = dateKey;
+    }
+  });
 
   _historyLogs = allLogs.map(function(l, idx) {
     return Object.assign({}, l, { _balanceAfter: balArr[idx] });
@@ -3566,15 +3583,32 @@ function filterItemHistory() {
   var empty = document.getElementById('ihistory-empty');
   tbody.innerHTML = '';
 
-  // "Beginning Inventory" isn't a transaction, so it isn't subject to the
-  // search/type filters above — it's context that belongs at the bottom of
-  // the table (oldest first) whenever this item has any history at all.
-  var showBeginning = _historyLogs.length > 0;
-
-  if (rows.length === 0 && !showBeginning) { empty.classList.remove('hidden'); return; }
+  if (rows.length === 0) { empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
 
-  rows.forEach(function(l) {
+  function appendBeginningRow(dateKey) {
+    var opening = _historyDailyOpening[dateKey];
+    if (opening == null) return;
+    var btr = document.createElement('tr');
+    btr.style.borderTop = '2px solid var(--border)';
+    btr.style.background = 'var(--surface2)';
+    btr.innerHTML =
+      '<td style="padding:8px 10px;color:var(--muted);font-size:12px">' + esc(dateKey) + '</td>' +
+      '<td style="padding:8px 10px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--surface);color:var(--muted)">Beginning</span></td>' +
+      '<td style="padding:8px 10px;text-align:right;color:var(--muted);font-size:12px">—</td>' +
+      '<td style="padding:8px 10px;text-align:right;font-weight:700">' + fmtInt(opening) + ' ' + esc(_historyItemUnit) + '</td>' +
+      '<td style="padding:8px 10px;font-size:12px">—</td>' +
+      '<td style="padding:8px 10px;font-size:12px;color:var(--muted)">Beginning inventory for this day</td>';
+    tbody.appendChild(btr);
+  }
+
+  // Rows are newest→oldest. Insert a "Beginning inventory for this day" row
+  // right after the last (oldest) transaction of each calendar day.
+  var prevDateKey = null;
+  rows.forEach(function(l, idx) {
+    var dateKey = historyDateKey(l.date);
+    if (prevDateKey !== null && dateKey !== prevDateKey) appendBeginningRow(prevDateKey);
+
     var meta = TYPE_META[l.type] || { label: l.type, color: 'var(--muted)', bg: 'transparent', sign: '' };
     var dateStr = l.date ? new Date(l.date).toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }) : '—';
     var notesStr = [l.notes, l.ref ? ('Ref: ' + l.ref) : ''].filter(Boolean).join(' · ');
@@ -3589,21 +3623,10 @@ function filterItemHistory() {
       '<td style="padding:8px 10px;font-size:12px">' + esc(l.by||'—') + '</td>' +
       '<td style="padding:8px 10px;font-size:12px;color:var(--muted)">' + esc(notesStr||'—') + '</td>';
     tbody.appendChild(tr);
-  });
 
-  if (showBeginning) {
-    var btr = document.createElement('tr');
-    btr.style.borderTop = '2px solid var(--border)';
-    btr.style.background = 'var(--surface2)';
-    btr.innerHTML =
-      '<td style="padding:8px 10px;color:var(--muted);font-size:12px">—</td>' +
-      '<td style="padding:8px 10px"><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--surface);color:var(--muted)">Beginning</span></td>' +
-      '<td style="padding:8px 10px;text-align:right;color:var(--muted);font-size:12px">—</td>' +
-      '<td style="padding:8px 10px;text-align:right;font-weight:700">' + fmtInt(_historyBeginningInventory) + ' ' + esc(_historyItemUnit) + '</td>' +
-      '<td style="padding:8px 10px;font-size:12px">—</td>' +
-      '<td style="padding:8px 10px;font-size:12px;color:var(--muted)">Beginning inventory (before the earliest transaction shown above)</td>';
-    tbody.appendChild(btr);
-  }
+    prevDateKey = dateKey;
+    if (idx === rows.length - 1) appendBeginningRow(dateKey); // last (oldest) group in the list
+  });
 }
 
 function exportItemHistoryCSV() {
@@ -3622,7 +3645,22 @@ function exportItemHistoryCSV() {
 
   var headers = ['Date/Time','Item','SKU','Unit','Type','Qty','Stock After','Cost per Unit','Total Cost','By','Notes','Reference'];
   var lines = [headers.join(',')];
-  rows.forEach(function(l) {
+
+  function beginningCsvLine(dateKey) {
+    var opening = _historyDailyOpening[dateKey];
+    if (opening == null) return;
+    lines.push([
+      dateKey, item.name, item.sku||'', item.unit||'',
+      'Beginning', '', opening, '', '', '',
+      'Beginning inventory for this day', ''
+    ].map(function(v){ return '"'+String(v).replace(/"/g,'""')+'"'; }).join(','));
+  }
+
+  var prevDateKey = null;
+  rows.forEach(function(l, idx) {
+    var dateKey = historyDateKey(l.date);
+    if (prevDateKey !== null && dateKey !== prevDateKey) beginningCsvLine(prevDateKey);
+
     var meta = TYPE_META[l.type] || { label: l.type };
     var isCost = l.type === 'use' || l.type === 'damage';
     var line = [
@@ -3635,16 +3673,10 @@ function exportItemHistoryCSV() {
       l.by||'', l.notes||'', l.ref||''
     ].map(function(v){ return '"'+String(v).replace(/"/g,'""')+'"'; });
     lines.push(line.join(','));
-  });
 
-  if (_historyLogs.length > 0) {
-    var beginLine = [
-      '', item.name, item.sku||'', item.unit||'',
-      'Beginning', '', _historyBeginningInventory, '', '', '',
-      'Beginning inventory (before the earliest transaction above)', ''
-    ].map(function(v){ return '"'+String(v).replace(/"/g,'""')+'"'; });
-    lines.push(beginLine.join(','));
-  }
+    prevDateKey = dateKey;
+    if (idx === rows.length - 1) beginningCsvLine(dateKey);
+  });
 
   var blob = new Blob([lines.join('\n')], {type:'text/csv'});
   var a = document.createElement('a');
