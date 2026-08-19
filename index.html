@@ -9912,6 +9912,28 @@ function previewImport(rows) {
 }
 
 async function applyImport() {
+  // Refresh quantities for every matched item right before applying — the import
+  // preview can sit open for a while (reviewing a big file, waiting for a supervisor
+  // to confirm), during which another device could log usage, a restock, or a manual
+  // adjustment. Without this, the diff/variance below gets computed against whatever
+  // qty this browser had cached at preview time, not the true current qty — producing
+  // a wrong variance and a "was X" note that doesn't match reality.
+  if (sb) {
+    var matchedIds = _importRows.filter(function(r){ return !r.isNew && r.item; }).map(function(r){ return r.item.id; });
+    if (matchedIds.length) {
+      try {
+        var freshImportQty = await sb.from('items').select('id,qty').in('id', matchedIds);
+        if (freshImportQty.data) {
+          var freshQtyMap = {};
+          freshImportQty.data.forEach(function(f){ freshQtyMap[f.id] = f.qty; });
+          _importRows.forEach(function(r) {
+            if (!r.isNew && r.item && freshQtyMap[r.item.id] !== undefined) r.item.qty = freshQtyMap[r.item.id];
+          });
+        }
+      } catch(e) {}
+    }
+  }
+
   // Re-check at apply time — the preview list could be stale if the permission changed
   var toCreate = can('add_new_items_on_import')
     ? _importRows.filter(function(r) { return r.isNew; })
