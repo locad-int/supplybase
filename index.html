@@ -2144,6 +2144,14 @@ function catalogItems() {
   if (!testModeActive) return db.items;
   return db.items.filter(function(i) { return testModeItemIds.indexOf(i.id) !== -1; });
 }
+// Test-mode bypass for superuser search/browse: lets a superuser still find and
+// act on any item (item-picker dropdowns, main Inventory list) while test mode
+// is active, without opening up the other surfaces (reports, reconciliation,
+// snapshots, exports) that should stay scoped to the pilot set for everyone.
+function catalogItemsForSearch() {
+  if (currentRole === 'superuser') return db.items;
+  return catalogItems();
+}
 function isLogVisible(l) {
   return !testModeActive || testModeItemIds.indexOf(l.itemId) !== -1;
 }
@@ -3156,7 +3164,7 @@ function renderInventory() {
   const q = document.getElementById('inv-search').value.toLowerCase();
   const activeStatuses = getActiveStatusFilters();
   const fc = document.getElementById('inv-filter-cat').value;
-  let items = catalogItems().filter(i => {
+  let items = catalogItemsForSearch().filter(i => {
     // Brand users only see their own items
     if (isBrand && brandName && !i.name.toLowerCase().includes(brandName)) return false;
     if (q && !i.name.toLowerCase().includes(q) && !i.category?.toLowerCase().includes(q) && !i.sku?.toLowerCase().includes(q)) return false;
@@ -3326,7 +3334,7 @@ function openItemModal(id) {
   openModal('item-modal');
 }
 
-function saveItem() {
+async function saveItem() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { alert('Item name is required.'); return; }
   const qty = parseFloat(document.getElementById('f-qty').value) || 0;
@@ -3344,9 +3352,20 @@ function saveItem() {
     notes: document.getElementById('f-notes').value.trim(),
     updatedAt: new Date().toISOString(),
   };
+  var newLogEntry = null;
   if (editItemId) {
     const idx = db.items.findIndex(i => i.id === editItemId);
     const old = db.items[idx];
+    // Fresh qty first — this modal can stay open for a while while editing,
+    // during which another device could log usage/restocks/adjustments on
+    // the same item; without refreshing, the diff below (and a bulk save())
+    // could silently overwrite that concurrent change.
+    if (sb) {
+      try {
+        var freshEI = await sb.from('items').select('qty').eq('id', editItemId).single();
+        if (freshEI.data && !freshEI.error && freshEI.data.qty !== undefined) old.qty = freshEI.data.qty;
+      } catch(e) {}
+    }
     const prevQty = old.qty, prevCost = old.cost;
     db.items[idx] = { ...old, ...data };
     const it = db.items[idx];
@@ -3363,9 +3382,10 @@ function saveItem() {
       let cAmt = null, cDet = '';
       if (d < 0)      { cDet = describeConsumption(it, -d); cAmt = consumeLayers(it, -d); }
       else            { cAmt = addFoundStock(it, d); }
-      db.logs.push({ id: uid(), itemId: editItemId, type: 'adjust', qty: d, absQty: qty, variance: d,
+      newLogEntry = { id: uid(), itemId: editItemId, type: 'adjust', qty: d, absQty: qty, variance: d,
         varianceReason: 'Item edited', by: (currentUser && currentUser.username) || 'Edit',
-        date: new Date().toISOString(), notes: 'Item edited', ref: '', costAmount: cAmt, costDetail: cDet });
+        date: new Date().toISOString(), notes: 'Item edited', ref: '', costAmount: cAmt, costDetail: cDet };
+      db.logs.push(newLogEntry);
       if (qty > prevQty) updateMaxRef(it, qty);
     }
     syncItemCost(it);
@@ -3381,7 +3401,22 @@ function saveItem() {
     updateMaxRef(data, qty);
   }
   logAudit(editItemId ? 'Item edited' : 'Item created', document.getElementById('f-name').value);
-  save();
+  // Targeted write for edits — a bulk save() would upsert every item from this
+  // session's local memory and could overwrite concurrent changes elsewhere.
+  // New-item creation still goes through the general save path.
+  if (editItemId && sb) {
+    try {
+      const editedItem = db.items.find(i => i.id === editItemId);
+      await sbUpdateItem(editedItem, {
+        name: editedItem.name, category: editedItem.category, location: editedItem.location,
+        unit: editedItem.unit, minQty: editedItem.minQty, reorderQty: editedItem.reorderQty,
+        supplier: editedItem.supplier, sku: editedItem.sku, notes: editedItem.notes
+      });
+      if (newLogEntry) await sbInsertLogs([newLogEntry]);
+    } catch(e) { save(); }
+  } else {
+    save();
+  }
   closeModal('item-modal');
   renderInventory();
 }
@@ -3468,8 +3503,10 @@ function renderLogs() {
   logs.forEach(log => {
     const item = db.items.find(i => i.id === log.itemId);
     // For 'adjust' logs, l.qty may hold an absolute quantity (inline qty edit,
-    // physical count) rather than a delta — l.variance is the reliable change.
-    const logQtyForDisplay = log.type === 'adjust' ? (log.variance != null ? log.variance : log.qty) : log.qty;
+    // physical count) rather than a delta — adjustDelta() is the reliable change
+    // (falls back to l.variance when present, and recovers it from legacy rows
+    // that never stored a signed variance at all).
+    const logQtyForDisplay = log.type === 'adjust' ? adjustDelta(log) : log.qty;
     const qtySign = log.type === 'use' || log.type === 'damage' ? '-' : logQtyForDisplay >= 0 ? '+' : '';
     const div = document.createElement('div');
     div.className = 'log-entry';
@@ -3477,11 +3514,12 @@ function renderLogs() {
     div.title = 'Click to view details';
     div.onclick = () => openLogDetail(log.id);
     var vBadge = '';
-    if (log.type === 'adjust' && log.variance != null) {
-      var vBg = log.variance < 0 ? 'rgba(255,77,77,0.15)' : log.variance > 0 ? 'rgba(77,255,110,0.12)' : 'rgba(255,255,255,0.06)';
-      var vColor = log.variance < 0 ? 'var(--danger)' : log.variance > 0 ? 'var(--ok)' : 'var(--muted)';
-      var vSign = log.variance >= 0 ? '+' : '';
-      vBadge = '<span style="font-size:11px;font-weight:600;margin-left:6px;padding:2px 7px;border-radius:99px;background:' + vBg + ';color:' + vColor + ';">' + vSign + log.variance + '</span>';
+    if (log.type === 'adjust') {
+      var vVal = adjustDelta(log);
+      var vBg = vVal < 0 ? 'rgba(255,77,77,0.15)' : vVal > 0 ? 'rgba(77,255,110,0.12)' : 'rgba(255,255,255,0.06)';
+      var vColor = vVal < 0 ? 'var(--danger)' : vVal > 0 ? 'var(--ok)' : 'var(--muted)';
+      var vSign = vVal >= 0 ? '+' : '';
+      vBadge = '<span style="font-size:11px;font-weight:600;margin-left:6px;padding:2px 7px;border-radius:99px;background:' + vBg + ';color:' + vColor + ';">' + vSign + vVal + '</span>';
     }
     var vReason = log.varianceReason ? '<span style="font-size:11px;color:var(--muted);margin-left:4px">· ' + esc(log.varianceReason) + '</span>' : '';
     var badgeClass = log.type==='use'?'badge-warn':log.type==='restock'?'badge-ok':log.type==='damage'?'badge-danger':'badge-info';
@@ -3537,7 +3575,12 @@ function openLogDetail(logId) {
   const item = db.items.find(i => i.id === log.itemId);
   const typeLabels = { use: 'Use (deduct)', restock: 'Restock (add)', adjust: 'Manual Adjust', damage: 'Damage / Loss' };
   const typeColors = { use: 'var(--warn)', restock: 'var(--ok)', adjust: '#93c5fd', damage: 'var(--danger)' };
-  const qtySign = log.type === 'use' || log.type === 'damage' ? '-' : '+';
+  // For 'adjust' logs, sign was previously hardcoded to '+' regardless of
+  // direction — a decrease (e.g. variance -175) showed as "+175" here. Use
+  // the real signed delta instead (adjustDelta also recovers legacy rows
+  // that never stored a signed variance at all).
+  const qtyForDisplay = log.type === 'adjust' ? adjustDelta(log) : log.qty;
+  const qtySign = log.type === 'use' || log.type === 'damage' ? '-' : (qtyForDisplay < 0 ? '−' : '+');
   const color = typeColors[log.type] || 'var(--text)';
 
   function row(label, value, valueStyle) {
@@ -3554,14 +3597,14 @@ function openLogDetail(logId) {
   document.getElementById('ld-body').innerHTML =
     row('Type', `<span style="color:${color};font-weight:600">${typeLabels[log.type]||log.type}</span>`)
     + row('Date & Time', new Date(log.date).toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }))
-    + row('Quantity', `<span style="color:${color};font-weight:700">${qtySign}${fmtInt(Math.abs(log.qty))} ${esc(item ? (item.unit||'') : '')}</span>`)
+    + row('Quantity', `<span style="color:${color};font-weight:700">${qtySign}${fmtInt(Math.abs(qtyForDisplay))} ${esc(item ? (item.unit||'') : '')}</span>`)
     + (log.absQty != null ? row('Stock after', fmtInt(log.absQty) + ' ' + esc(item ? (item.unit||'') : '')) : '')
     + (isColHidden('cost') ? '' :
         (log.costDetail ? row('Batches used', '<span style="font-family:var(--font-mono,monospace);font-size:12px">' + esc(log.costDetail) + '</span>') : '')
       + (log.costAmount != null ? row('Cost booked', '<strong>' + fmtPHP(log.costAmount) + '</strong>') : ''))
     + row('Performed by', esc(log.by || '—'))
     + row('Reference / PO #', log.ref ? esc(log.ref) : '')
-    + (log.type === 'adjust' && log.variance != null ? row('Variance', (log.variance >= 0 ? '+' : '') + fmtInt(log.variance)) : '')
+    + (log.type === 'adjust' ? row('Variance', (qtyForDisplay >= 0 ? '+' : '') + fmtInt(qtyForDisplay)) : '')
     + (log.varianceReason ? row('Variance reason', esc(log.varianceReason)) : '')
     + row('Notes', log.notes ? esc(log.notes) : '');
 
@@ -3696,7 +3739,7 @@ function openItemHistory(itemId) {
   var totalUse     = allLogs.filter(function(l){return l.type==='use';}).reduce(function(s,l){return s+l.qty;},0);
   var totalRestock = allLogs.filter(function(l){return l.type==='restock';}).reduce(function(s,l){return s+l.qty;},0);
   var totalDamage  = allLogs.filter(function(l){return l.type==='damage';}).reduce(function(s,l){return s+l.qty;},0);
-  var totalCost    = allLogs.filter(function(l){return l.type==='use'||l.type==='damage';}).reduce(function(s,l){return s+(l.qty*(item.cost||0));},0);
+  var totalCost    = allLogs.filter(function(l){return l.type==='use'||l.type==='damage';}).reduce(function(s,l){return s+logCostOf(l, item);},0);
 
   document.getElementById('ihistory-title').textContent = '📋 ' + item.name + ' — History';
   document.getElementById('ihistory-summary').innerHTML =
@@ -3767,7 +3810,7 @@ function filterItemHistory() {
     var qtySign, qtyShown;
     if (l.type === 'use' || l.type === 'damage') { qtySign = '−'; qtyShown = l.qty; }
     else if (l.type === 'restock') { qtySign = '+'; qtyShown = l.qty; }
-    else { var _v = (l.variance != null) ? l.variance : l.qty; qtySign = _v < 0 ? '−' : '+'; qtyShown = Math.abs(_v); }
+    else { var _v = adjustDelta(l); qtySign = _v < 0 ? '−' : '+'; qtyShown = Math.abs(_v); }
     var tr = document.createElement('tr');
     tr.style.borderBottom = '1px solid var(--border)';
     tr.innerHTML =
@@ -3822,7 +3865,7 @@ function exportItemHistoryCSV() {
     // quantity (inline edit / physical count) rather than a delta — l.variance is
     // the reliable before→after change, so export that instead for adjust rows.
     var qtyOut = (l.type === 'adjust' || l.type === 'edit' || l.type === 'adjustment')
-      ? (l.variance != null ? l.variance : l.qty)
+      ? adjustDelta(l)
       : l.qty;
     var line = [
       l.date ? new Date(l.date).toLocaleString('en-PH',{hour12:true}) : '',
@@ -4475,7 +4518,7 @@ function startInlineQtyEdit(itemId) {
   if (inp) { inp.focus(); inp.select(); }
 }
 
-function saveInlineQty(itemId) {
+async function saveInlineQty(itemId) {
   var inp = document.getElementById('iqe-' + itemId);
   if (!inp) return; // blur fired after Enter already handled
   var raw = inp.value;
@@ -4484,21 +4527,46 @@ function saveInlineQty(itemId) {
   var item = db.items.find(function(i) { return i.id === itemId; });
   if (!item || raw === '' || isNaN(newQty) || newQty < 0) { renderInventory(); return; }
   newQty = Math.round(newQty);
+  // Fresh qty first — this is a quick inline edit that can happen seconds after
+  // someone else logs usage/restock on the same item; without refreshing, the
+  // diff below gets computed against a stale local qty and a bulk save() could
+  // overwrite concurrent changes (same class of bug fixed in Import/Compare/Reconciliation).
+  if (sb) {
+    try {
+      var freshIQ = await sb.from('items').select('qty').eq('id', itemId).single();
+      if (freshIQ.data && !freshIQ.error && freshIQ.data.qty !== undefined) item.qty = freshIQ.data.qty;
+    } catch(e) {}
+  }
   if (newQty === item.qty) { renderInventory(); return; }
   var oldQty = item.qty;
   var diff = newQty - oldQty;
-  db.logs.push({
+  // FIFO: move batches so costing stays consistent (this previously skipped
+  // costLayers entirely, letting the FIFO batch breakdown drift out of sync).
+  getLayers(item);
+  var iqCost = null, iqDetail = '';
+  if (diff < 0)      { iqDetail = describeConsumption(item, -diff); iqCost = consumeLayers(item, -diff); }
+  else if (diff > 0) { iqCost = addFoundStock(item, diff); }
+  var logEntry = {
     id: uid(), itemId: itemId, type: 'adjust',
     qty: newQty, absQty: newQty, variance: diff, sysQty: oldQty,
     varianceReason: 'Manual qty entry',
     by: (currentUser && currentUser.username) || 'manual',
     date: new Date().toISOString(),
-    notes: 'Manual qty: ' + oldQty + ' → ' + newQty, ref: ''
-  });
+    notes: 'Manual qty: ' + oldQty + ' → ' + newQty, ref: '',
+    costAmount: iqCost, costDetail: iqDetail
+  };
+  db.logs.push(logEntry);
   item.qty = newQty;
   item.updatedAt = new Date().toISOString();
+  syncItemCost(item);
   updateMaxRef(item, newQty);
-  save();
+  // Targeted write — a bulk save() here would upsert every item from this
+  // session's local memory and could overwrite concurrent changes elsewhere.
+  if (sb) {
+    try { await sbUpdateItem(item); await sbInsertLogs([logEntry]); } catch(e) { save(); }
+  } else {
+    save();
+  }
   renderInventory();
   updateSummary();
 }
@@ -4521,7 +4589,7 @@ function filterRoItemDropdown() {
   var q = document.getElementById('rf-item-search').value.toLowerCase();
   var dd = document.getElementById('ro-item-dropdown');
   if (!q.trim()) { dd.style.display = 'none'; return; }
-  var matches = catalogItems().filter(function(i) { return i.name.toLowerCase().includes(q) || (i.sku && i.sku.toLowerCase().includes(q)); }).slice(0, 30);
+  var matches = catalogItemsForSearch().filter(function(i) { return i.name.toLowerCase().includes(q) || (i.sku && i.sku.toLowerCase().includes(q)); }).slice(0, 30);
   if (!matches.length) {
     dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No items found</div>';
   } else {
@@ -4555,7 +4623,7 @@ function closeRoItemDropdown() {
 function filterItemDropdown() {
   const q = document.getElementById('lf-item-search').value.toLowerCase();
   const dd = document.getElementById('lf-item-dropdown');
-  const matches = catalogItems().filter(i => i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
+  const matches = catalogItemsForSearch().filter(i => i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
   if (!matches.length) {
     dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No items found</div>';
   } else {
@@ -4757,7 +4825,10 @@ function renderReport() {
       };
     }
     map[key].totalQty += l.qty;
-    map[key].totalCost += l.qty * (map[key].costPerUnit);
+    // Use each log's own historically-accurate FIFO cost (logCostOf prefers the
+    // captured costAmount) instead of today's item.cost — otherwise a cost
+    // change re-prices every past transaction, silently distorting the report.
+    map[key].totalCost += logCostOf(l, db.items.find(i => i.id === l.itemId));
     map[key].entries++;
   });
 
@@ -4885,7 +4956,9 @@ function exportDetailedCSV() {
   filtered.forEach(l => {
     const item = db.items.find(i => i.id === l.itemId);
     const cost = item?.cost || 0;
-    const total = l.qty * cost;
+    // Historically-accurate cost (prefers the log's own captured costAmount)
+    // instead of today's item.cost, so past cost changes don't re-price history.
+    const total = logCostOf(l, item);
     const typeLabel = TYPE_LABELS[l.type] || l.type || '';
     const dateStr = l.date ? new Date(l.date).toLocaleString('en-PH', { hour12: true }) : '';
     const row = [
@@ -4974,30 +5047,35 @@ function renderVariance() {
   const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
   const to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
 
+  // adjustDelta() recovers the true signed variance even for legacy rows that
+  // never stored a signed `variance` field — using raw l.variance here would
+  // both hide those rows (falsy null looks like "no discrepancy") and, if
+  // shown elsewhere, display them with the wrong sign.
   let logs = db.logs.filter(l => {
     if (l.type !== 'adjust') return false;
-    if (!l.variance) return false; // zero/blank variance = confirmed match, not a discrepancy
+    if (!adjustDelta(l)) return false; // zero variance = confirmed match, not a discrepancy
     if (!isLogVisible(l)) return false;
     const d = new Date(l.date);
     if (from && d < from) return false;
     if (to   && d > to)   return false;
-    if (vType === 'negative' && (l.variance == null || l.variance >= 0)) return false;
-    if (vType === 'positive' && (l.variance == null || l.variance <= 0)) return false;
+    const v = adjustDelta(l);
+    if (vType === 'negative' && v >= 0) return false;
+    if (vType === 'positive' && v <= 0) return false;
     return true;
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
 
   // Summary counts + costs
-  const neg = logs.filter(l => l.variance < 0).length;
-  const pos = logs.filter(l => l.variance > 0).length;
-  const net = logs.reduce((s, l) => s + (l.variance || 0), 0);
-  const negCost = logs.filter(l => l.variance < 0).reduce((s, l) => {
+  const neg = logs.filter(l => adjustDelta(l) < 0).length;
+  const pos = logs.filter(l => adjustDelta(l) > 0).length;
+  const net = logs.reduce((s, l) => s + adjustDelta(l), 0);
+  const negCost = logs.filter(l => adjustDelta(l) < 0).reduce((s, l) => {
     const item = db.items.find(i => i.id === l.itemId);
-    return s + Math.abs(l.variance || 0) * (item?.cost || 0);
+    return s + Math.abs(adjustDelta(l)) * (item?.cost || 0);
   }, 0);
-  const posCost = logs.filter(l => l.variance > 0).reduce((s, l) => {
+  const posCost = logs.filter(l => adjustDelta(l) > 0).reduce((s, l) => {
     const item = db.items.find(i => i.id === l.itemId);
-    return s + Math.abs(l.variance || 0) * (item?.cost || 0);
+    return s + Math.abs(adjustDelta(l)) * (item?.cost || 0);
   }, 0);
   document.getElementById('var-total').textContent    = fmtInt(logs.length);
   document.getElementById('var-neg').textContent      = fmtInt(neg);
@@ -5016,12 +5094,13 @@ function renderVariance() {
 
   logs.forEach(l => {
     const item  = db.items.find(i => i.id === l.itemId);
-    const vSign = l.variance >= 0 ? '+' : '';
-    const vColor = l.variance < 0 ? 'var(--danger)' : l.variance > 0 ? 'var(--ok)' : 'var(--muted)';
-    const expected  = l.absQty != null ? l.absQty - (l.variance || 0) : '—';
+    const v     = adjustDelta(l);
+    const vSign = v >= 0 ? '+' : '';
+    const vColor = v < 0 ? 'var(--danger)' : v > 0 ? 'var(--ok)' : 'var(--muted)';
+    const expected  = l.absQty != null ? l.absQty - v : '—';
     const actual    = l.absQty != null ? l.absQty : '—';
-    const costImpact = Math.abs(l.variance || 0) * (item?.cost || 0);
-    const costColor  = l.variance < 0 ? 'var(--danger)' : l.variance > 0 ? 'var(--ok)' : 'var(--muted)';
+    const costImpact = Math.abs(v) * (item?.cost || 0);
+    const costColor  = v < 0 ? 'var(--danger)' : v > 0 ? 'var(--ok)' : 'var(--muted)';
     const tr = document.createElement('tr');
     tr.innerHTML =
       `<td style="white-space:nowrap">${new Date(l.date).toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',hour12:true})}</td>`
@@ -5029,7 +5108,7 @@ function renderVariance() {
       + `<td>${esc(item?.category || '—')}</td>`
       + `<td>${expected !== '—' ? fmtInt(expected) + ' ' + esc(item?.unit||'') : '—'}</td>`
       + `<td>${actual !== '—' ? fmtInt(actual) + ' ' + esc(item?.unit||'') : '—'}</td>`
-      + `<td style="font-weight:700;color:${vColor}">${vSign}${fmtInt(l.variance || 0)}</td>`
+      + `<td style="font-weight:700;color:${vColor}">${vSign}${fmtInt(v)}</td>`
       + `<td style="font-weight:600;color:${costColor}">${fmtPHP(costImpact)}</td>`
       + `<td style="color:var(--muted)">${esc(l.varianceReason || '—')}</td>`
       + `<td>${esc(l.by || '—')}</td>`;
@@ -5045,7 +5124,7 @@ function exportVarianceCSV() {
 
   const logs = db.logs.filter(l => {
     if (l.type !== 'adjust') return false;
-    if (!l.variance) return false; // zero/blank variance = confirmed match, not a discrepancy
+    if (!adjustDelta(l)) return false; // zero variance = confirmed match, not a discrepancy
     if (!isLogVisible(l)) return false;
     const d = new Date(l.date);
     if (from && d < from) return false;
@@ -5057,10 +5136,11 @@ function exportVarianceCSV() {
   const rows = [headers.join(',')];
   logs.forEach(l => {
     const item = db.items.find(i => i.id === l.itemId);
-    const expected   = l.absQty != null ? l.absQty - (l.variance || 0) : '';
+    const v          = adjustDelta(l);
+    const expected   = l.absQty != null ? l.absQty - v : '';
     const actual     = l.absQty != null ? l.absQty : '';
-    const costImpact = Math.abs(l.variance || 0) * (item?.cost || 0);
-    const vType      = (l.variance || 0) < 0 ? 'Shortage' : (l.variance || 0) > 0 ? 'Excess' : 'No change';
+    const costImpact = Math.abs(v) * (item?.cost || 0);
+    const vType      = v < 0 ? 'Shortage' : v > 0 ? 'Excess' : 'No change';
     rows.push([
       new Date(l.date).toLocaleString('en-PH', { hour12: true }),
       item?.name || 'Deleted Item',
@@ -5069,13 +5149,13 @@ function exportVarianceCSV() {
       item?.unit || '',
       expected,
       actual,
-      l.variance || 0,
+      v,
       item?.cost || 0,
       costImpact.toFixed(2),
       vType,
       l.varianceReason || '',
       l.by || ''
-    ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(','));
+    ].map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(','));
   });
 
   const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
@@ -5892,7 +5972,7 @@ function filterReqItemDropdown() {
   var q  = document.getElementById('req-item-search').value.toLowerCase();
   var dd = document.getElementById('req-item-dropdown');
   if (!q.trim()) { dd.style.display = 'none'; return; }
-  var matches = catalogItems().filter(i => i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
+  var matches = catalogItemsForSearch().filter(i => i.name.toLowerCase().includes(q) || (i.sku||'').toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
   if (!matches.length) {
     dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No items found</div>';
   } else {
@@ -6083,13 +6163,37 @@ function openBatchConfirmModal(batchId) {
   openModal('confirm-request-modal');
 }
 
+var _batchConfirmInFlight = false;
 async function confirmBatchIssuance() {
   if (checkStocktakeLock()) return;
+  // Reentrancy guard — without this, a slow network response plus a repeat
+  // click (or a re-fired handler) could run this whole loop a second time
+  // before the first run finished, double-posting "use" logs and deducting
+  // stock twice for the same requests.
+  if (_batchConfirmInFlight) return;
+  _batchConfirmInFlight = true;
+  var confirmBtnEl = document.getElementById('crm-btn-confirm');
+  if (confirmBtnEl) confirmBtnEl.disabled = true;
+  try {
   var batchReqs = db_reqs.filter(function(r){ return r.batchId === _batchConfirmId && r.status === 'pending'; });
   if (!batchReqs.length) { closeModal('confirm-request-modal'); return; }
   var now = new Date().toISOString();
   for (var i = 0; i < batchReqs.length; i++) {
     var req = batchReqs[i];
+    // Re-verify this specific request is still pending, straight from Supabase,
+    // right before acting on it. Local db_reqs status can be stale if another
+    // device/tab (or an earlier overlapping call) already confirmed it — without
+    // this check we'd post a second "use" log and a second deduction for a
+    // request that was already handled.
+    if (sb && REQ_TABLE_OK !== false) {
+      try {
+        var freshReqStatus = await sb.from('supply_requests').select('status').eq('id', req.id).single();
+        if (freshReqStatus.data && freshReqStatus.data.status && freshReqStatus.data.status !== 'pending') {
+          req.status = freshReqStatus.data.status;
+          continue;
+        }
+      } catch(e) {}
+    }
     var issueEl = document.getElementById('batch-crm-qty-' + req.id);
     var issueQty = issueEl ? Math.max(1, parseInt(issueEl.value) || req.qty) : req.qty;
     var item = db.items.find(function(it){ return it.id === req.itemId; });
@@ -6135,6 +6239,10 @@ async function confirmBatchIssuance() {
   document.getElementById('crm-btn-reject').onclick  = function(){ rejectRequest(); };
   closeModal('confirm-request-modal');
   updateRequestBadge(); renderRequests(); updateSummary(); renderInventory();
+  } finally {
+    _batchConfirmInFlight = false;
+    if (confirmBtnEl) confirmBtnEl.disabled = false;
+  }
 }
 
 async function rejectBatchRequest() {
@@ -6271,11 +6379,34 @@ function openConfirmModal(reqId) {
   openModal('confirm-request-modal');
 }
 
+var _issuanceInFlight = false;
 async function confirmIssuance() {
+  // Same reentrancy guard as confirmBatchIssuance() — prevents a repeat click
+  // or re-fired handler from posting a second "use" log / second deduction
+  // for the same request.
+  if (_issuanceInFlight) return;
+  _issuanceInFlight = true;
+  var confirmBtnEl2 = document.getElementById('crm-btn-confirm');
+  if (confirmBtnEl2) confirmBtnEl2.disabled = true;
+  try {
   var req = db_reqs.find(r => r.id === currentViewReqId);
   if (!req) return;
   var requesterAcct = db.accounts.find(function(a) { return a.username === req.requestedBy; });
   if (requesterAcct && requesterAcct.role === 'user' && currentRole !== 'superuser') { closeModal('confirm-request-modal'); return; }
+  // Re-verify straight from Supabase that this request is still pending —
+  // local db_reqs status can be stale if another device/tab already confirmed
+  // it, which would otherwise cause a duplicate log + duplicate deduction.
+  if (sb && REQ_TABLE_OK !== false) {
+    try {
+      var freshReqStatus2 = await sb.from('supply_requests').select('status').eq('id', req.id).single();
+      if (freshReqStatus2.data && freshReqStatus2.data.status && freshReqStatus2.data.status !== 'pending') {
+        req.status = freshReqStatus2.data.status;
+        closeModal('confirm-request-modal');
+        renderRequests();
+        return;
+      }
+    } catch(e) {}
+  }
   var issueQty = Math.max(1, parseInt(document.getElementById('crm-issue-qty').value) || req.qty);
 
   var item = db.items.find(i => i.id === req.itemId);
@@ -6337,6 +6468,10 @@ async function confirmIssuance() {
   t.textContent = '✓ Issuance confirmed';
   document.body.appendChild(t);
   setTimeout(function(){ if (t.parentNode) t.remove(); }, 2500);
+  } finally {
+    _issuanceInFlight = false;
+    if (confirmBtnEl2) confirmBtnEl2.disabled = false;
+  }
 }
 
 async function rejectRequest() {
@@ -9041,21 +9176,47 @@ async function bookCompareVariance() {
   showConfirm('Book Variance', msg, async function() {
     var stamp = new Date(dateVal + 'T12:00:00').toISOString();
     var newLogs = [], changedItems = [];
+
+    // Refresh live qty right before booking — the compare may have been run a
+    // while ago, and another device could have logged usage/restocks/adjustments
+    // since. Booking against a stale item.qty would silently overwrite those
+    // changes (same class of bug already fixed in Import and Reconciliation).
+    if (sb) {
+      try {
+        var bookIds = bookable.map(function(r){ return r.item.id; });
+        var freshBookRes = await sb.from('items').select('id,qty').in('id', bookIds);
+        if (freshBookRes.data) {
+          var freshBookMap = {};
+          freshBookRes.data.forEach(function(f){ freshBookMap[f.id] = f.qty; });
+          bookable.forEach(function(r) { if (freshBookMap[r.item.id] !== undefined) r.item.qty = freshBookMap[r.item.id]; });
+        }
+      } catch(e) {}
+    }
+
     bookable.forEach(function(r) {
+      var liveQty = r.item.qty; // now fresh
+      var actualDiff = r.afterQty - liveQty;
+      if (actualDiff === 0) return; // nothing left to apply once the live qty already matches
+      // FIFO: this previously never touched costLayers at all, letting the FIFO
+      // batch breakdown silently drift out of sync with the item's actual qty.
+      getLayers(r.item);
+      var aCost = null, aDetail = '';
+      if (actualDiff < 0) { aDetail = describeConsumption(r.item, -actualDiff); aCost = consumeLayers(r.item, -actualDiff); }
+      else                { aCost = addFoundStock(r.item, actualDiff); }
       newLogs.push({
         id: uid(), itemId: r.item.id, type: 'adjust',
-        qty: Math.abs(r.variance), absQty: r.afterQty,
+        qty: Math.abs(actualDiff), absQty: r.afterQty,
         by: (currentUser && currentUser.username) || 'Compare',
         date: stamp, ref: '',
         notes: 'Count variance (file compare) — before ' + r.beforeQty + ', after ' + r.afterQty,
-        variance: r.variance,
-        varianceReason: 'Physical count (file compare)'
+        variance: actualDiff,
+        varianceReason: 'Physical count (file compare)',
+        costAmount: aCost, costDetail: aDetail
       });
-      if (r.item.qty !== r.afterQty) {
-        r.item.qty = r.afterQty;
-        r.item.updatedAt = stamp;
-        changedItems.push(r.item);
-      }
+      r.item.qty = r.afterQty;
+      r.item.updatedAt = stamp;
+      syncItemCost(r.item);
+      changedItems.push(r.item);
     });
     db.logs = db.logs.concat(newLogs);
     save();
@@ -9067,11 +9228,13 @@ async function bookCompareVariance() {
         }
       } catch(e) {}
     }
-    logAudit('Variance booked', bookable.length + ' records dated ' + dateVal + (changedItems.length ? '; ' + changedItems.length + ' quantities updated' : ''));
+    logAudit('Variance booked', newLogs.length + ' records dated ' + dateVal + (changedItems.length ? '; ' + changedItems.length + ' quantities updated' : ''));
     renderInventory(); renderLogs(); updateSummary();
     if (typeof renderVariance === 'function') renderVariance();
     closeModal('compare-modal');
-    alert('✅ Booked ' + bookable.length + ' variance record(s) to ' + dateVal + '.');
+    var skippedAfterRefresh = bookable.length - newLogs.length;
+    alert('✅ Booked ' + newLogs.length + ' variance record(s) to ' + dateVal + '.'
+      + (skippedAfterRefresh > 0 ? ' (' + skippedAfterRefresh + ' already matched live stock and needed no change.)' : ''));
   }, { danger: true, confirmLabel: 'Book Variance' });
 }
 
@@ -9099,6 +9262,32 @@ function openSnapshotModal() {
   openModal('snapshot-modal');
 }
 
+// Recovers the true signed quantity change for an adjust-type log. Modern
+// entries (manual edits, physical counts, imports, reconciliations) always
+// store a signed `variance`. A small number of legacy rows from an older
+// version of the Import feature only ever stored the UNSIGNED magnitude in
+// `qty` and never wrote `variance` at all (it's null in the database) — every
+// balance reconstruction that trusted `variance` treated those rows as a
+// zero-effect no-op, which is wrong, and any UI that fell back to raw `qty`
+// displayed them with the wrong sign (e.g. showing "+38" for what was
+// actually a decrease of 38). Recover the real signed delta from the
+// "was X" text those legacy rows always wrote into their notes, e.g.
+// "Import update — was 1269 roll" + absQty 1231 → true delta is -38.
+function adjustDelta(l) {
+  if (l.variance != null) return l.variance;
+  if (l.absQty != null && l.notes) {
+    var m = /was\s+(-?[\d,.]+)/i.exec(l.notes);
+    if (m) {
+      var before = parseFloat(m[1].replace(/,/g, ''));
+      if (!isNaN(before)) return l.absQty - before;
+    }
+  }
+  // Last resort — sign truly can't be recovered. Assume positive rather than
+  // silently treating the entry as zero-effect, which is guaranteed wrong
+  // whenever qty is nonzero.
+  return l.qty || 0;
+}
+
 // Net qty change a single log entry represents, independent of when it was
 // actually entered into the system. Needed because trusting a log's stored
 // "resulting qty" (absQty) breaks whenever a transaction is backdated —
@@ -9109,7 +9298,7 @@ function openSnapshotModal() {
 function logDelta(l) {
   if (l.type === 'restock') return l.qty || 0;
   if (l.type === 'use' || l.type === 'damage') return -(l.qty || 0);
-  if (l.type === 'adjust' || l.type === 'edit' || l.type === 'adjustment') return (l.variance != null) ? l.variance : 0;
+  if (l.type === 'adjust' || l.type === 'edit' || l.type === 'adjustment') return adjustDelta(l);
   return 0;
 }
 
@@ -9289,9 +9478,9 @@ function computeReconDailyLedger(fromVal, toVal) {
       // Also keep each individual entry's reason/source so the "what kind of
       // adjustment" question can be answered, not just the net number.
       var adjustLogs = dayLogs.filter(function(l) { return l.type === 'adjust' || l.type === 'edit' || l.type === 'adjustment'; });
-      var adjustment = adjustLogs.reduce(function(s, l) { return s + (l.variance != null ? l.variance : 0); }, 0);
+      var adjustment = adjustLogs.reduce(function(s, l) { return s + adjustDelta(l); }, 0);
       var adjustmentDetails = adjustLogs.map(function(l) {
-        return { variance: l.variance != null ? l.variance : 0, reason: l.varianceReason || l.notes || 'Adjustment' };
+        return { variance: adjustDelta(l), reason: l.varianceReason || l.notes || 'Adjustment' };
       });
       var dayNetDelta = dayLogs.reduce(function(s, l) { return s + logDelta(l); }, 0);
 
