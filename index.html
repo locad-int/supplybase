@@ -7465,7 +7465,13 @@ async function doBiometricLogin() {
       document.getElementById('login-username').value = latest.username;
       document.getElementById('login-pass').value = '__bio__'; // sentinel, skipped in doLogin
       _bioPendingUsername = latest.username;
-      performLoginForUser(latest.username);
+      var loggedIn = performLoginForUser(latest.username);
+      if (!loggedIn) {
+        // Account no longer exists, etc. — login didn't actually go through,
+        // so the button needs to come back instead of staying stuck.
+        document.getElementById('bio-btn-label').textContent = origLabel;
+        if (btn) btn.disabled = false;
+      }
     }
   } catch(e) {
     document.getElementById('bio-btn-label').textContent = origLabel;
@@ -7487,7 +7493,7 @@ function performLoginForUser(username) {
     role = 'superuser';
   } else {
     document.getElementById('login-error').textContent = 'Account not found. Try password login.';
-    return;
+    return false;
   }
   currentRole = role;
   currentUser = { username: username, role: role, brand: brand };
@@ -7506,6 +7512,7 @@ function performLoginForUser(username) {
   _currentPresenceTab = 'inventory';
   startRealtime();
   setTimeout(showCriticalStockAlert, 800);
+  return true;
 }
 
 async function offerBiometricRegistration(username) {
@@ -7641,6 +7648,14 @@ function logout() {
   document.getElementById('login-pass').value = '';
   document.getElementById('login-error').textContent = '';
   renderRecentLogins();
+  // Reset the biometric login button. If auto-logout fires while a Touch ID
+  // attempt is mid-flight (the OS verification sheet doesn't count as page
+  // activity, so the inactivity timer can still elapse while it's open), the
+  // button gets left disabled and stuck on "Verifying…" with no other code
+  // path to reset it once the login screen reappears.
+  var bioBtn = document.getElementById('bio-login-btn');
+  if (bioBtn) bioBtn.disabled = false;
+  initBiometricLoginCheck();
   document.getElementById('login-overlay').style.display = 'flex';
   applyStocktakeLock(); // show stocktake popup if lock is active
 }
