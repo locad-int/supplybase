@@ -2229,6 +2229,9 @@ var userPermissions = {
 };
 
 // ─── QC PACK STATION ─────────────────────────────────────────────────────────────
+// Toggle off to hide the QC Pack Station selector on New Request without
+// removing the feature — flip back to true to re-enable it.
+var QC_STATION_FEATURE_ENABLED = false;
 var QC_STATION_USERS = ['aira.agellon','rodessa.orcena','reah.costales','mylene.failano','flonie.caramoan','ramon.sambrano','jayson.frivaldo'];
 var QC_STATIONS_KEY  = 'qcStations';
 var qcStations = (function() {
@@ -5325,10 +5328,11 @@ function renderDashboard() {
   const topItems = Object.values(itemMap).sort((a, b) => b.cost - a.cost).slice(0, 8);
   renderHbars(document.getElementById('dash-top-items'), topItems);
 
-  // ── Station consumption ──
+  // ── Station consumption ── (hidden while QC_STATION_FEATURE_ENABLED is off,
+  // regardless of whether older confirmed requests still carry a station value)
   var stationSection = document.getElementById('dash-station-section');
   var stationChart   = document.getElementById('dash-station-chart');
-  var stationReqs = db_reqs.filter(function(r) {
+  var stationReqs = !QC_STATION_FEATURE_ENABLED ? [] : db_reqs.filter(function(r) {
     if (!r.station || r.status !== 'confirmed' || !r.confirmedAt) return false;
     var d = new Date(r.confirmedAt); return d >= from && d <= to;
   });
@@ -5917,7 +5921,7 @@ function renderReqCart() {
       + '<div style="font-size:13px;font-weight:600">' + esc(c.itemName) + (cOOS ? ' <span style="color:#dc2626;font-size:11px;font-weight:700">⛔ Out of stock</span>' : '') + '</div>'
       + '<div style="font-size:11px;color:var(--muted);margin-top:1px">'
       + '<strong>' + fmtInt(c.qty) + ' ' + esc(c.unit) + '</strong>'
-      + (c.station ? ' · <span style="background:rgba(37,99,235,.1);color:#2563eb;padding:1px 6px;border-radius:4px;font-weight:600">📦 ' + esc(c.station) + '</span>' : '')
+      + (QC_STATION_FEATURE_ENABLED && c.station ? ' · <span style="background:rgba(37,99,235,.1);color:#2563eb;padding:1px 6px;border-radius:4px;font-weight:600">📦 ' + esc(c.station) + '</span>' : '')
       + (c.priority !== 'normal' ? ' · ' + priorityLabels[c.priority] : '')
       + (c.notes ? ' · ' + esc(c.notes) : '')
       + '</div>'
@@ -5946,7 +5950,7 @@ function openNewRequestModal(preItemId) {
   // Show/hide QC station row
   var stationRow = document.getElementById('req-station-row');
   if (stationRow) {
-    var showStation = isQcStationUser() || currentRole === 'superuser';
+    var showStation = QC_STATION_FEATURE_ENABLED && (isQcStationUser() || currentRole === 'superuser');
     stationRow.style.display = showStation ? '' : 'none';
     if (showStation) {
       populateStationDropdown();
@@ -6858,7 +6862,7 @@ alter publication supabase_realtime add table settings;</pre>
           </div>
         </div>
         ${stockRow}
-        <div class="req-card-meta">${req.issuedQty && req.issuedQty !== req.qty ? `Requested: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong> · Issued: <strong style="color:var(--accent)">${fmtInt(req.issuedQty)} ${esc(req.unit)}</strong>` : `Qty: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong>`} · Requested by: <strong>${esc(req.requestedBy)}</strong> · ${fmtDT(req.createdAt)}${req.station ? ` · <span style="background:rgba(37,99,235,.1);color:#2563eb;padding:1px 6px;border-radius:4px;font-weight:600;font-size:11px">📦 ${esc(req.station)}</span>` : ''}</div>
+        <div class="req-card-meta">${req.issuedQty && req.issuedQty !== req.qty ? `Requested: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong> · Issued: <strong style="color:var(--accent)">${fmtInt(req.issuedQty)} ${esc(req.unit)}</strong>` : `Qty: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong>`} · Requested by: <strong>${esc(req.requestedBy)}</strong> · ${fmtDT(req.createdAt)}${(QC_STATION_FEATURE_ENABLED && req.station) ? ` · <span style="background:rgba(37,99,235,.1);color:#2563eb;padding:1px 6px;border-radius:4px;font-weight:600;font-size:11px">📦 ${esc(req.station)}</span>` : ''}</div>
         ${req.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-wrap">${esc(req.notes)}</div>` : ''}
         ${actionButtons}
       </div>`;
