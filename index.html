@@ -2183,6 +2183,28 @@ function fmt(n) {
 function fmtInt(n) { return parseInt(n).toLocaleString('en-US'); }
 function fmtPHP(n) { return '₱' + fmt(n); }
 
+// Supabase caps a single select('*') response at ~1000 rows. The logs table
+// has grown well past that (thousands of rows), so a plain select was
+// silently dropping rows depending on whatever default order the database
+// happened to return — sometimes the very rows a report needed most. This
+// pages through with .range() until a short page confirms we've reached the
+// end, ordering by date+id so pagination is stable even across the many
+// duplicate-timestamp rows found during this session's cleanup.
+async function fetchAllRows(table, orderCol) {
+  var pageSize = 1000, all = [], from = 0, error = null;
+  while (true) {
+    var q = sb.from(table).select('*');
+    if (orderCol) q = q.order(orderCol, { ascending: true }).order('id', { ascending: true });
+    var r = await q.range(from, from + pageSize - 1);
+    if (r.error) { error = r.error; break; }
+    var rows = r.data || [];
+    all = all.concat(rows);
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+  return { data: all, error: error };
+}
+
 async function refreshData() {
   var btn = document.getElementById('btn-refresh');
   if (btn) { btn.textContent = '↻ Refreshing…'; btn.disabled = true; }
@@ -2190,7 +2212,7 @@ async function refreshData() {
   try {
     var [r1, r2, r3, r4, r5] = await Promise.all([
       sb.from('items').select('*').order('seq'),
-      sb.from('logs').select('*'),
+      fetchAllRows('logs', 'date'),
       sb.from('reorders').select('*'),
       sb.from('accounts').select('*'),
       sb.from('reconciliations').select('*'),
@@ -2770,7 +2792,7 @@ async function load() {
   try {
     var [r1, r2, r3, r4, r5] = await Promise.all([
       sb.from('items').select('*').order('seq'),
-      sb.from('logs').select('*'),
+      fetchAllRows('logs', 'date'),
       sb.from('reorders').select('*'),
       sb.from('accounts').select('*'),
       sb.from('reconciliations').select('*'),
