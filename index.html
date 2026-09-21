@@ -2279,6 +2279,10 @@ function fmt(n) {
 }
 function fmtInt(n) { return parseInt(n).toLocaleString('en-US'); }
 function fmtPHP(n) { return '₱' + fmt(n); }
+// jsPDF's built-in Helvetica font only supports WinAnsi encoding, which has
+// no ₱ (U+20B1) glyph — it silently renders as "±" instead. PDF output uses
+// this ASCII-safe "PHP " prefix instead of fmtPHP()'s ₱ symbol.
+function fmtPHPPdf(n) { return 'PHP ' + fmt(n); }
 
 // Supabase caps a single select('*') response at ~1000 rows. The logs table
 // has grown well past that (thousands of rows), so a plain select was
@@ -2494,19 +2498,34 @@ function populateAllSupplierDatalists() {
 }
 
 // ─── PURCHASE ORDER NUMBERING ─────────────────────────────────────────────────
-var PO_NUMBER_KEY = 'nextPoNumber';
-var nextPoNumber = 1;
+// Standardized format: PO-YYYYMM-### — e.g. PO-202609-001, PO-202609-002 …
+// resetting to 001 at the start of each calendar month. One sequence counter
+// per month-period is kept in `poSequences` and persisted to Supabase so
+// numbering survives a refresh / different device.
+var PO_SEQ_KEY = 'poSequences';
+var poSequences = {}; // { "202609": 3, "202610": 1, ... } — last number used per period
+
+function _poPeriodKey(d) {
+  d = d || new Date();
+  var y = d.getFullYear();
+  var m = String(d.getMonth() + 1).padStart(2, '0');
+  return String(y) + m;
+}
+
+async function savePoSequences() {
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', PO_SEQ_KEY);
+    await sb.from('settings').insert([{ key: PO_SEQ_KEY, value: JSON.stringify(poSequences) }]);
+  } catch(e) {}
+}
 
 async function reserveNextPoNumber() {
-  var n = nextPoNumber;
-  nextPoNumber = n + 1;
-  if (sb) {
-    try {
-      await sb.from('settings').delete().eq('key', PO_NUMBER_KEY);
-      await sb.from('settings').insert([{ key: PO_NUMBER_KEY, value: String(nextPoNumber) }]);
-    } catch(e) {}
-  }
-  return n;
+  var period = _poPeriodKey();
+  var seq = (poSequences[period] || 0) + 1;
+  poSequences[period] = seq;
+  await savePoSequences();
+  return 'PO-' + period + '-' + String(seq).padStart(3, '0');
 }
 
 function getRefreshInterval() {
@@ -2603,9 +2622,11 @@ async function loadGlobalSettings() {
         if (supDirParsed && typeof supDirParsed === 'object') supplierDirectory = supDirParsed;
       } catch(e) {}
     }
-    if (settingsMap[PO_NUMBER_KEY] !== undefined) {
-      var poNumParsed = parseInt(settingsMap[PO_NUMBER_KEY]);
-      if (!isNaN(poNumParsed)) nextPoNumber = poNumParsed;
+    if (settingsMap[PO_SEQ_KEY] !== undefined) {
+      try {
+        var poSeqParsed = JSON.parse(settingsMap[PO_SEQ_KEY]);
+        if (poSeqParsed && typeof poSeqParsed === 'object') poSequences = poSeqParsed;
+      } catch(e) {}
     }
     applyTestMode();
   } catch(e) {} // settings table may not exist yet — silently ignore
@@ -4305,7 +4326,7 @@ function renderReorder() {
       <td>${r.cost ? fmtPHP(r.cost) : '—'}</td>
       <td>${r.cost && r.qty ? fmtPHP(total) : '—'}</td>
       <td style="min-width:160px">${reorderTimeline(r)}</td>
-      <td><span class="badge badge-${statusColor}">${r.status}</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">PO #' + esc(String(r.poNumber)) + '</span>' : ''}</td>
+      <td><span class="badge badge-${statusColor}">${r.status}</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</span>' : ''}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.notes||'—')}</td>
       <td>${rAct}</td>`;
     tbody.appendChild(tr);
@@ -4650,7 +4671,7 @@ async function saveReorderCart(generatePdf) {
       createdAt: now,
     };
     db.purchaseOrders.push(poRecord);
-    logAudit('Purchase Order generated', 'PO #' + poNumber + ' — ' + supplier + ' (' + newReorders.length + ' item' + (newReorders.length===1?'':'s') + ')');
+    logAudit('Purchase Order generated', poNumber + ' — ' + supplier + ' (' + newReorders.length + ' item' + (newReorders.length===1?'':'s') + ')');
     buildPurchaseOrderPdf(poRecord, lineItems);
   } else {
     logAudit('Reorder created', supplier + ' — ' + newReorders.length + ' item' + (newReorders.length===1?'':'s'));
@@ -4709,7 +4730,7 @@ function buildPurchaseOrderPdf(po, lineItems) {
       ['Shipping Method', po.shipMethod || '—'],
       ['Shipping Terms', po.shipTerms || '—'],
       ['Delivery Date / Terms', po.delivery || '—'],
-      ['Shipping Cost', fmtPHP(po.shipCost || 0)],
+      ['Shipping Cost', fmtPHPPdf(po.shipCost || 0)],
     ],
   });
   y = doc.lastAutoTable.finalY + 20;
@@ -4722,7 +4743,7 @@ function buildPurchaseOrderPdf(po, lineItems) {
     headStyles: { fillColor: [30, 41, 59] },
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
     body: lineItems.map(function(l) {
-      return [l.description, fmtInt(l.qty) + (l.unit ? ' ' + l.unit : ''), fmtPHP(l.unitPrice), fmtPHP(l.total)];
+      return [l.description, fmtInt(l.qty) + (l.unit ? ' ' + l.unit : ''), fmtPHPPdf(l.unitPrice), fmtPHPPdf(l.total)];
     }),
   });
   y = doc.lastAutoTable.finalY + 10;
@@ -4735,14 +4756,14 @@ function buildPurchaseOrderPdf(po, lineItems) {
     doc.text(value, pageWidth - margin, y, { align: 'right' });
     y += bold ? 16 : 14;
   }
-  totalsLine('Subtotal (VAT-inclusive)', fmtPHP(po.subtotal));
-  totalsLine('Shipping', fmtPHP(po.shipCost || 0));
-  totalsLine('Other', fmtPHP(po.other || 0));
-  totalsLine('Discount', fmtPHP(-(po.discount || 0)));
+  totalsLine('Subtotal (VAT-inclusive)', fmtPHPPdf(po.subtotal));
+  totalsLine('Shipping', fmtPHPPdf(po.shipCost || 0));
+  totalsLine('Other', fmtPHPPdf(po.other || 0));
+  totalsLine('Discount', fmtPHPPdf(-(po.discount || 0)));
   doc.setDrawColor(30,41,59);
   doc.line(totalsX, y, pageWidth - margin, y);
   y += 12;
-  totalsLine('Total Amount Payable', fmtPHP(po.total), true);
+  totalsLine('Total Amount Payable', fmtPHPPdf(po.total), true);
 
   y += 40;
   doc.setFont('helvetica', 'normal');
@@ -4750,7 +4771,14 @@ function buildPurchaseOrderPdf(po, lineItems) {
   doc.text('Checked by: ' + (po.checkedBy || '_______________________'), margin, y);
   doc.text('Approved by: ' + (po.approvedBy || '_______________________'), pageWidth/2 + 10, y);
 
-  doc.save('PO-' + po.poNumber + '-' + (po.supplier||'supplier').replace(/[^a-z0-9]+/gi,'-') + '.pdf');
+  y += 26;
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(8);
+  doc.setTextColor(120);
+  doc.text('This document is electronically generated. No signature required.', pageWidth / 2, y, { align: 'center' });
+  doc.setTextColor(0);
+
+  doc.save(po.poNumber + '-' + (po.supplier||'supplier').replace(/[^a-z0-9]+/gi,'-') + '.pdf');
 }
 
 // ─── VARIANCE ADJUSTMENT ─────────────────────────────────────────────────────────
