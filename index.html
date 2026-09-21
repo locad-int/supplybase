@@ -5119,7 +5119,7 @@ function buildPurchaseOrderPdf(po, lineItems) {
   doc.setFontSize(10);
   doc.text(PO_BUYER.name, margin, y); y += 12;
   var fromAddrLines = doc.splitTextToSize(PO_BUYER.address, 260);
-  doc.text(fromAddrLines, margin, y); y += fromAddrLines.length * 12 + 6;
+  doc.text(fromAddrLines, margin, y); y += fromAddrLines.length * 12;
   doc.text('TIN: ' + PO_BUYER.tin, margin, y); y += 20;
 
   doc.setFont('helvetica', 'bold');
@@ -5130,7 +5130,7 @@ function buildPurchaseOrderPdf(po, lineItems) {
   doc.text(po.supplier || '—', margin, y); y += 12;
   if (po.supplierAddress) {
     var toAddrLines = doc.splitTextToSize(po.supplierAddress, 260);
-    doc.text(toAddrLines, margin, y); y += toAddrLines.length * 12 + 6;
+    doc.text(toAddrLines, margin, y); y += toAddrLines.length * 12;
   }
   if (po.supplierTin) { doc.text('TIN: ' + po.supplierTin, margin, y); y += 20; }
 
