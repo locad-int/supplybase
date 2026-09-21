@@ -2971,6 +2971,7 @@ async function _sbDeleteItem(id) {
   await sb.from('reorders').delete().eq('itemId', id);
 }
 async function _sbDeleteReorder(id) { if (sb) await sb.from('reorders').delete().eq('id', id); }
+async function _sbDeletePurchaseOrder(id) { if (sb) await sb.from('purchase_orders').delete().eq('id', id); }
 async function _sbDeleteAccount(id) { if (sb) await sb.from('accounts').delete().eq('id', id); }
 // ─── SUPABASE WRITE HELPERS ──────────────────────────────────────────────────
 // The Supabase client RESOLVES with {data, error} instead of throwing, so a bare
@@ -4457,7 +4458,7 @@ function renderReorderGroupRow(tbody, group) {
     <td style="color:var(--muted);font-size:11px">—</td>
     <td><span class="badge badge-${statusColor}">${esc(statusLabel)}</span></td>
     <td style="color:var(--muted);font-size:11px">—</td>
-    <td>${po ? '<button class="btn btn-icon btn-sm" title="Download PO PDF" onclick="event.stopPropagation();redownloadPo(\'' + po.id + '\')">⬇</button>' : ''}</td>`;
+    <td>${po ? '<button class="btn btn-icon btn-sm" title="Download PO PDF" onclick="event.stopPropagation();redownloadPo(\'' + po.id + '\')">⬇</button>' : ''}${currentRole === 'superuser' ? '<button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="event.stopPropagation();deletePoByNumber(\'' + esc(String(group.poNumber)) + '\')">🗑</button>' : ''}</td>`;
   tbody.appendChild(headerTr);
 
   items.forEach(function(r) {
@@ -4924,7 +4925,9 @@ function renderPoHistory() {
       + '<td>' + esc(po.supplier || '—') + '</td>'
       + '<td>' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>'
       + '<td>' + fmtPHP(po.total || 0) + '</td>'
-      + '<td><button class="btn btn-secondary btn-sm" onclick="redownloadPo(\'' + po.id + '\')">⬇ Download PDF</button></td>'
+      + '<td><button class="btn btn-secondary btn-sm" onclick="redownloadPo(\'' + po.id + '\')">⬇ Download PDF</button>'
+      + (currentRole === 'superuser' ? ' <button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="deletePoByNumber(\'' + esc(String(po.poNumber)) + '\')">🗑</button>' : '')
+      + '</td>'
       + '</tr>';
   }).join('');
 }
@@ -4949,6 +4952,34 @@ function redownloadPo(id) {
     return;
   }
   buildPurchaseOrderPdf(po, lineItems);
+}
+
+// Deletes a Purchase Order record and every reorder created alongside it
+// (matched by poNumber, not just po.reorderIds, so it also cleans up an
+// orphaned group of reorders if the purchase_orders row was already removed
+// some other way). Used from both PO History and the grouped card in the
+// Reorder tab.
+function deletePoByNumber(poNumber) {
+  var po = (db.purchaseOrders || []).find(function(p) { return String(p.poNumber) === String(poNumber); });
+  var affected = db.reorders.filter(function(r) { return String(r.poNumber) === String(poNumber); });
+  var supplier = (po && po.supplier) || (affected[0] && affected[0].supplier) || '';
+  showConfirm('Delete Purchase Order',
+    'Delete ' + poNumber + (supplier ? ' (' + supplier + ')' : '') + '? This removes the PO record and its '
+      + affected.length + ' linked reorder item' + (affected.length === 1 ? '' : 's') + '. This can\'t be undone.',
+    function() {
+      affected.forEach(function(r) {
+        db.reorders = db.reorders.filter(function(x) { return x.id !== r.id; });
+        _sbDeleteReorder(r.id);
+      });
+      if (po) {
+        db.purchaseOrders = db.purchaseOrders.filter(function(p) { return p.id !== po.id; });
+        _sbDeletePurchaseOrder(po.id);
+      }
+      logAudit('Purchase Order deleted', poNumber + (supplier ? ' — ' + supplier : '') + ' (' + affected.length + ' item' + (affected.length === 1 ? '' : 's') + ')');
+      updateSummary();
+      renderReorder();
+      if (document.getElementById('po-history-tbody')) renderPoHistory();
+    }, { danger: true, confirmLabel: 'Delete' });
 }
 
 function buildPurchaseOrderPdf(po, lineItems) {
