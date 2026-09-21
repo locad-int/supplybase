@@ -828,8 +828,7 @@
         <option value="ordered">Ordered</option>
         <option value="received">Received</option>
       </select>
-      <button id="btn-create-reorder" class="btn btn-primary" onclick="openReorderModal()">+ Create Reorder</button>
-      <button id="btn-generate-po" class="btn btn-secondary" onclick="openPoGenerateModal()">🧾 Generate PO</button>
+      <button id="btn-create-reorder" class="btn btn-primary" onclick="openReorderCreateModal()">+ Create Reorder</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -1820,17 +1819,15 @@
   </div>
 </div>
 
-<!-- GENERATE PURCHASE ORDER MODAL -->
+<!-- CREATE REORDER / GENERATE PO MODAL -->
 <div class="modal-bg" id="po-generate-modal">
   <div class="modal" style="max-width:640px">
-    <h2>🧾 Generate Purchase Order</h2>
+    <h2>📦 Create Reorder</h2>
     <div class="form-grid">
       <div class="form-group full">
         <label>Supplier *</label>
-        <select id="pog-supplier" onchange="renderPoGenerateItems()">
-          <option value="">— Select supplier —</option>
-        </select>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Only suppliers with items marked "Needed" are listed.</div>
+        <input type="text" id="pog-supplier" placeholder="Supplier name" list="pog-supplier-list" onblur="applySupplierDirectoryFor('pog')" autocomplete="off">
+        <datalist id="pog-supplier-list"></datalist>
       </div>
       <div class="form-group">
         <label>Supplier Address</label>
@@ -1841,9 +1838,20 @@
         <input type="text" id="pog-supplier-tin" placeholder="000-000-000-000">
       </div>
       <div class="form-group full">
-        <label>Items to include</label>
-        <div id="pog-items" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;background:var(--surface2);border-radius:8px;padding:8px">
-          <div style="font-size:12px;color:var(--muted);padding:6px">Select a supplier to see their needed items.</div>
+        <label>Add Item</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:180px;position:relative">
+            <input type="text" id="pog-item-search" placeholder="Search item…" autocomplete="off"
+              oninput="filterPogItemDropdown()" onfocus="filterPogItemDropdown()" onblur="setTimeout(closePogItemDropdown,200)">
+            <input type="hidden" id="pog-item">
+            <div id="pog-item-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;z-index:200;box-shadow:0 4px 16px rgba(0,0,0,.12)"></div>
+          </div>
+          <input type="number" id="pog-item-qty" placeholder="Qty" min="0" step="1" style="width:80px">
+          <input type="number" id="pog-item-cost" placeholder="Unit cost" min="0" step="0.01" style="width:100px">
+          <button type="button" class="btn btn-secondary" onclick="addToPoCart()">+ Add</button>
+        </div>
+        <div id="pog-items" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;background:var(--surface2);border-radius:8px;padding:8px;margin-top:8px">
+          <div style="font-size:12px;color:var(--muted);padding:6px">No items added yet — search above and click Add.</div>
         </div>
       </div>
       <div class="form-group">
@@ -1891,7 +1899,8 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('po-generate-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="generatePurchaseOrder()">Generate PDF</button>
+      <button class="btn btn-secondary" onclick="saveReorderCart(false)">Save as Needed</button>
+      <button class="btn btn-primary" onclick="saveReorderCart(true)">🧾 Generate PO</button>
     </div>
   </div>
 </div>
@@ -2455,25 +2464,33 @@ function rememberSupplier(name, address, tin) {
   if (changed) saveSupplierDirectory();
 }
 
-// Called on blur of the Supplier field — fills in Address/TIN if we've seen
+// Called on blur of a Supplier field — fills in Address/TIN if we've seen
 // this supplier before, without overwriting anything already typed in.
-function applySupplierDirectory() {
-  var nameEl = document.getElementById('rf-supplier');
-  var addrEl = document.getElementById('rf-supplier-address');
-  var tinEl  = document.getElementById('rf-supplier-tin');
+// `prefix` lets this serve more than one form (e.g. 'rf' for the edit-reorder
+// modal, 'pog' for the unified create+PO modal) — defaults to 'rf'.
+function applySupplierDirectoryFor(prefix) {
+  prefix = prefix || 'rf';
+  var nameEl = document.getElementById(prefix + '-supplier');
+  var addrEl = document.getElementById(prefix + '-supplier-address');
+  var tinEl  = document.getElementById(prefix + '-supplier-tin');
   if (!nameEl) return;
   var entry = supplierDirectory[_supKey(nameEl.value)];
   if (!entry) return;
   if (addrEl && !addrEl.value.trim()) addrEl.value = entry.address || '';
   if (tinEl  && !tinEl.value.trim())  tinEl.value  = entry.tin || '';
 }
+function applySupplierDirectory() { applySupplierDirectoryFor('rf'); }
 
-function populateSupplierDatalist() {
-  var dl = document.getElementById('rf-supplier-list');
+function populateSupplierDatalist(targetId) {
+  var dl = document.getElementById(targetId || 'rf-supplier-list');
   if (!dl) return;
   dl.innerHTML = Object.values(supplierDirectory).map(function(e) {
     return '<option value="' + esc(e.name) + '"></option>';
   }).join('');
+}
+function populateAllSupplierDatalists() {
+  populateSupplierDatalist('rf-supplier-list');
+  populateSupplierDatalist('pog-supplier-list');
 }
 
 // ─── PURCHASE ORDER NUMBERING ─────────────────────────────────────────────────
@@ -4451,16 +4468,19 @@ var PO_BUYER = {
   tin: '774-135-558-000'
 };
 
-function openPoGenerateModal() {
-  var sel = document.getElementById('pog-supplier');
-  var suppliers = Array.from(new Set(
-    db.reorders.filter(function(r){ return r.status === 'needed' && (r.supplier||'').trim(); })
-      .map(function(r){ return r.supplier.trim(); })
-  )).sort(function(a,b){ return a.localeCompare(b); });
-  sel.innerHTML = '<option value="">— Select supplier —</option>'
-    + suppliers.map(function(s){ return '<option value="'+esc(s)+'">'+esc(s)+'</option>'; }).join('');
+// Cart of items being added to a brand-new reorder/PO — populated via the
+// item search box, cleared each time the modal is (re)opened.
+var poCart = [];
+
+function openReorderCreateModal() {
+  poCart = [];
+  document.getElementById('pog-supplier').value = '';
   document.getElementById('pog-supplier-address').value = '';
   document.getElementById('pog-supplier-tin').value = '';
+  document.getElementById('pog-item').value = '';
+  document.getElementById('pog-item-search').value = '';
+  document.getElementById('pog-item-qty').value = '';
+  document.getElementById('pog-item-cost').value = '';
   document.getElementById('pog-ship-method').value = '';
   document.getElementById('pog-ship-terms').value = '';
   document.getElementById('pog-delivery').value = '';
@@ -4469,54 +4489,104 @@ function openPoGenerateModal() {
   document.getElementById('pog-discount').value = '';
   document.getElementById('pog-checked-by').value = '';
   document.getElementById('pog-approved-by').value = '';
-  renderPoGenerateItems();
+  populateSupplierDatalist('pog-supplier-list');
+  renderPoCart();
+  updatePoGenerateTotals();
   openModal('po-generate-modal');
 }
 
-function renderPoGenerateItems() {
-  var supplier = document.getElementById('pog-supplier').value;
-  var wrap = document.getElementById('pog-items');
-  if (!supplier) {
-    wrap.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px">Select a supplier to see their needed items.</div>';
-    document.getElementById('pog-supplier-address').value = '';
-    document.getElementById('pog-supplier-tin').value = '';
-    updatePoGenerateTotals();
-    return;
-  }
-  var matches = db.reorders.filter(function(r){ return r.status === 'needed' && (r.supplier||'').trim() === supplier; });
+function filterPogItemDropdown() {
+  var q = document.getElementById('pog-item-search').value.toLowerCase();
+  var dd = document.getElementById('pog-item-dropdown');
+  if (!q.trim()) { dd.style.display = 'none'; return; }
+  var matches = catalogItemsForSearch().filter(function(i) { return i.name.toLowerCase().includes(q) || (i.sku && i.sku.toLowerCase().includes(q)); }).slice(0, 30);
   if (!matches.length) {
-    wrap.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px">No needed items for this supplier.</div>';
-    updatePoGenerateTotals();
-    return;
+    dd.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No items found</div>';
+  } else {
+    dd.innerHTML = matches.map(function(i) {
+      var st = stockStatus(i);
+      var dot = st==='danger'?'var(--danger)':st==='warn'?'var(--warn)':'var(--ok)';
+      return `<div onclick="selectPogItem('${i.id}','${esc(i.name).replace(/'/g,"\\'")}')"
+        style="padding:9px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)"
+        onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+        <span style="width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0"></span>
+        <span style="flex:1">${esc(i.name)}</span>
+        <span style="color:var(--muted);font-size:11px">${fmtInt(i.qty)} ${esc(i.unit||'')}</span>
+      </div>`;
+    }).join('');
   }
-  wrap.innerHTML = matches.map(function(r) {
-    var item = db.items.find(function(i){ return i.id === r.itemId; });
-    var lineTotal = (r.qty||0) * (r.cost||0);
-    return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px;cursor:pointer">'
-      + '<input type="checkbox" class="pog-item-chk" value="'+r.id+'" checked onchange="updatePoGenerateTotals()">'
-      + '<span style="flex:1">'+esc(item ? item.name : 'Deleted Item')+'</span>'
-      + '<span style="color:var(--muted)">'+fmtInt(r.qty)+' '+esc(item ? (item.unit||'') : '')+' × '+fmtPHP(r.cost||0)+'</span>'
-      + '<strong style="min-width:90px;text-align:right">'+fmtPHP(lineTotal)+'</strong>'
-      + '</label>';
-  }).join('');
-  // Auto-fill from the supplier directory (or whichever matching reorder
-  // already has it) without clobbering something already typed in.
-  var dirEntry = supplierDirectory[_supKey(supplier)];
-  var fallback = matches.find(function(r){ return r.supplierAddress || r.supplierTin; });
-  document.getElementById('pog-supplier-address').value = (dirEntry && dirEntry.address) || (fallback && fallback.supplierAddress) || '';
-  document.getElementById('pog-supplier-tin').value     = (dirEntry && dirEntry.tin)     || (fallback && fallback.supplierTin)     || '';
+  dd.style.display = 'block';
+}
+
+function selectPogItem(id, name) {
+  document.getElementById('pog-item').value = id;
+  document.getElementById('pog-item-search').value = name;
+  closePogItemDropdown();
+  var item = db.items.find(function(i){ return i.id === id; });
+  if (item) {
+    var qtyEl = document.getElementById('pog-item-qty');
+    var costEl = document.getElementById('pog-item-cost');
+    if (!qtyEl.value && item.reorderQty) qtyEl.value = item.reorderQty;
+    if (!costEl.value) {
+      var c = (typeof currentUnitCost === 'function' ? currentUnitCost(item) : 0) || item.cost || '';
+      costEl.value = c;
+    }
+  }
+}
+
+function closePogItemDropdown() {
+  var dd = document.getElementById('pog-item-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+function addToPoCart() {
+  var itemId = document.getElementById('pog-item').value;
+  var qty = parseFloat(document.getElementById('pog-item-qty').value);
+  var cost = parseFloat(document.getElementById('pog-item-cost').value) || 0;
+  if (!itemId) { alert('Search and select an item first.'); return; }
+  if (!qty || qty <= 0) { alert('Enter a valid quantity.'); return; }
+  var item = db.items.find(function(i){ return i.id === itemId; });
+  if (!item) { alert('Item not found.'); return; }
+  var existing = poCart.find(function(c){ return c.itemId === itemId; });
+  if (existing) {
+    existing.qty += qty;
+    existing.cost = cost || existing.cost;
+  } else {
+    poCart.push({ itemId: itemId, name: item.name, unit: item.unit || '', qty: qty, cost: cost });
+  }
+  document.getElementById('pog-item').value = '';
+  document.getElementById('pog-item-search').value = '';
+  document.getElementById('pog-item-qty').value = '';
+  document.getElementById('pog-item-cost').value = '';
+  renderPoCart();
   updatePoGenerateTotals();
 }
 
-function _pogSelectedReorders() {
-  var supplier = document.getElementById('pog-supplier').value;
-  var checked = Array.from(document.querySelectorAll('.pog-item-chk:checked')).map(function(el){ return el.value; });
-  return db.reorders.filter(function(r){ return checked.indexOf(r.id) !== -1 && (r.supplier||'').trim() === supplier; });
+function removeFromPoCart(itemId) {
+  poCart = poCart.filter(function(c){ return c.itemId !== itemId; });
+  renderPoCart();
+  updatePoGenerateTotals();
+}
+
+function renderPoCart() {
+  var wrap = document.getElementById('pog-items');
+  if (!poCart.length) {
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px">No items added yet — search above and click Add.</div>';
+    return;
+  }
+  wrap.innerHTML = poCart.map(function(c) {
+    var lineTotal = (c.qty||0) * (c.cost||0);
+    return '<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px">'
+      + '<span style="flex:1">'+esc(c.name)+'</span>'
+      + '<span style="color:var(--muted)">'+fmtInt(c.qty)+' '+esc(c.unit)+' × '+fmtPHP(c.cost)+'</span>'
+      + '<strong style="min-width:90px;text-align:right">'+fmtPHP(lineTotal)+'</strong>'
+      + '<button type="button" class="btn btn-icon btn-sm" onclick="removeFromPoCart(\''+c.itemId+'\')" title="Remove">✕</button>'
+      + '</div>';
+  }).join('');
 }
 
 function updatePoGenerateTotals() {
-  var selected = _pogSelectedReorders();
-  var subtotal = selected.reduce(function(s, r){ return s + (r.qty||0) * (r.cost||0); }, 0);
+  var subtotal = poCart.reduce(function(s, c){ return s + (c.qty||0) * (c.cost||0); }, 0);
   var shipCost = parseFloat(document.getElementById('pog-ship-cost').value) || 0;
   var other    = parseFloat(document.getElementById('pog-other').value) || 0;
   var discount = parseFloat(document.getElementById('pog-discount').value) || 0;
@@ -4525,11 +4595,14 @@ function updatePoGenerateTotals() {
   document.getElementById('pog-total').textContent = fmtPHP(total);
 }
 
-async function generatePurchaseOrder() {
+// Single save path for the unified modal: `generatePdf=false` just files the
+// items as new "Needed" reorders (same as the old Create Reorder flow, but
+// for potentially several items/suppliers at once); `generatePdf=true` also
+// stamps them "Ordered" with a PO number and produces the PDF.
+async function saveReorderCart(generatePdf) {
   var supplier = document.getElementById('pog-supplier').value.trim();
-  if (!supplier) { alert('Select a supplier.'); return; }
-  var selected = _pogSelectedReorders();
-  if (!selected.length) { alert('Select at least one item to include.'); return; }
+  if (!supplier) { alert('Enter a supplier.'); return; }
+  if (!poCart.length) { alert('Add at least one item.'); return; }
 
   var supplierAddress = document.getElementById('pog-supplier-address').value.trim();
   var supplierTin     = document.getElementById('pog-supplier-tin').value.trim();
@@ -4542,58 +4615,48 @@ async function generatePurchaseOrder() {
   var checkedBy  = document.getElementById('pog-checked-by').value.trim();
   var approvedBy = document.getElementById('pog-approved-by').value.trim();
 
-  var lineItems = selected.map(function(r) {
-    var item = db.items.find(function(i){ return i.id === r.itemId; });
-    return {
-      description: item ? item.name : 'Deleted Item',
-      qty: r.qty || 0,
-      unit: item ? (item.unit||'') : '',
-      unitPrice: r.cost || 0,
-      total: (r.qty||0) * (r.cost||0),
-    };
-  });
-  var subtotal = lineItems.reduce(function(s, l){ return s + l.total; }, 0);
-  var totalPayable = subtotal + shipCost + other - discount;
-
   rememberSupplier(supplier, supplierAddress, supplierTin);
-  var poNumber = await reserveNextPoNumber();
   var now = new Date().toISOString();
-  var poRecord = {
-    id: uid(), poNumber: poNumber, date: now,
-    supplier: supplier, supplierAddress: supplierAddress, supplierTin: supplierTin,
-    shipMethod: shipMethod, shipTerms: shipTerms, delivery: delivery,
-    shipCost: shipCost, other: other, discount: discount,
-    checkedBy: checkedBy, approvedBy: approvedBy,
-    subtotal: subtotal, total: totalPayable,
-    reorderIds: selected.map(function(r){ return r.id; }),
-    createdBy: (currentUser && currentUser.username) || '',
-    createdAt: now,
-  };
-  db.purchaseOrders.push(poRecord);
+  var status = generatePdf ? 'ordered' : 'needed';
+  var poNumber = generatePdf ? await reserveNextPoNumber() : null;
 
-  // Stamp included reorders as ordered — only set orderedAt the first time,
-  // same rule saveReorder() already follows for the status timeline.
-  selected.forEach(function(r) {
-    if (!r.orderedAt) r.orderedAt = now;
-    r.status = 'ordered';
-    r.poNumber = poNumber;
-    r.updatedAt = now;
+  var newReorders = poCart.map(function(c) {
+    var r = {
+      id: uid(), itemId: c.itemId, supplier: supplier,
+      supplierAddress: supplierAddress, supplierTin: supplierTin,
+      qty: c.qty, cost: c.cost, orderDate: now.slice(0,10), deliveryDate: delivery,
+      status: status, notes: '', createdAt: now, updatedAt: now,
+    };
+    if (status === 'ordered') { r.orderedAt = now; r.poNumber = poNumber; }
+    return r;
   });
+  db.reorders.push.apply(db.reorders, newReorders);
 
-  if (sb) {
-    try { await sb.from('purchase_orders').insert([poRecord]); } catch(e) {}
-    for (var i = 0; i < selected.length; i++) {
-      var r = selected[i];
-      try {
-        await sb.from('reorders').update({ status: r.status, orderedAt: r.orderedAt, poNumber: r.poNumber, updatedAt: r.updatedAt }).eq('id', r.id);
-      } catch(e) {}
-    }
+  if (generatePdf) {
+    var lineItems = poCart.map(function(c) {
+      return { description: c.name, qty: c.qty || 0, unit: c.unit || '', unitPrice: c.cost || 0, total: (c.qty||0) * (c.cost||0) };
+    });
+    var subtotal = lineItems.reduce(function(s, l){ return s + l.total; }, 0);
+    var totalPayable = subtotal + shipCost + other - discount;
+    var poRecord = {
+      id: uid(), poNumber: poNumber, date: now,
+      supplier: supplier, supplierAddress: supplierAddress, supplierTin: supplierTin,
+      shipMethod: shipMethod, shipTerms: shipTerms, delivery: delivery,
+      shipCost: shipCost, other: other, discount: discount,
+      checkedBy: checkedBy, approvedBy: approvedBy,
+      subtotal: subtotal, total: totalPayable,
+      reorderIds: newReorders.map(function(r){ return r.id; }),
+      createdBy: (currentUser && currentUser.username) || '',
+      createdAt: now,
+    };
+    db.purchaseOrders.push(poRecord);
+    logAudit('Purchase Order generated', 'PO #' + poNumber + ' — ' + supplier + ' (' + newReorders.length + ' item' + (newReorders.length===1?'':'s') + ')');
+    buildPurchaseOrderPdf(poRecord, lineItems);
   } else {
-    save();
+    logAudit('Reorder created', supplier + ' — ' + newReorders.length + ' item' + (newReorders.length===1?'':'s'));
   }
 
-  logAudit('Purchase Order generated', 'PO #' + poNumber + ' — ' + supplier + ' (' + selected.length + ' item' + (selected.length===1?'':'s') + ')');
-  buildPurchaseOrderPdf(poRecord, lineItems);
+  save();
   closeModal('po-generate-modal');
   renderReorder();
   updateSummary();
@@ -8191,7 +8254,6 @@ function applyRoleUI() {
   show('btn-contact-admin', false);
   show('btn-log-usage',      can('log'));
   show('btn-create-reorder', can('reorder'));
-  show('btn-generate-po',    can('reorder'));
 
   // Tab visibility is driven by the per-role config (see applyTabVisibility)
   show('btn-export-inv-csv', !isBrand);
