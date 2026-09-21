@@ -19,6 +19,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root {
     --bg: #f4f5f7;
@@ -827,6 +829,7 @@
         <option value="received">Received</option>
       </select>
       <button id="btn-create-reorder" class="btn btn-primary" onclick="openReorderModal()">+ Create Reorder</button>
+      <button id="btn-generate-po" class="btn btn-secondary" onclick="openPoGenerateModal()">🧾 Generate PO</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -1770,11 +1773,20 @@
       </div>
       <div class="form-group">
         <label>Supplier</label>
-        <input type="text" id="rf-supplier" placeholder="Supplier name">
+        <input type="text" id="rf-supplier" placeholder="Supplier name" list="rf-supplier-list" onblur="applySupplierDirectory()">
+        <datalist id="rf-supplier-list"></datalist>
       </div>
       <div class="form-group">
         <label>Qty to Order *</label>
         <input type="number" id="rf-qty" min="1" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Supplier Address</label>
+        <input type="text" id="rf-supplier-address" placeholder="Street, city, province">
+      </div>
+      <div class="form-group">
+        <label>Supplier TIN</label>
+        <input type="text" id="rf-supplier-tin" placeholder="000-000-000-000">
       </div>
       <div class="form-group">
         <label>Cost per Unit (₱)</label>
@@ -1804,6 +1816,82 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('reorder-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveReorder()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- GENERATE PURCHASE ORDER MODAL -->
+<div class="modal-bg" id="po-generate-modal">
+  <div class="modal" style="max-width:640px">
+    <h2>🧾 Generate Purchase Order</h2>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Supplier *</label>
+        <select id="pog-supplier" onchange="renderPoGenerateItems()">
+          <option value="">— Select supplier —</option>
+        </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Only suppliers with items marked "Needed" are listed.</div>
+      </div>
+      <div class="form-group">
+        <label>Supplier Address</label>
+        <input type="text" id="pog-supplier-address" placeholder="Street, city, province">
+      </div>
+      <div class="form-group">
+        <label>Supplier TIN</label>
+        <input type="text" id="pog-supplier-tin" placeholder="000-000-000-000">
+      </div>
+      <div class="form-group full">
+        <label>Items to include</label>
+        <div id="pog-items" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;background:var(--surface2);border-radius:8px;padding:8px">
+          <div style="font-size:12px;color:var(--muted);padding:6px">Select a supplier to see their needed items.</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Shipping Method</label>
+        <select id="pog-ship-method">
+          <option value="">—</option>
+          <option value="Courier">Courier</option>
+          <option value="Pickup">Pickup</option>
+          <option value="Delivery">Delivery</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Shipping Terms</label>
+        <input type="text" id="pog-ship-terms" placeholder="e.g. FOB, Prepaid">
+      </div>
+      <div class="form-group">
+        <label>Delivery Date / Terms</label>
+        <input type="text" id="pog-delivery" placeholder="e.g. 10/05/2026 or Bi-monthly delivery">
+      </div>
+      <div class="form-group">
+        <label>Shipping Cost (₱)</label>
+        <input type="number" id="pog-ship-cost" min="0" step="0.01" placeholder="0.00" oninput="updatePoGenerateTotals()">
+      </div>
+      <div class="form-group">
+        <label>Other Charges (₱)</label>
+        <input type="number" id="pog-other" min="0" step="0.01" placeholder="0.00" oninput="updatePoGenerateTotals()">
+      </div>
+      <div class="form-group">
+        <label>Discount (₱)</label>
+        <input type="number" id="pog-discount" min="0" step="0.01" placeholder="0.00" oninput="updatePoGenerateTotals()">
+      </div>
+      <div class="form-group">
+        <label>Checked by</label>
+        <input type="text" id="pog-checked-by" placeholder="Name">
+      </div>
+      <div class="form-group">
+        <label>Approved by</label>
+        <input type="text" id="pog-approved-by" placeholder="Name">
+      </div>
+      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted)"><span>Subtotal</span><strong id="pog-subtotal" style="color:var(--text)">₱0.00</strong></div>
+        <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-top:4px"><span>Total Amount Payable</span><span id="pog-total">₱0.00</span></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('po-generate-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="generatePurchaseOrder()">Generate PDF</button>
     </div>
   </div>
 </div>
@@ -2118,7 +2206,7 @@
 <script>
 
 // ─── DATA STORE ────────────────────────────────────────────────────────────────
-let db = { items: [], logs: [], reorders: [], accounts: [], reconciliations: [] };
+let db = { items: [], logs: [], reorders: [], accounts: [], reconciliations: [], purchaseOrders: [] };
 let currentUser = null; // { username, role }
 let editItemId = null;
 let editReorderId = null;
@@ -2210,18 +2298,20 @@ async function refreshData() {
   if (btn) { btn.textContent = '↻ Refreshing…'; btn.disabled = true; }
   if (!sb) { if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; } return; }
   try {
-    var [r1, r2, r3, r4, r5] = await Promise.all([
+    var [r1, r2, r3, r4, r5, r6] = await Promise.all([
       sb.from('items').select('*').order('seq'),
       fetchAllRows('logs', 'date'),
       sb.from('reorders').select('*'),
       sb.from('accounts').select('*'),
       sb.from('reconciliations').select('*'),
+      sb.from('purchase_orders').select('*'),
     ]);
     if (r1.data) db.items    = r1.data;
     if (r2.data) db.logs     = r2.data;
     if (r3.data) db.reorders = r3.data;
     if (r4.data) db.accounts = r4.data;
     if (r5.data) db.reconciliations = r5.data; // graceful — table may not exist yet
+    if (r6.data) db.purchaseOrders  = r6.data; // graceful — table may not exist yet
     await loadMessages();
     await loadRequests();
     updateSummary();
@@ -2333,6 +2423,75 @@ async function removeQcStation(idx) {
   populateStationDropdown();
   renderQcStationList();
 }
+
+// ─── SUPPLIER DIRECTORY ───────────────────────────────────────────────────────
+// Remembers each supplier's Address/TIN the first time they're typed on a
+// reorder, so nobody has to re-type them on every future reorder for that
+// same supplier. Keyed by a lowercased/trimmed name so "MEK Packaging" and
+// "mek packaging" match the same entry.
+var SUPPLIER_DIR_KEY = 'supplierDirectory';
+var supplierDirectory = {}; // { [normalizedName]: { name, address, tin } }
+
+function _supKey(name) { return (name || '').trim().toLowerCase(); }
+
+async function saveSupplierDirectory() {
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', SUPPLIER_DIR_KEY);
+    await sb.from('settings').insert([{ key: SUPPLIER_DIR_KEY, value: JSON.stringify(supplierDirectory) }]);
+  } catch(e) {}
+}
+
+// Called whenever a reorder is saved — records/updates this supplier's
+// Address/TIN if either was filled in, so it's ready next time.
+function rememberSupplier(name, address, tin) {
+  var k = _supKey(name);
+  if (!k) return;
+  var existing = supplierDirectory[k] || {};
+  var changed = false;
+  var entry = { name: name.trim(), address: address || existing.address || '', tin: tin || existing.tin || '' };
+  if (entry.address !== existing.address || entry.tin !== existing.tin || entry.name !== existing.name) changed = true;
+  supplierDirectory[k] = entry;
+  if (changed) saveSupplierDirectory();
+}
+
+// Called on blur of the Supplier field — fills in Address/TIN if we've seen
+// this supplier before, without overwriting anything already typed in.
+function applySupplierDirectory() {
+  var nameEl = document.getElementById('rf-supplier');
+  var addrEl = document.getElementById('rf-supplier-address');
+  var tinEl  = document.getElementById('rf-supplier-tin');
+  if (!nameEl) return;
+  var entry = supplierDirectory[_supKey(nameEl.value)];
+  if (!entry) return;
+  if (addrEl && !addrEl.value.trim()) addrEl.value = entry.address || '';
+  if (tinEl  && !tinEl.value.trim())  tinEl.value  = entry.tin || '';
+}
+
+function populateSupplierDatalist() {
+  var dl = document.getElementById('rf-supplier-list');
+  if (!dl) return;
+  dl.innerHTML = Object.values(supplierDirectory).map(function(e) {
+    return '<option value="' + esc(e.name) + '"></option>';
+  }).join('');
+}
+
+// ─── PURCHASE ORDER NUMBERING ─────────────────────────────────────────────────
+var PO_NUMBER_KEY = 'nextPoNumber';
+var nextPoNumber = 1;
+
+async function reserveNextPoNumber() {
+  var n = nextPoNumber;
+  nextPoNumber = n + 1;
+  if (sb) {
+    try {
+      await sb.from('settings').delete().eq('key', PO_NUMBER_KEY);
+      await sb.from('settings').insert([{ key: PO_NUMBER_KEY, value: String(nextPoNumber) }]);
+    } catch(e) {}
+  }
+  return n;
+}
+
 function getRefreshInterval() {
   var v = parseInt(localStorage.getItem(REFRESH_INTERVAL_KEY));
   return isNaN(v) ? 2 : v; // default 2 minutes
@@ -2420,6 +2579,16 @@ async function loadGlobalSettings() {
     }
     if (settingsMap['testModeActive'] !== undefined) {
       testModeActive = settingsMap['testModeActive'] === 'true';
+    }
+    if (settingsMap[SUPPLIER_DIR_KEY] !== undefined) {
+      try {
+        var supDirParsed = JSON.parse(settingsMap[SUPPLIER_DIR_KEY]);
+        if (supDirParsed && typeof supDirParsed === 'object') supplierDirectory = supDirParsed;
+      } catch(e) {}
+    }
+    if (settingsMap[PO_NUMBER_KEY] !== undefined) {
+      var poNumParsed = parseInt(settingsMap[PO_NUMBER_KEY]);
+      if (!isNaN(poNumParsed)) nextPoNumber = poNumParsed;
     }
     applyTestMode();
   } catch(e) {} // settings table may not exist yet — silently ignore
@@ -2683,6 +2852,7 @@ async function _sbUpsertAll() {
     if (db.reorders.length) ops.push(sb.from('reorders').upsert(db.reorders));
     if (db.accounts.length) ops.push(sb.from('accounts').upsert(db.accounts));
     if (db.reconciliations.length) ops.push(sb.from('reconciliations').upsert(db.reconciliations));
+    if (db.purchaseOrders.length)  ops.push(sb.from('purchase_orders').upsert(db.purchaseOrders));
     if (ops.length) await Promise.all(ops);
   } catch(e) { console.error('Supabase sync error:', e); }
 }
@@ -2790,12 +2960,13 @@ async function load() {
   if (!sb) { if (!initSupabase()) { showSetupOverlay(''); return; } }
   document.getElementById('supa-setup-error').textContent = 'Loading data…';
   try {
-    var [r1, r2, r3, r4, r5] = await Promise.all([
+    var [r1, r2, r3, r4, r5, r6] = await Promise.all([
       sb.from('items').select('*').order('seq'),
       fetchAllRows('logs', 'date'),
       sb.from('reorders').select('*'),
       sb.from('accounts').select('*'),
       sb.from('reconciliations').select('*'),
+      sb.from('purchase_orders').select('*'),
     ]);
     if (r1.error) throw new Error(r1.error.message);
     db.items    = r1.data || [];
@@ -2803,6 +2974,7 @@ async function load() {
     db.reorders = r3.data || [];
     db.accounts = r4.data || [];
     db.reconciliations = r5.data || []; // graceful — feature works locally even if table isn't set up yet
+    db.purchaseOrders  = r6.data || []; // graceful — feature works locally even if table isn't set up yet
     // Load credentials from Supabase before showing login screen (cross-device support)
     await loadGlobalSettings();
     await loadMessages(); // graceful — won't throw if table missing
@@ -4116,7 +4288,7 @@ function renderReorder() {
       <td>${r.cost ? fmtPHP(r.cost) : '—'}</td>
       <td>${r.cost && r.qty ? fmtPHP(total) : '—'}</td>
       <td style="min-width:160px">${reorderTimeline(r)}</td>
-      <td><span class="badge badge-${statusColor}">${r.status}</span></td>
+      <td><span class="badge badge-${statusColor}">${r.status}</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">PO #' + esc(String(r.poNumber)) + '</span>' : ''}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.notes||'—')}</td>
       <td>${rAct}</td>`;
     tbody.appendChild(tr);
@@ -4153,6 +4325,10 @@ function openReorderModal(id) {
   document.getElementById('rf-item-search').value = rfItemName;
   roSearchReady = false;
   document.getElementById('rf-supplier').value = r?.supplier || '';
+  document.getElementById('rf-supplier-address').value = r?.supplierAddress || '';
+  document.getElementById('rf-supplier-tin').value = r?.supplierTin || '';
+  populateSupplierDatalist();
+  if (!r) applySupplierDirectory();
   document.getElementById('rf-qty').value = r?.qty || '';
   document.getElementById('rf-cost').value = r?.cost || '';
   document.getElementById('rf-order-date').value = r?.orderDate ? r.orderDate.slice(0,10) : new Date().toISOString().slice(0,10);
@@ -4170,6 +4346,7 @@ function prefillReorder() {
   if (item.supplier) document.getElementById('rf-supplier').value = item.supplier;
   if (item.reorderQty) document.getElementById('rf-qty').value = item.reorderQty;
   if (item.cost) document.getElementById('rf-cost').value = item.cost;
+  applySupplierDirectory();
 }
 
 
@@ -4178,9 +4355,14 @@ function saveReorder() {
   const qty = parseFloat(document.getElementById('rf-qty').value);
   if (!itemId) { alert('Select an item.'); return; }
   if (!qty || qty <= 0) { alert('Enter a valid quantity.'); return; }
+  const supplierName = document.getElementById('rf-supplier').value.trim();
+  const supplierAddress = document.getElementById('rf-supplier-address').value.trim();
+  const supplierTin = document.getElementById('rf-supplier-tin').value.trim();
   const data = {
     itemId,
-    supplier: document.getElementById('rf-supplier').value.trim(),
+    supplier: supplierName,
+    supplierAddress,
+    supplierTin,
     qty,
     cost: parseFloat(document.getElementById('rf-cost').value) || 0,
     orderDate: document.getElementById('rf-order-date').value,
@@ -4189,6 +4371,7 @@ function saveReorder() {
     notes: document.getElementById('rf-notes').value.trim(),
     updatedAt: new Date().toISOString(),
   };
+  if (supplierName) rememberSupplier(supplierName, supplierAddress, supplierTin);
   const now = new Date().toISOString();
   if (editReorderId) {
     const idx = db.reorders.findIndex(r => r.id === editReorderId);
@@ -4257,6 +4440,254 @@ function deleteReorder(id) {
     _sbDeleteReorder(id);
     renderReorder();
   }, { danger: true, confirmLabel: 'Delete' });
+}
+
+// ─── PURCHASE ORDER GENERATION ─────────────────────────────────────────────────
+// Buyer details are fixed — same on every PO, matching the letterhead used in
+// the team's existing Purchase Order template.
+var PO_BUYER = {
+  name: 'Locad Solutions Philippines Inc.',
+  address: 'Mendez-Alfonso Road, Brgy. Panungyan 1, Mendez-Nuñez, Cavite 4121',
+  tin: '774-135-558-000'
+};
+
+function openPoGenerateModal() {
+  var sel = document.getElementById('pog-supplier');
+  var suppliers = Array.from(new Set(
+    db.reorders.filter(function(r){ return r.status === 'needed' && (r.supplier||'').trim(); })
+      .map(function(r){ return r.supplier.trim(); })
+  )).sort(function(a,b){ return a.localeCompare(b); });
+  sel.innerHTML = '<option value="">— Select supplier —</option>'
+    + suppliers.map(function(s){ return '<option value="'+esc(s)+'">'+esc(s)+'</option>'; }).join('');
+  document.getElementById('pog-supplier-address').value = '';
+  document.getElementById('pog-supplier-tin').value = '';
+  document.getElementById('pog-ship-method').value = '';
+  document.getElementById('pog-ship-terms').value = '';
+  document.getElementById('pog-delivery').value = '';
+  document.getElementById('pog-ship-cost').value = '';
+  document.getElementById('pog-other').value = '';
+  document.getElementById('pog-discount').value = '';
+  document.getElementById('pog-checked-by').value = '';
+  document.getElementById('pog-approved-by').value = '';
+  renderPoGenerateItems();
+  openModal('po-generate-modal');
+}
+
+function renderPoGenerateItems() {
+  var supplier = document.getElementById('pog-supplier').value;
+  var wrap = document.getElementById('pog-items');
+  if (!supplier) {
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px">Select a supplier to see their needed items.</div>';
+    document.getElementById('pog-supplier-address').value = '';
+    document.getElementById('pog-supplier-tin').value = '';
+    updatePoGenerateTotals();
+    return;
+  }
+  var matches = db.reorders.filter(function(r){ return r.status === 'needed' && (r.supplier||'').trim() === supplier; });
+  if (!matches.length) {
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px">No needed items for this supplier.</div>';
+    updatePoGenerateTotals();
+    return;
+  }
+  wrap.innerHTML = matches.map(function(r) {
+    var item = db.items.find(function(i){ return i.id === r.itemId; });
+    var lineTotal = (r.qty||0) * (r.cost||0);
+    return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px;cursor:pointer">'
+      + '<input type="checkbox" class="pog-item-chk" value="'+r.id+'" checked onchange="updatePoGenerateTotals()">'
+      + '<span style="flex:1">'+esc(item ? item.name : 'Deleted Item')+'</span>'
+      + '<span style="color:var(--muted)">'+fmtInt(r.qty)+' '+esc(item ? (item.unit||'') : '')+' × '+fmtPHP(r.cost||0)+'</span>'
+      + '<strong style="min-width:90px;text-align:right">'+fmtPHP(lineTotal)+'</strong>'
+      + '</label>';
+  }).join('');
+  // Auto-fill from the supplier directory (or whichever matching reorder
+  // already has it) without clobbering something already typed in.
+  var dirEntry = supplierDirectory[_supKey(supplier)];
+  var fallback = matches.find(function(r){ return r.supplierAddress || r.supplierTin; });
+  document.getElementById('pog-supplier-address').value = (dirEntry && dirEntry.address) || (fallback && fallback.supplierAddress) || '';
+  document.getElementById('pog-supplier-tin').value     = (dirEntry && dirEntry.tin)     || (fallback && fallback.supplierTin)     || '';
+  updatePoGenerateTotals();
+}
+
+function _pogSelectedReorders() {
+  var supplier = document.getElementById('pog-supplier').value;
+  var checked = Array.from(document.querySelectorAll('.pog-item-chk:checked')).map(function(el){ return el.value; });
+  return db.reorders.filter(function(r){ return checked.indexOf(r.id) !== -1 && (r.supplier||'').trim() === supplier; });
+}
+
+function updatePoGenerateTotals() {
+  var selected = _pogSelectedReorders();
+  var subtotal = selected.reduce(function(s, r){ return s + (r.qty||0) * (r.cost||0); }, 0);
+  var shipCost = parseFloat(document.getElementById('pog-ship-cost').value) || 0;
+  var other    = parseFloat(document.getElementById('pog-other').value) || 0;
+  var discount = parseFloat(document.getElementById('pog-discount').value) || 0;
+  var total = subtotal + shipCost + other - discount;
+  document.getElementById('pog-subtotal').textContent = fmtPHP(subtotal);
+  document.getElementById('pog-total').textContent = fmtPHP(total);
+}
+
+async function generatePurchaseOrder() {
+  var supplier = document.getElementById('pog-supplier').value.trim();
+  if (!supplier) { alert('Select a supplier.'); return; }
+  var selected = _pogSelectedReorders();
+  if (!selected.length) { alert('Select at least one item to include.'); return; }
+
+  var supplierAddress = document.getElementById('pog-supplier-address').value.trim();
+  var supplierTin     = document.getElementById('pog-supplier-tin').value.trim();
+  var shipMethod = document.getElementById('pog-ship-method').value;
+  var shipTerms  = document.getElementById('pog-ship-terms').value.trim();
+  var delivery   = document.getElementById('pog-delivery').value.trim();
+  var shipCost   = parseFloat(document.getElementById('pog-ship-cost').value) || 0;
+  var other      = parseFloat(document.getElementById('pog-other').value) || 0;
+  var discount   = parseFloat(document.getElementById('pog-discount').value) || 0;
+  var checkedBy  = document.getElementById('pog-checked-by').value.trim();
+  var approvedBy = document.getElementById('pog-approved-by').value.trim();
+
+  var lineItems = selected.map(function(r) {
+    var item = db.items.find(function(i){ return i.id === r.itemId; });
+    return {
+      description: item ? item.name : 'Deleted Item',
+      qty: r.qty || 0,
+      unit: item ? (item.unit||'') : '',
+      unitPrice: r.cost || 0,
+      total: (r.qty||0) * (r.cost||0),
+    };
+  });
+  var subtotal = lineItems.reduce(function(s, l){ return s + l.total; }, 0);
+  var totalPayable = subtotal + shipCost + other - discount;
+
+  rememberSupplier(supplier, supplierAddress, supplierTin);
+  var poNumber = await reserveNextPoNumber();
+  var now = new Date().toISOString();
+  var poRecord = {
+    id: uid(), poNumber: poNumber, date: now,
+    supplier: supplier, supplierAddress: supplierAddress, supplierTin: supplierTin,
+    shipMethod: shipMethod, shipTerms: shipTerms, delivery: delivery,
+    shipCost: shipCost, other: other, discount: discount,
+    checkedBy: checkedBy, approvedBy: approvedBy,
+    subtotal: subtotal, total: totalPayable,
+    reorderIds: selected.map(function(r){ return r.id; }),
+    createdBy: (currentUser && currentUser.username) || '',
+    createdAt: now,
+  };
+  db.purchaseOrders.push(poRecord);
+
+  // Stamp included reorders as ordered — only set orderedAt the first time,
+  // same rule saveReorder() already follows for the status timeline.
+  selected.forEach(function(r) {
+    if (!r.orderedAt) r.orderedAt = now;
+    r.status = 'ordered';
+    r.poNumber = poNumber;
+    r.updatedAt = now;
+  });
+
+  if (sb) {
+    try { await sb.from('purchase_orders').insert([poRecord]); } catch(e) {}
+    for (var i = 0; i < selected.length; i++) {
+      var r = selected[i];
+      try {
+        await sb.from('reorders').update({ status: r.status, orderedAt: r.orderedAt, poNumber: r.poNumber, updatedAt: r.updatedAt }).eq('id', r.id);
+      } catch(e) {}
+    }
+  } else {
+    save();
+  }
+
+  logAudit('Purchase Order generated', 'PO #' + poNumber + ' — ' + supplier + ' (' + selected.length + ' item' + (selected.length===1?'':'s') + ')');
+  buildPurchaseOrderPdf(poRecord, lineItems);
+  closeModal('po-generate-modal');
+  renderReorder();
+  updateSummary();
+}
+
+function buildPurchaseOrderPdf(po, lineItems) {
+  if (!window.jspdf) { alert('PDF library did not load — check your connection and try again.'); return; }
+  var doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' });
+  var pageWidth = doc.internal.pageSize.getWidth();
+  var margin = 40;
+  var y = 50;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.text('PURCHASE ORDER', pageWidth - margin, y, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  y += 20;
+  doc.text('Date: ' + new Date(po.date).toLocaleDateString('en-PH', { year:'numeric', month:'2-digit', day:'2-digit' }), pageWidth - margin, y, { align: 'right' });
+  y += 14;
+  doc.text('PO Number: ' + po.poNumber, pageWidth - margin, y, { align: 'right' });
+
+  y = 50;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('From', margin, y);
+  y += 14;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(PO_BUYER.name, margin, y); y += 12;
+  doc.text(doc.splitTextToSize(PO_BUYER.address, 260), margin, y); y += 24;
+  doc.text('TIN: ' + PO_BUYER.tin, margin, y); y += 20;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('To', margin, y); y += 14;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(po.supplier || '—', margin, y); y += 12;
+  if (po.supplierAddress) { doc.text(doc.splitTextToSize(po.supplierAddress, 260), margin, y); y += 24; }
+  if (po.supplierTin) { doc.text('TIN: ' + po.supplierTin, margin, y); y += 20; }
+
+  y += 10;
+  doc.autoTable({
+    startY: y,
+    theme: 'grid',
+    styles: { fontSize: 9, cellPadding: 5 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 120 } },
+    body: [
+      ['Shipping Method', po.shipMethod || '—'],
+      ['Shipping Terms', po.shipTerms || '—'],
+      ['Delivery Date / Terms', po.delivery || '—'],
+      ['Shipping Cost', fmtPHP(po.shipCost || 0)],
+    ],
+  });
+  y = doc.lastAutoTable.finalY + 20;
+
+  doc.autoTable({
+    startY: y,
+    theme: 'grid',
+    head: [['Description', 'Qty', 'Unit Price', 'Total']],
+    styles: { fontSize: 9, cellPadding: 5 },
+    headStyles: { fillColor: [30, 41, 59] },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    body: lineItems.map(function(l) {
+      return [l.description, fmtInt(l.qty) + (l.unit ? ' ' + l.unit : ''), fmtPHP(l.unitPrice), fmtPHP(l.total)];
+    }),
+  });
+  y = doc.lastAutoTable.finalY + 10;
+
+  var totalsX = pageWidth - margin - 200;
+  function totalsLine(label, value, bold) {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setFontSize(bold ? 11 : 10);
+    doc.text(label, totalsX, y);
+    doc.text(value, pageWidth - margin, y, { align: 'right' });
+    y += bold ? 16 : 14;
+  }
+  totalsLine('Subtotal (VAT-inclusive)', fmtPHP(po.subtotal));
+  totalsLine('Shipping', fmtPHP(po.shipCost || 0));
+  totalsLine('Other', fmtPHP(po.other || 0));
+  totalsLine('Discount', fmtPHP(-(po.discount || 0)));
+  doc.setDrawColor(30,41,59);
+  doc.line(totalsX, y, pageWidth - margin, y);
+  y += 12;
+  totalsLine('Total Amount Payable', fmtPHP(po.total), true);
+
+  y += 40;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text('Checked by: ' + (po.checkedBy || '_______________________'), margin, y);
+  doc.text('Approved by: ' + (po.approvedBy || '_______________________'), pageWidth/2 + 10, y);
+
+  doc.save('PO-' + po.poNumber + '-' + (po.supplier||'supplier').replace(/[^a-z0-9]+/gi,'-') + '.pdf');
 }
 
 // ─── VARIANCE ADJUSTMENT ─────────────────────────────────────────────────────────
@@ -4592,6 +5023,10 @@ async function saveInlineQty(itemId) {
   } else {
     save();
   }
+  // So a manual qty edit shows up in Audit Log without needing to go hunt for
+  // it in the Cost Report's Variance Adjustments (which requires knowing/
+  // filtering to the right date range to spot it at all).
+  logAudit('Inventory manual update', item.name + ': ' + oldQty + ' → ' + newQty + ' (' + (diff > 0 ? '+' : '') + diff + ')');
   renderInventory();
   updateSummary();
 }
@@ -7756,6 +8191,7 @@ function applyRoleUI() {
   show('btn-contact-admin', false);
   show('btn-log-usage',      can('log'));
   show('btn-create-reorder', can('reorder'));
+  show('btn-generate-po',    can('reorder'));
 
   // Tab visibility is driven by the per-role config (see applyTabVisibility)
   show('btn-export-inv-csv', !isBrand);
