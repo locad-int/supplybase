@@ -829,6 +829,7 @@
         <option value="received">Received</option>
       </select>
       <button id="btn-create-reorder" class="btn btn-primary" onclick="openReorderCreateModal()">+ Create Reorder</button>
+      <button id="btn-po-history" class="btn btn-secondary" onclick="openPoHistoryModal()">📋 PO History</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -1901,6 +1902,74 @@
       <button class="btn btn-secondary" onclick="closeModal('po-generate-modal')">Cancel</button>
       <button class="btn btn-secondary" onclick="saveReorderCart(false)">Save as Needed</button>
       <button class="btn btn-primary" onclick="saveReorderCart(true)">🧾 Generate PO</button>
+    </div>
+  </div>
+</div>
+
+<!-- PO HISTORY MODAL -->
+<div class="modal-bg" id="po-history-modal">
+  <div class="modal" style="max-width:760px">
+    <h2>📋 Purchase Order History</h2>
+    <div class="table-wrap" style="max-height:60vh;overflow-y:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>PO Number</th>
+            <th>Date</th>
+            <th>Supplier</th>
+            <th>Items</th>
+            <th>Total</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="po-history-tbody"></tbody>
+      </table>
+    </div>
+    <div class="empty hidden" id="po-history-empty"><div class="icon">🧾</div><p>No Purchase Orders generated yet.</p></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('po-history-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- RECEIVE DELIVERY MODAL -->
+<div class="modal-bg" id="receive-modal">
+  <div class="modal" style="max-width:440px">
+    <h2>📥 Receive Delivery</h2>
+    <input type="hidden" id="recv-reorder-id">
+    <p style="color:var(--muted);margin-bottom:12px;font-size:13px" id="recv-item-name"></p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Ordered</div>
+        <div style="font-size:1.1rem;font-weight:700" id="recv-ordered">—</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Received so far</div>
+        <div style="font-size:1.1rem;font-weight:700" id="recv-received-so-far">—</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Remaining</div>
+        <div style="font-size:1.1rem;font-weight:700" id="recv-remaining">—</div>
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Quantity received now *</label>
+        <input type="number" id="recv-qty" min="0" step="1" placeholder="0">
+      </div>
+      <div class="form-group full">
+        <label>Delivery Cost per Unit (₱)</label>
+        <input type="number" id="recv-cost" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group full">
+        <label>Notes</label>
+        <input type="text" id="recv-notes" placeholder="Optional">
+      </div>
+    </div>
+    <p style="color:var(--muted);font-size:11px;margin-top:4px">Entering less than the remaining quantity keeps this reorder marked "ordered" with a partial-delivery note, so you can log the rest later. Entering the full remaining amount marks it "received."</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('receive-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmReceive()">Confirm Receipt</button>
     </div>
   </div>
 </div>
@@ -4294,6 +4363,29 @@ async function saveLog() {
 }
 
 // ─── REORDER ────────────────────────────────────────────────────────────────────
+// Builds the inner <td> markup for a single reorder record — shared by both
+// the plain (no-PO) row and the rows nested inside a PO group card.
+function reorderRowHtml(r) {
+  const item = db.items.find(i => i.id === r.itemId);
+  const total = (r.qty * r.cost);
+  const statusColor = r.status === 'received' ? 'ok' : r.status === 'ordered' ? 'warn' : 'danger';
+  var rAct = '<div class="actions-cell">';
+  if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm" onclick="openReorderModal(\'' + r.id + '\')">✏️</button>';
+  if (r.status !== 'received' && can('mark_received')) rAct += '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Receive delivery" onclick="openReceiveModal(\'' + r.id + '\')">📥</button>';
+  if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteReorder(\'' + r.id + '\')">🗑</button>';
+  rAct += '</div>';
+  return `
+    <td><strong>${esc(item ? item.name : 'Deleted Item')}</strong></td>
+    <td>${esc(r.supplier||'—')}</td>
+    <td>${fmtInt(r.qty)} ${esc(item ? (item.unit||'') : '')}</td>
+    <td>${r.cost ? fmtPHP(r.cost) : '—'}</td>
+    <td>${r.cost && r.qty ? fmtPHP(total) : '—'}</td>
+    <td style="min-width:160px">${reorderTimeline(r)}</td>
+    <td><span class="badge badge-${statusColor}">${r.status}</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</span>' : ''}</td>
+    <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.notes||'—')}</td>
+    <td>${rAct}</td>`;
+}
+
 function renderReorder() {
   // Backfill receivedAt for records marked received before timeline tracking
   db.reorders.forEach(r => {
@@ -4309,28 +4401,82 @@ function renderReorder() {
   if (reorders.length === 0) { empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
 
-  reorders.forEach(r => {
-    const item = db.items.find(i => i.id === r.itemId);
-    const total = (r.qty * r.cost);
-    const statusColor = r.status === 'received' ? 'ok' : r.status === 'ordered' ? 'warn' : 'danger';
-    var rAct = '<div class="actions-cell">';
-    if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm" onclick="openReorderModal(\'' + r.id + '\')">✏️</button>';
-    if (r.status !== 'received' && can('mark_received')) rAct += '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Mark received" onclick="markReceived(\'' + r.id + '\')">✅</button>';
-    if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteReorder(\'' + r.id + '\')">🗑</button>';
-    rAct += '</div>';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><strong>${esc(item ? item.name : 'Deleted Item')}</strong></td>
-      <td>${esc(r.supplier||'—')}</td>
-      <td>${fmtInt(r.qty)} ${esc(item ? (item.unit||'') : '')}</td>
-      <td>${r.cost ? fmtPHP(r.cost) : '—'}</td>
-      <td>${r.cost && r.qty ? fmtPHP(total) : '—'}</td>
-      <td style="min-width:160px">${reorderTimeline(r)}</td>
-      <td><span class="badge badge-${statusColor}">${r.status}</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</span>' : ''}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.notes||'—')}</td>
-      <td>${rAct}</td>`;
+  // Reorders created together from the same Purchase Order share a poNumber
+  // — group those under a single collapsible card ("1 PO, 1 card") instead
+  // of one row per item. A PO with only one item, or a reorder with no
+  // poNumber at all, still renders as a plain single row.
+  var seenPo = {};
+  var units = [];
+  reorders.forEach(function(r) {
+    if (r.poNumber) {
+      var g = seenPo[r.poNumber];
+      if (g) { g.items.push(r); }
+      else { g = { poNumber: r.poNumber, items: [r] }; seenPo[r.poNumber] = g; units.push(g); }
+    } else {
+      units.push(r);
+    }
+  });
+
+  units.forEach(function(u) {
+    if (u.poNumber && u.items.length > 1) {
+      renderReorderGroupRow(tbody, u);
+    } else {
+      var r = u.poNumber ? u.items[0] : u;
+      var tr = document.createElement('tr');
+      tr.innerHTML = reorderRowHtml(r);
+      tbody.appendChild(tr);
+    }
+  });
+}
+
+// Renders a single collapsed "card" row summarizing every item in one PO,
+// plus its item rows (hidden until the card is clicked to expand).
+function renderReorderGroupRow(tbody, group) {
+  var items = group.items;
+  var received = items.filter(function(i){ return i.status === 'received'; }).length;
+  var ordered  = items.filter(function(i){ return i.status === 'ordered'; }).length;
+  var total = items.reduce(function(s, i){ return s + (i.qty||0) * (i.cost||0); }, 0);
+  var statusLabel, statusColor;
+  if (received === items.length)      { statusLabel = 'received'; statusColor = 'ok'; }
+  else if (received === 0 && ordered === 0) { statusLabel = 'needed'; statusColor = 'danger'; }
+  else if (received === 0)            { statusLabel = 'ordered'; statusColor = 'warn'; }
+  else                                 { statusLabel = received + ' of ' + items.length + ' received'; statusColor = 'warn'; }
+
+  var groupId = 'pogrp-' + String(group.poNumber).replace(/[^a-z0-9]+/gi, '-');
+  var po = (db.purchaseOrders || []).find(function(p){ return String(p.poNumber) === String(group.poNumber); });
+
+  var headerTr = document.createElement('tr');
+  headerTr.className = 'po-group-header';
+  headerTr.style.cursor = 'pointer';
+  headerTr.style.background = 'var(--surface2)';
+  headerTr.onclick = function() { toggleReorderGroup(groupId, headerTr); };
+  headerTr.innerHTML = `
+    <td colspan="2"><span class="po-group-arrow" style="display:inline-block;margin-right:6px">▶</span><strong>${esc(String(group.poNumber))}</strong> <span style="color:var(--muted);font-size:12px">— ${esc(items[0].supplier||'—')}</span></td>
+    <td colspan="2" style="color:var(--muted);font-size:12px">${items.length} items</td>
+    <td>${fmtPHP(total)}</td>
+    <td style="color:var(--muted);font-size:11px">—</td>
+    <td><span class="badge badge-${statusColor}">${esc(statusLabel)}</span></td>
+    <td style="color:var(--muted);font-size:11px">—</td>
+    <td>${po ? '<button class="btn btn-icon btn-sm" title="Download PO PDF" onclick="event.stopPropagation();redownloadPo(\'' + po.id + '\')">⬇</button>' : ''}</td>`;
+  tbody.appendChild(headerTr);
+
+  items.forEach(function(r) {
+    var tr = document.createElement('tr');
+    tr.className = 'po-group-item';
+    tr.dataset.group = groupId;
+    tr.style.display = 'none';
+    tr.innerHTML = reorderRowHtml(r);
     tbody.appendChild(tr);
   });
+}
+
+function toggleReorderGroup(groupId, headerTr) {
+  var rows = document.querySelectorAll('tr.po-group-item[data-group="' + groupId + '"]');
+  if (!rows.length) return;
+  var expand = rows[0].style.display === 'none';
+  rows.forEach(function(tr) { tr.style.display = expand ? '' : 'none'; });
+  var arrow = headerTr.querySelector('.po-group-arrow');
+  if (arrow) arrow.textContent = expand ? '▼' : '▶';
 }
 
 function reorderTimeline(r) {
@@ -4430,43 +4576,105 @@ function saveReorder() {
   renderReorder();
 }
 
-async function markReceived(id) {
+// Sums every restock log for this reorder's item logged since the reorder
+// was created — the "how much has actually arrived so far" calculation.
+// Kept in one place so both the manual Log Usage → Restock path and the
+// dedicated Receive Delivery modal agree on the running total.
+function _reorderReceivedSoFar(r) {
+  var since = r.createdAt || '1970-01-01';
+  return db.logs
+    .filter(function(l) { return l.itemId === r.itemId && l.type === 'restock' && l.date >= since; })
+    .reduce(function(s, l) { return s + (l.qty || 0); }, 0);
+}
+
+function openReceiveModal(id) {
   if (checkStocktakeLock()) return;
-  const r = db.reorders.find(x => x.id === id);
+  var r = db.reorders.find(function(x) { return x.id === id; });
   if (!r) return;
-  const item = db.items.find(i => i.id === r.itemId);
-  if (!item) return;
-  const now = new Date().toISOString();
+  var item = db.items.find(function(i) { return i.id === r.itemId; });
+  var unit = item ? (item.unit || '') : '';
+  var receivedSoFar = _reorderReceivedSoFar(r);
+  var remaining = Math.max(0, (r.qty || 0) - receivedSoFar);
+  document.getElementById('recv-reorder-id').value = id;
+  document.getElementById('recv-item-name').textContent = (item ? item.name : 'Deleted Item') + (r.supplier ? ' · ' + r.supplier : '') + (r.poNumber ? ' · ' + r.poNumber : '');
+  document.getElementById('recv-ordered').textContent = fmtInt(r.qty) + ' ' + unit;
+  document.getElementById('recv-received-so-far').textContent = fmtInt(receivedSoFar) + ' ' + unit;
+  document.getElementById('recv-remaining').textContent = fmtInt(remaining) + ' ' + unit;
+  document.getElementById('recv-qty').value = remaining || '';
+  document.getElementById('recv-cost').value = r.cost || '';
+  document.getElementById('recv-notes').value = '';
+  openModal('receive-modal');
+}
+
+async function confirmReceive() {
+  if (checkStocktakeLock()) return;
+  var id = document.getElementById('recv-reorder-id').value;
+  var r = db.reorders.find(function(x) { return x.id === id; });
+  if (!r) { closeModal('receive-modal'); return; }
+  var item = db.items.find(function(i) { return i.id === r.itemId; });
+  if (!item) { closeModal('receive-modal'); return; }
+  var qty = parseFloat(document.getElementById('recv-qty').value);
+  if (!qty || qty <= 0) { alert('Enter a valid quantity received.'); return; }
+  var cost = parseFloat(document.getElementById('recv-cost').value);
+  var extraNotes = document.getElementById('recv-notes').value.trim();
+
   // Fresh qty first — this restock must add on top of the latest DB value,
   // not a possibly-stale local one (same class of bug as the disappearing
   // restock: a bulk save() from a stale snapshot can silently undo it).
   if (sb) {
     try {
-      var freshMR = await sb.from('items').select('qty').eq('id', item.id).single();
-      if (freshMR.data && !freshMR.error && freshMR.data.qty !== undefined) item.qty = freshMR.data.qty;
+      var fresh = await sb.from('items').select('qty').eq('id', item.id).single();
+      if (fresh.data && !fresh.error && fresh.data.qty !== undefined) item.qty = fresh.data.qty;
     } catch(e) {}
   }
-  r.status = 'received';
-  if (!r.receivedAt) r.receivedAt = now;
-  const newQty = item.qty + r.qty;
+
+  var now = new Date().toISOString();
+  var newQty = item.qty + qty;
   // FIFO: this delivery opens a new batch, same as a manual restock log
   getLayers(item);
-  addLayer(item, r.qty, r.cost > 0 ? r.cost : undefined);
-  const logEntry = { id: uid(), itemId: r.itemId, type: 'restock', qty: r.qty, absQty: newQty, by: 'Reorder', date: now, notes: `Reorder received from ${r.supplier||'supplier'}`, ref: '',
-    costAmount: r.cost > 0 ? Math.round(r.qty * r.cost * 100) / 100 : null };
+  addLayer(item, qty, (!isNaN(cost) && cost > 0) ? cost : undefined);
+
+  var receivedBefore = _reorderReceivedSoFar(r);
+  var receivedAfter = receivedBefore + qty;
+  var isComplete = receivedAfter >= (r.qty || 0);
+
+  var logEntry = {
+    id: uid(), itemId: r.itemId, type: 'restock', qty: qty, absQty: newQty, by: 'Reorder', date: now,
+    notes: 'Reorder received from ' + (r.supplier || 'supplier') + (isComplete ? '' : ' (partial)') + (extraNotes ? ' — ' + extraNotes : ''),
+    ref: '', costAmount: (!isNaN(cost) && cost > 0) ? Math.round(qty * cost * 100) / 100 : null,
+  };
   db.logs.push(logEntry);
   item.qty = newQty;
   item.updatedAt = now;
   syncItemCost(item);
   updateMaxRef(item, newQty);
+
+  if (!r.orderedAt) r.orderedAt = now;
+  if (isComplete) {
+    r.status = 'received';
+    if (!r.receivedAt) r.receivedAt = now;
+    r.notes = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
+  } else {
+    var partialNote = '⚠️ Partial delivery: ' + fmtInt(receivedAfter) + ' of ' + fmtInt(r.qty) + ' received (last: '
+      + new Date(now).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + ')';
+    var existingNote = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
+    r.notes = partialNote + (existingNote ? '\n' + existingNote : '');
+  }
+  r.updatedAt = now;
+
   updateSummary();
   if (sb) {
-    await sbInsertLogs([logEntry]);
-    await sbUpdateItem(item, { "maxRef": item.maxRef });
-    try { await sb.from('reorders').update({ status: r.status, receivedAt: r.receivedAt }).eq('id', r.id); } catch(e) {}
+    try {
+      await sbUpdateItem(item, { "maxRef": item.maxRef });
+      await sbInsertLogs([logEntry]);
+      await sb.from('reorders').update({ status: r.status, orderedAt: r.orderedAt, receivedAt: r.receivedAt, notes: r.notes, updatedAt: r.updatedAt }).eq('id', r.id);
+    } catch(e) { save(); }
   } else {
     save();
   }
+  logAudit(isComplete ? 'Reorder received' : 'Reorder partially received',
+    (item.name || r.itemId) + ': +' + fmtInt(qty) + (isComplete ? '' : ' (' + fmtInt(receivedAfter) + ' of ' + fmtInt(r.qty) + ')'));
+  closeModal('receive-modal');
   renderReorder();
   renderInventory();
 }
@@ -4488,6 +4696,10 @@ var PO_BUYER = {
   address: 'Mendez-Alfonso Road, Brgy. Panungyan 1, Mendez-Nuñez, Cavite 4121',
   tin: '774-135-558-000'
 };
+// Company logo shown top-left on generated PO PDFs. Embedded as a data URL
+// so the whole app stays a single file (no separate image asset to host).
+var PO_LOGO_DATA_URL = 'data:image/png;base64,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';
+var PO_LOGO_ASPECT = 234 / 1200; // logo's natural height ÷ width — used to scale it in the PDF
 
 // Cart of items being added to a brand-new reorder/PO — populated via the
 // item search box, cleared each time the modal is (re)opened.
@@ -4683,12 +4895,80 @@ async function saveReorderCart(generatePdf) {
   updateSummary();
 }
 
+// ─── PURCHASE ORDER HISTORY ─────────────────────────────────────────────────
+// Generating a PO only downloads the PDF once, to whatever browser did it —
+// SupplyBase doesn't keep the file itself. This lets any past PO be rebuilt
+// and re-downloaded on demand from the saved purchase_orders record plus the
+// reorder line items it covered.
+function openPoHistoryModal() {
+  renderPoHistory();
+  openModal('po-history-modal');
+}
+
+function renderPoHistory() {
+  var tbody = document.getElementById('po-history-tbody');
+  var empty = document.getElementById('po-history-empty');
+  var list = (db.purchaseOrders || []).slice().sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+  if (!list.length) {
+    tbody.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  tbody.innerHTML = list.map(function(po) {
+    var itemCount = (po.reorderIds || []).length;
+    var dateStr = po.date ? new Date(po.date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+    return '<tr>'
+      + '<td>' + esc(String(po.poNumber || '—')) + '</td>'
+      + '<td>' + dateStr + '</td>'
+      + '<td>' + esc(po.supplier || '—') + '</td>'
+      + '<td>' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>'
+      + '<td>' + fmtPHP(po.total || 0) + '</td>'
+      + '<td><button class="btn btn-secondary btn-sm" onclick="redownloadPo(\'' + po.id + '\')">⬇ Download PDF</button></td>'
+      + '</tr>';
+  }).join('');
+}
+
+function redownloadPo(id) {
+  var po = (db.purchaseOrders || []).find(function(p) { return p.id === id; });
+  if (!po) { alert('Purchase Order record not found.'); return; }
+  var lineItems = (po.reorderIds || []).map(function(rid) {
+    var r = db.reorders.find(function(x) { return x.id === rid; });
+    if (!r) return null;
+    var item = db.items.find(function(i) { return i.id === r.itemId; });
+    return {
+      description: item ? item.name : 'Deleted Item',
+      qty: r.qty || 0,
+      unit: item ? (item.unit || '') : '',
+      unitPrice: r.cost || 0,
+      total: (r.qty || 0) * (r.cost || 0),
+    };
+  }).filter(Boolean);
+  if (!lineItems.length) {
+    alert('The item details for this PO could not be found — the linked reorder records may have since been deleted. The PO totals are still on record, but the line items can\'t be rebuilt into a PDF.');
+    return;
+  }
+  buildPurchaseOrderPdf(po, lineItems);
+}
+
 function buildPurchaseOrderPdf(po, lineItems) {
   if (!window.jspdf) { alert('PDF library did not load — check your connection and try again.'); return; }
   var doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' });
   var pageWidth = doc.internal.pageSize.getWidth();
   var margin = 40;
   var y = 50;
+
+  // Company logo, top-left. Falls back gracefully (no gap) if it fails to
+  // load for any reason — the rest of the layout just starts where it
+  // always did.
+  var logoH = 0;
+  if (PO_LOGO_DATA_URL) {
+    try {
+      var logoW = 110;
+      logoH = Math.round(logoW * PO_LOGO_ASPECT);
+      doc.addImage(PO_LOGO_DATA_URL, 'PNG', margin, 28, logoW, logoH);
+    } catch(e) { logoH = 0; }
+  }
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(20);
@@ -4700,7 +4980,7 @@ function buildPurchaseOrderPdf(po, lineItems) {
   y += 14;
   doc.text('PO Number: ' + po.poNumber, pageWidth - margin, y, { align: 'right' });
 
-  y = 50;
+  y = logoH ? (28 + logoH + 22) : 50;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text('From', margin, y);
@@ -8282,6 +8562,7 @@ function applyRoleUI() {
   show('btn-contact-admin', false);
   show('btn-log-usage',      can('log'));
   show('btn-create-reorder', can('reorder'));
+  show('btn-po-history',     can('reorder'));
 
   // Tab visibility is driven by the per-role config (see applyTabVisibility)
   show('btn-export-inv-csv', !isBrand);
