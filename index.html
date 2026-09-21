@@ -1876,7 +1876,11 @@
       </div>
       <div class="form-group">
         <label>Delivery Date / Terms</label>
-        <input type="text" id="pog-delivery" placeholder="e.g. 10/05/2026 or Bi-monthly delivery">
+        <div style="display:flex;gap:6px">
+          <input type="text" id="pog-delivery" placeholder="e.g. 10/05/2026 or Bi-monthly delivery" style="flex:1">
+          <button type="button" class="btn btn-icon btn-sm" title="Pick a date" onclick="openPogDeliveryDatePicker()">📅</button>
+          <input type="date" id="pog-delivery-date-picker" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none" onchange="applyPogDeliveryDatePick()">
+        </div>
       </div>
       <div class="form-group">
         <label>Shipping Cost (₱)</label>
@@ -4732,6 +4736,7 @@ function openReorderCreateModal() {
   document.getElementById('pog-ship-method').value = '';
   document.getElementById('pog-ship-terms').value = '';
   document.getElementById('pog-delivery').value = '';
+  document.getElementById('pog-delivery-date-picker').value = '';
   document.getElementById('pog-ship-cost').value = '';
   document.getElementById('pog-other').value = '';
   document.getElementById('pog-discount').value = '';
@@ -4786,6 +4791,25 @@ function selectPogItem(id, name) {
 function closePogItemDropdown() {
   var dd = document.getElementById('pog-item-dropdown');
   if (dd) dd.style.display = 'none';
+}
+
+// Delivery Date / Terms stays a free-text field (so "Bi-monthly delivery"
+// etc. still works), but for an exact date this opens a native date picker
+// and fills the text field with a formatted date instead of typing it.
+function openPogDeliveryDatePicker() {
+  var picker = document.getElementById('pog-delivery-date-picker');
+  if (!picker) return;
+  if (typeof picker.showPicker === 'function') {
+    try { picker.showPicker(); return; } catch(e) {}
+  }
+  picker.click();
+}
+
+function applyPogDeliveryDatePick() {
+  var picker = document.getElementById('pog-delivery-date-picker');
+  if (!picker || !picker.value) return;
+  var d = new Date(picker.value + 'T00:00:00');
+  document.getElementById('pog-delivery').value = d.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
 // Switches the "Add Item" row between searching the SupplyBase catalog and
@@ -5094,7 +5118,8 @@ function buildPurchaseOrderPdf(po, lineItems) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.text(PO_BUYER.name, margin, y); y += 12;
-  doc.text(doc.splitTextToSize(PO_BUYER.address, 260), margin, y); y += 24;
+  var fromAddrLines = doc.splitTextToSize(PO_BUYER.address, 260);
+  doc.text(fromAddrLines, margin, y); y += fromAddrLines.length * 12 + 6;
   doc.text('TIN: ' + PO_BUYER.tin, margin, y); y += 20;
 
   doc.setFont('helvetica', 'bold');
@@ -5103,7 +5128,10 @@ function buildPurchaseOrderPdf(po, lineItems) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.text(po.supplier || '—', margin, y); y += 12;
-  if (po.supplierAddress) { doc.text(doc.splitTextToSize(po.supplierAddress, 260), margin, y); y += 24; }
+  if (po.supplierAddress) {
+    var toAddrLines = doc.splitTextToSize(po.supplierAddress, 260);
+    doc.text(toAddrLines, margin, y); y += toAddrLines.length * 12 + 6;
+  }
   if (po.supplierTin) { doc.text('TIN: ' + po.supplierTin, margin, y); y += 20; }
 
   y += 10;
