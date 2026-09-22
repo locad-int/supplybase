@@ -3949,7 +3949,7 @@ function openItemDetail(itemId) {
     </div>`;
   }
 
-  document.getElementById('idet-title').textContent = esc(item.name);
+  document.getElementById('idet-title').textContent = item.name;
 
   // Last log date for this item
   const itemLogs = db.logs.filter(l => l.itemId === itemId).sort((a, b) => new Date(b.date) - new Date(a.date));
