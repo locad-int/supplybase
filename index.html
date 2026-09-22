@@ -4715,8 +4715,8 @@ var PO_BUYER = {
 // Fixed company policy — same on every PO, not user-editable.
 var PO_PAYMENT_TERMS = 'Net 30 Days';
 // Standard Philippine VAT rate. Unit costs entered on a PO are treated as
-// VAT-inclusive, so VAT is backed out of the subtotal rather than added on
-// top: VAT = subtotal × rate/(1+rate).
+// VAT-inclusive: Vatable Sales (Net of VAT) = Total Gross Sales / (1+rate),
+// then VAT Amount = Vatable Sales × rate.
 var PO_VAT_RATE = 0.12;
 // Company logo shown top-left on generated PO PDFs. Embedded as a data URL
 // so the whole app stays a single file (no separate image asset to host).
@@ -4907,10 +4907,10 @@ function updatePoGenerateTotals() {
   var other    = parseFloat(document.getElementById('pog-other').value) || 0;
   var discount = parseFloat(document.getElementById('pog-discount').value) || 0;
   var total = subtotal + shipCost + other - discount;
-  // Unit costs are entered VAT-inclusive, so VAT is backed out of the
-  // subtotal rather than added on top.
-  var vatAmount = subtotal * (PO_VAT_RATE / (1 + PO_VAT_RATE));
-  var netOfVat = subtotal - vatAmount;
+  // Unit costs are entered VAT-inclusive: Vatable Sales (Net of VAT) =
+  // Total Gross Sales / 1.12, then VAT Amount = Vatable Sales × 12%.
+  var netOfVat = subtotal / (1 + PO_VAT_RATE);
+  var vatAmount = netOfVat * PO_VAT_RATE;
   document.getElementById('pog-net-of-vat').textContent = fmtPHP(netOfVat);
   document.getElementById('pog-vat-amount').textContent = fmtPHP(vatAmount);
   document.getElementById('pog-subtotal').textContent = fmtPHP(subtotal);
@@ -5183,10 +5183,10 @@ function buildPurchaseOrderPdf(po, lineItems) {
     doc.text(value, pageWidth - margin, y, { align: 'right' });
     y += bold ? 16 : 14;
   }
-  // Unit prices are VAT-inclusive, so VAT is backed out of the subtotal
-  // rather than added on top.
-  var vatAmount = (po.subtotal || 0) * (PO_VAT_RATE / (1 + PO_VAT_RATE));
-  var netOfVat = (po.subtotal || 0) - vatAmount;
+  // Unit prices are VAT-inclusive: Vatable Sales (Net of VAT) = Total
+  // Gross Sales / 1.12, then VAT Amount = Vatable Sales × 12%.
+  var netOfVat = (po.subtotal || 0) / (1 + PO_VAT_RATE);
+  var vatAmount = netOfVat * PO_VAT_RATE;
   totalsLine('Net of VAT', fmtPHPPdf(netOfVat));
   totalsLine('VAT (' + Math.round(PO_VAT_RATE * 100) + '%)', fmtPHPPdf(vatAmount));
   totalsLine('Subtotal (VAT-inclusive)', fmtPHPPdf(po.subtotal));
