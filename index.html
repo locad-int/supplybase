@@ -1908,9 +1908,9 @@
       </div>
       <div class="form-group full" style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
         <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted)"><span>Subtotal</span><strong id="pog-subtotal" style="color:var(--text)">₱0.00</strong></div>
-        <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-top:4px"><span>Total PO Amount (VAT-inc)</span><span id="pog-total">₱0.00</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)"><span>Net of VAT</span><span id="pog-net-of-vat">₱0.00</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:2px"><span>Net of VAT</span><span id="pog-net-of-vat">₱0.00</span></div>
         <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:2px"><span>VAT (12%)</span><span id="pog-vat-amount">₱0.00</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)"><span>Total PO Amount (VAT-inc)</span><span id="pog-total">₱0.00</span></div>
       </div>
     </div>
     <div class="modal-actions">
@@ -5072,6 +5072,7 @@ function redownloadPo(id) {
 // some other way). Used from both PO History and the grouped card in the
 // Reorder tab.
 function deletePoByNumber(poNumber) {
+  if (currentRole !== 'superuser') return;
   var po = (db.purchaseOrders || []).find(function(p) { return String(p.poNumber) === String(poNumber); });
   var affected = db.reorders.filter(function(r) { return String(r.poNumber) === String(poNumber); });
   var supplier = (po && po.supplier) || (affected[0] && affected[0].supplier) || '';
@@ -5196,23 +5197,17 @@ function buildPurchaseOrderPdf(po, lineItems) {
   totalsLine('Shipping', fmtPHPPdf(po.shipCost || 0));
   totalsLine('Other', fmtPHPPdf(po.other || 0));
   totalsLine('Discount', fmtPHPPdf(-(po.discount || 0)));
-  doc.setDrawColor(30,41,59);
-  doc.line(totalsX, y, pageWidth - margin, y);
-  y += 12;
-  totalsLine('Total PO Amount (VAT-inc)', fmtPHPPdf(po.total), true);
   // Total Sales (VAT Inclusive) is the full amount payable — Shipping and
   // Other charges included, not just the merchandise subtotal. Vatable
   // Sales (Net of VAT) = Total Sales / 1.12, then VAT = Vatable Sales × 12%.
   var netOfVat = (po.total || 0) / (1 + PO_VAT_RATE);
   var vatAmount = netOfVat * PO_VAT_RATE;
-  y += 6;
-  doc.setDrawColor(200,200,200);
-  doc.setLineDashPattern([2, 2], 0);
-  doc.line(totalsX, y, pageWidth - margin, y);
-  doc.setLineDashPattern([], 0);
-  y += 12;
   totalsLine('Net of VAT', fmtPHPPdf(netOfVat));
   totalsLine('VAT (' + Math.round(PO_VAT_RATE * 100) + '%)', fmtPHPPdf(vatAmount));
+  doc.setDrawColor(30,41,59);
+  doc.line(totalsX, y, pageWidth - margin, y);
+  y += 12;
+  totalsLine('Total PO Amount (VAT-inc)', fmtPHPPdf(po.total), true);
 
   y += 40;
   doc.setFont('helvetica', 'normal');
