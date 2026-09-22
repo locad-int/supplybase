@@ -5177,11 +5177,19 @@ function buildPurchaseOrderPdf(po, lineItems) {
   y = doc.lastAutoTable.finalY + 10;
 
   var totalsX = pageWidth - margin - 200;
+  // Labels normally sit at a fixed left position (totalsX) so every row
+  // lines up — but a long bold label (e.g. "Total PO Amount (VAT-inclusive)")
+  // can be wider than that column, which would overlap the right-aligned
+  // amount. This measures both strings and nudges the label left only when
+  // it actually needs the room, instead of clipping/shortening the text.
   function totalsLine(label, value, bold) {
     doc.setFont('helvetica', bold ? 'bold' : 'normal');
     doc.setFontSize(bold ? 11 : 10);
-    doc.text(label, totalsX, y);
-    doc.text(value, pageWidth - margin, y, { align: 'right' });
+    var valueX = pageWidth - margin;
+    var maxLabelRight = valueX - doc.getTextWidth(value) - 10;
+    var labelX = Math.min(totalsX, maxLabelRight - doc.getTextWidth(label));
+    doc.text(label, labelX, y);
+    doc.text(value, valueX, y, { align: 'right' });
     y += bold ? 16 : 14;
   }
   totalsLine('Subtotal', fmtPHPPdf(po.subtotal));
