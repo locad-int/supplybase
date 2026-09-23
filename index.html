@@ -1124,12 +1124,12 @@
 <!-- AI ASSISTANT — floating corner widget (not part of the tab flow) -->
 <!-- z-index 400 keeps it below #login-overlay (999), so it's automatically
      covered while logged out; applyTabVisibility() also hides it per-role. -->
-<button id="ai-fab" onclick="toggleAiPanel()" title="AI Assistant" style="display:none;position:fixed;right:22px;bottom:22px;z-index:400;width:56px;height:56px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:24px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25);align-items:center;justify-content:center">🤖</button>
+<button id="ai-fab" onclick="toggleAiPanel()" title="Shelfie" style="display:none;position:fixed;right:22px;bottom:22px;z-index:400;width:56px;height:56px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:24px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25);align-items:center;justify-content:center"><svg viewBox="0 0 64 52" width="30" height="24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polygon points="6,10 58,10 50,3 14,3" fill="#e0a35f"/><rect x="6" y="10" width="52" height="6" fill="#cf8f4a"/><rect x="6" y="16" width="52" height="32" rx="3" fill="#cf8f4a"/><rect x="16" y="23" width="32" height="19" rx="6" fill="#20456a"/><circle cx="25" cy="31.5" r="3.2" fill="#bfe0f0"/><circle cx="39" cy="31.5" r="3.2" fill="#bfe0f0"/><path d="M24 37 Q32 41.5 40 37" stroke="#bfe0f0" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg></button>
 
 <div id="ai-float-panel" style="display:none;flex-direction:column;position:fixed;right:22px;bottom:90px;z-index:400;width:360px;max-width:calc(100vw - 32px);height:min(560px, calc(100vh - 130px));border:1px solid var(--border);border-radius:14px;background:var(--surface2);box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden">
   <div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);background:var(--surface)">
     <div>
-      <div style="font-size:14px;font-weight:700;color:var(--text)">🤖 AI Assistant</div>
+      <div style="font-size:14px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px"><svg viewBox="0 0 64 52" width="20" height="16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polygon points="6,10 58,10 50,3 14,3" fill="#e0a35f"/><rect x="6" y="10" width="52" height="6" fill="#cf8f4a"/><rect x="6" y="16" width="52" height="32" rx="3" fill="#cf8f4a"/><rect x="16" y="23" width="32" height="19" rx="6" fill="#20456a"/><circle cx="25" cy="31.5" r="3.2" fill="#bfe0f0"/><circle cx="39" cy="31.5" r="3.2" fill="#bfe0f0"/><path d="M24 37 Q32 41.5 40 37" stroke="#bfe0f0" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>Shelfie</div>
       <div style="font-size:11px;color:var(--muted);margin-top:1px">Always confirms before saving anything</div>
     </div>
     <div style="display:flex;gap:6px">
@@ -1325,7 +1325,7 @@
     <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">
       <strong>Required column:</strong> <code>Name</code> (or <code>Supplier</code> / <code>Supplier Name</code>).<br>
       <strong>Optional columns:</strong> <code>Address</code> (or <code>Supplier Address</code>) · <code>TIN</code> (or <code>Tax ID</code> / <code>Supplier TIN</code>).<br>
-      Once imported, selecting this supplier anywhere in SupplyBase — including the AI Assistant — fills in its Address/TIN automatically.
+      Once imported, selecting this supplier anywhere in SupplyBase — including the Shelfie — fills in its Address/TIN automatically.
     </div>
     <div id="sup-import-preview-wrap" style="display:none">
       <div id="sup-import-summary-bar" style="font-size:12px;font-weight:600;margin-bottom:10px;padding:8px 12px;border-radius:8px;background:var(--surface2)"></div>
@@ -2221,7 +2221,7 @@
       </div>
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
-    <p style="color:var(--muted);font-size:13px;margin-bottom:12px">Default names pre-filled on every Purchase Order — used by both the manual Reorder cart form and the AI Assistant's PO action, unless someone types a different name for a one-off PO. Leave blank to require typing a name every time.</p>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:12px">Default names pre-filled on every Purchase Order — used by both the manual Reorder cart form and the Shelfie's PO action, unless someone types a different name for a one-off PO. Leave blank to require typing a name every time.</p>
     <div class="form-grid">
       <div class="form-group full">
         <label>Default "Checked by"</label>
@@ -2740,7 +2740,7 @@ async function reserveNextPoNumber() {
 // Default "Checked by" / "Approved by" names, set once by a superuser in
 // Settings, so nobody has to type the same two names on every PO. Used to
 // pre-fill the manual Reorder-cart PO form (openReorderCreateModal) and sent
-// to the AI Assistant so its generate_po tool can use them too instead of
+// to the Shelfie so its generate_po tool can use them too instead of
 // asking every time — either path still lets a person type/say a different
 // name for a one-off PO.
 var PO_SIGNATORIES_KEY = 'poSignatories';
@@ -3313,7 +3313,7 @@ function switchTab(name) {
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests', audit: 'Audit Log', ai: 'AI Assistant' };
+  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests', audit: 'Audit Log', ai: 'Shelfie' };
   var titleEl = document.getElementById('page-title');
   if (titleEl) titleEl.textContent = (titles[name] || name).toUpperCase();
   if (name === 'inventory') renderInventory();
@@ -8113,9 +8113,9 @@ alter publication supabase_realtime add table settings;</pre>
 var TABS_KEY  = 'tabsByRole';
 var ALL_TABS  = ['inventory','usage','reorder','report','dashboard','messages','requests','audit','ai'];
 var TAB_LABELS = { inventory:'Inventory', usage:'Usage Log', reorder:'Reorder', report:'Cost Report',
-                   dashboard:'Dashboard', messages:'Messages', requests:'Requests', audit:'Audit Log', ai:'AI Assistant' };
+                   dashboard:'Dashboard', messages:'Messages', requests:'Requests', audit:'Audit Log', ai:'Shelfie' };
 // Hidden tabs per role. Superuser is never restricted (prevents lock-out).
-// Defaults mirror the previous hard-coded behaviour. The AI Assistant is hidden
+// Defaults mirror the previous hard-coded behaviour. Shelfie is hidden
 // by default for roles that can't log usage or create reorders (viewer,
 // requestor, brand) since it has nothing useful — or safe — for them to do.
 var tabsByRole = {
@@ -8182,7 +8182,7 @@ function applyTabVisibility() {
     var bnEl = document.getElementById('bn-' + tab);
     if (bnEl) bnEl.style.display = hidden ? 'none' : '';
   });
-  // The AI Assistant isn't a switchable tab (it's a floating corner widget),
+  // Shelfie isn't a switchable tab (it's a floating corner widget),
   // but it still uses the same per-role hide list as every other tab.
   var aiHidden = isTabHidden('ai');
   var aiFab = document.getElementById('ai-fab');
@@ -10043,7 +10043,7 @@ function resetImportModal() {
 // ─── IMPORT SUPPLIERS ────────────────────────────────────────────────────────────
 // Bulk-loads a supplier list (Name/Address/TIN) into supplierDirectory, the
 // same store that auto-fills Address/TIN wherever a supplier is selected —
-// including generate_po from the AI Assistant. Mirrors the Import Inventory
+// including generate_po from the Shelfie. Mirrors the Import Inventory
 // File flow (dropzone → parse → preview → apply), reusing the same
 // CSV/XLSX parsing helpers.
 var _supImportRows = []; // pending parsed+validated rows awaiting Apply
@@ -11701,7 +11701,7 @@ var aiChatHistory = [];
 var aiDisplayLog = [];
 var aiPendingAction = null; // { id, name, input } — a tool_use awaiting Confirm/Cancel
 var aiBusy = false;
-var aiPanelOpen = false; // AI Assistant is a floating corner widget, not a tab
+var aiPanelOpen = false; // Shelfie is a floating corner widget, not a tab
 
 function toggleAiPanel() {
   aiPanelOpen = !aiPanelOpen;
@@ -11725,9 +11725,14 @@ function resetAiChat() {
 // Compact catalog snapshot the assistant can see and act on — respects Test
 // Mode restrictions just like every other view in the app.
 function aiBuildContextItems() {
+  // SKU is left out — no tool needs it (they all key off "id"), and it's
+  // rarely-enough asked about that it's not worth the extra bytes on every
+  // single message. Trimming payload size is one of the few real levers we
+  // have over response latency, since the model has to process this whole
+  // snapshot fresh on every turn.
   return catalogItemsForSearch().slice(0, 400).map(function(i) {
     return {
-      id: i.id, name: i.name, sku: i.sku || '', unit: i.unit || '',
+      id: i.id, name: i.name, unit: i.unit || '',
       qty: i.qty, category: i.category || '', minQty: i.minQty,
       reorderQty: i.reorderQty, cost: currentUnitCost(i) || i.cost || 0,
       supplier: i.supplier || ''
@@ -11820,7 +11825,7 @@ function aiActionCardHtml(action) {
       + (action.input.notes ? ' — "' + esc(action.input.notes) + '"' : '') + '.';
   }
   return '<div style="align-self:flex-start;max-width:85%;background:var(--surface);border:1px solid var(--accent);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--text)">'
-    + '<div style="font-weight:700;margin-bottom:6px">🤖 wants to:</div>'
+    + '<div style="font-weight:700;margin-bottom:6px">📦 Shelfie wants to:</div>'
     + '<div style="margin-bottom:10px">' + desc + '</div>'
     + '<div style="display:flex;gap:8px">'
     + '<button class="btn btn-primary" style="font-size:12px;padding:5px 14px" onclick="aiConfirmAction()">✓ Confirm</button>'
@@ -11842,7 +11847,7 @@ function renderAiChat() {
     else if (entry.kind === 'system') out += '<div style="align-self:center;font-size:11px;color:var(--muted);font-style:italic">' + esc(entry.text) + '</div>';
   });
   if (aiPendingAction) out += aiActionCardHtml(aiPendingAction);
-  if (aiBusy) out += '<div style="align-self:flex-start;font-size:12px;color:var(--muted);font-style:italic">🤖 thinking…</div>';
+  if (aiBusy) out += '<div style="align-self:flex-start;font-size:12px;color:var(--muted);font-style:italic">📦 Shelfie is thinking…</div>';
   el.innerHTML = out;
   aiScrollToBottom();
   var sendBtn = document.getElementById('ai-chat-send');
@@ -11858,7 +11863,7 @@ async function sendAiChat() {
   var text = (input.value || '').trim();
   if (!text) return;
   if (!sb) {
-    aiDisplayLog.push({ kind: 'error', text: 'AI Assistant needs SupplyBase to be connected to Supabase — it calls a Supabase Edge Function to talk to the AI. Connect Supabase first.' });
+    aiDisplayLog.push({ kind: 'error', text: 'Shelfie needs SupplyBase to be connected to Supabase — it calls a Supabase Edge Function to talk to the AI. Connect Supabase first.' });
     renderAiChat();
     return;
   }
@@ -11904,13 +11909,13 @@ async function aiCallAssistant() {
           else if (raw) detail = raw.slice(0, 300);
         }
       } catch(e) {}
-      aiDisplayLog.push({ kind: 'error', text: 'AI Assistant error: ' + status + detail });
+      aiDisplayLog.push({ kind: 'error', text: 'Shelfie error: ' + status + detail });
       renderAiChat();
       return;
     }
     var data = res.data;
     if (data.error) {
-      aiDisplayLog.push({ kind: 'error', text: 'AI Assistant error: ' + (typeof data.error === 'string' ? data.error : JSON.stringify(data.error)) });
+      aiDisplayLog.push({ kind: 'error', text: 'Shelfie error: ' + (typeof data.error === 'string' ? data.error : JSON.stringify(data.error)) });
       renderAiChat();
       return;
     }
@@ -11936,7 +11941,7 @@ async function aiCallAssistant() {
     if (readOnlyCall) await aiRunReadOnlyTool(readOnlyCall);
   } catch (e) {
     aiBusy = false;
-    aiDisplayLog.push({ kind: 'error', text: 'AI Assistant request failed: ' + (e && e.message ? e.message : String(e)) });
+    aiDisplayLog.push({ kind: 'error', text: 'Shelfie request failed: ' + (e && e.message ? e.message : String(e)) });
     renderAiChat();
   }
 }
@@ -12066,11 +12071,11 @@ function aiCreateReorder(input) {
     id: uid(), itemId: item.id, supplier: supplier,
     supplierAddress: '', supplierTin: '',
     qty: qty, cost: cost, orderDate: now.slice(0,10), deliveryDate: '',
-    status: 'needed', notes: 'Created via AI Assistant', createdAt: now, updatedAt: now,
+    status: 'needed', notes: 'Created via Shelfie', createdAt: now, updatedAt: now,
   };
   rememberSupplier(supplier, '', '');
   db.reorders.push(r);
-  logAudit('Reorder created (AI Assistant)', supplier + ' — ' + item.name + ' x' + qty);
+  logAudit('Reorder created (Shelfie)', supplier + ' — ' + item.name + ' x' + qty);
   save();
   renderReorder();
   updateSummary();
@@ -12141,7 +12146,7 @@ async function aiGeneratePO(input) {
       id: uid(), itemId: c.itemId, supplier: supplier,
       supplierAddress: supplierAddress, supplierTin: supplierTin,
       qty: c.qty, cost: c.cost, orderDate: now.slice(0,10), deliveryDate: delivery,
-      status: 'ordered', notes: 'Created via AI Assistant', createdAt: now, updatedAt: now,
+      status: 'ordered', notes: 'Created via Shelfie', createdAt: now, updatedAt: now,
       orderedAt: now, poNumber: poNumber,
     };
   });
@@ -12161,11 +12166,11 @@ async function aiGeneratePO(input) {
     subtotal: subtotal, total: totalPayable,
     reorderIds: newReorders.map(function(r) { return r.id; }),
     customItems: customCart.map(function(c) { return { description: c.name, unit: c.unit, qty: c.qty, cost: c.cost }; }),
-    createdBy: (currentUser && currentUser.username) ? currentUser.username + ' (AI Assistant)' : 'AI Assistant',
+    createdBy: (currentUser && currentUser.username) ? currentUser.username + ' (Shelfie)' : 'Shelfie',
     createdAt: now,
   };
   db.purchaseOrders.push(poRecord);
-  logAudit('Purchase Order generated (AI Assistant)', poNumber + ' — ' + supplier + ' (' + cart.length + ' item' + (cart.length === 1 ? '' : 's') + ')');
+  logAudit('Purchase Order generated (Shelfie)', poNumber + ' — ' + supplier + ' (' + cart.length + ' item' + (cart.length === 1 ? '' : 's') + ')');
   save();
   renderReorder();
   updateSummary();
@@ -12224,7 +12229,7 @@ async function aiApplyLogEntry(input) {
     id: uid(), itemId: item.id, type: type,
     qty: type === 'adjust' ? newQty - originalQty : qty,
     absQty: newQty,
-    by: (currentUser && currentUser.username) ? currentUser.username + ' (AI Assistant)' : 'AI Assistant',
+    by: (currentUser && currentUser.username) ? currentUser.username + ' (Shelfie)' : 'Shelfie',
     date: logDate, ref: '', notes: (input.notes || '').trim(),
   };
   if (type === 'adjust') { logEntry.variance = newQty - originalQty; logEntry.varianceReason = (input.notes || '').trim(); }
@@ -12251,7 +12256,7 @@ async function aiApplyLogEntry(input) {
     });
   }
 
-  logAudit('Usage logged (AI Assistant)', type + ' — ' + item.name + ' x' + qty);
+  logAudit('Usage logged (Shelfie)', type + ' — ' + item.name + ' x' + qty);
   updateSummary();
   if (sb) {
     try { await sbUpdateItem(item, { "maxRef": item.maxRef }); await sbInsertLogs([logEntry]); }
