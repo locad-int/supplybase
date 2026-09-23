@@ -1171,7 +1171,7 @@
     <button class="sb-iconbtn" title="New chat" onclick="resetAiChat()">↺</button>
     <button class="sb-iconbtn" title="Close" onclick="toggleAiPanel()">✕</button>
   </div>
-  <div id="ai-chat-messages" style="flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:10px"></div>
+  <div id="ai-chat-messages" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:16px 14px;display:flex;flex-direction:column;gap:10px"></div>
   <div id="ai-chat-inputrow" style="flex-shrink:0;border-top:1px solid var(--border);padding:10px 12px 12px;background:var(--surface)">
     <div class="sb-inputwrap">
       <textarea id="ai-chat-input" rows="1" placeholder="Ask Shelfie or tell it what to do…" oninput="aiUpdateSendState()" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiChat();}"></textarea>
@@ -11739,6 +11739,32 @@ var aiChatHistory = [];
 var aiDisplayLog = [];
 var aiPendingAction = null; // { id, name, input } — a tool_use awaiting Confirm/Cancel
 var aiBusy = false;
+
+// How many of the person's own messages worth of history to still send on
+// each turn. Full aiChatHistory is kept in memory (so nothing is lost if
+// this cap ever needs to change), but only the trimmed tail is actually
+// sent to the Edge Function — a long-running chat would otherwise resend a
+// bigger and bigger transcript on every single turn, slowing every reply
+// down as the conversation goes on for no real benefit (Shelfie rarely
+// needs to remember more than the last dozen or so exchanges).
+var AI_MAX_HISTORY_TURNS = 14;
+
+// Trims to the last AI_MAX_HISTORY_TURNS *real* user messages (role:'user'
+// with a plain string content — i.e. something the person actually typed,
+// not a tool_result we're posing as role:'user' to answer a function
+// call). Cutting anywhere else would risk starting the sent history in the
+// middle of a tool_use/tool_result pair, which Gemini's function-calling
+// API rejects — a tool_result with no matching call right before it.
+function aiTrimmedHistoryForSend() {
+  var turnStarts = [];
+  for (var i = 0; i < aiChatHistory.length; i++) {
+    var m = aiChatHistory[i];
+    if (m.role === 'user' && typeof m.content === 'string') turnStarts.push(i);
+  }
+  if (turnStarts.length <= AI_MAX_HISTORY_TURNS) return aiChatHistory;
+  var startIdx = turnStarts[turnStarts.length - AI_MAX_HISTORY_TURNS];
+  return aiChatHistory.slice(startIdx);
+}
 var aiPanelOpen = false; // Shelfie is a floating corner widget, not a tab
 // Tools that never write anything (a chat answer or a local file download),
 // so they run the instant they're seen instead of going through the
@@ -12134,7 +12160,7 @@ async function aiCallAssistant() {
         'Authorization': 'Bearer ' + HARDCODED_SUPABASE_KEY,
         'apikey': HARDCODED_SUPABASE_KEY
       },
-      body: JSON.stringify({ messages: aiChatHistory, context: { items: aiBuildContextItems(), suppliers: aiBuildContextSuppliers(), openReorders: aiBuildContextReorders(), pendingRequests: aiBuildContextPendingRequests(), today: new Date().toISOString().slice(0, 10), poSignatories: poSignatories } })
+      body: JSON.stringify({ messages: aiTrimmedHistoryForSend(), context: { items: aiBuildContextItems(), suppliers: aiBuildContextSuppliers(), openReorders: aiBuildContextReorders(), pendingRequests: aiBuildContextPendingRequests(), today: new Date().toISOString().slice(0, 10), poSignatories: poSignatories } })
     });
 
     if (!res.ok || !res.body) {
