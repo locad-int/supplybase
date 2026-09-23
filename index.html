@@ -583,6 +583,38 @@
 
   }
 </style>
+<style>
+  /* ─── SHELFIE CHAT (refresh) ─────────────────────────────────────────────── */
+  @keyframes sbBob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
+  @keyframes sbBlink { 0%,93%,100% { transform: scaleY(1) } 96% { transform: scaleY(.1) } }
+  @keyframes sbDot { 0%,80%,100% { opacity: .25; transform: translateY(0) } 40% { opacity: 1; transform: translateY(-3px) } }
+  .sb-mascot { display:block; overflow:visible; }
+  .sb-mascot.bob { animation: sbBob 1.4s ease-in-out infinite; }
+  .sb-mascot .eyes { transform-origin: 32px 31.5px; }
+  .sb-mascot.blink .eyes { animation: sbBlink 4.5s infinite; }
+  .sb-dots { display:inline-flex; gap:3px; }
+  .sb-dots span { width:6px; height:6px; border-radius:3px; background:var(--accent); animation: sbDot 1.1s infinite ease-in-out; }
+  .sb-dots span:nth-child(2) { animation-delay:.15s; } .sb-dots span:nth-child(3) { animation-delay:.3s; }
+  .sb-avatar { width:28px; height:28px; flex-shrink:0; border-radius:50%; background:var(--accent-dim); display:flex; align-items:center; justify-content:center; }
+  .sb-iconbtn { width:34px; height:34px; border-radius:50%; border:none; background:transparent; color:var(--muted); font-size:15px; display:flex; align-items:center; justify-content:center; }
+  .sb-iconbtn:hover { background:var(--surface-alt); color:var(--text); }
+  .sb-suggest { min-height:44px; display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; border:1px solid var(--border); background:var(--surface); font-family:inherit; font-size:13px; color:var(--text); text-align:left; width:100%; }
+  .sb-suggest:hover { border-color:var(--accent); background:#f0fdf4; }
+  .sb-inputwrap { display:flex; align-items:flex-end; gap:8px; border:1px solid var(--border); border-radius:22px; padding:4px 4px 4px 14px; background:var(--surface2); }
+  .sb-inputwrap:focus-within { border-color:var(--accent); }
+  #ai-chat-input { flex:1; resize:none; border:none; outline:none; background:transparent; font-family:inherit; font-size:14px; line-height:20px; padding:8px 0; color:var(--text); min-height:36px; max-height:120px; }
+  #ai-chat-send { width:36px; height:36px; border-radius:50%; border:none; background:var(--accent); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  #ai-chat-send:disabled { background:#cbd5e1; cursor:default; }
+  .sb-confirm { flex:1; min-height:40px; border:none; border-radius:10px; background:var(--accent); color:#fff; font-family:inherit; font-size:13px; font-weight:600; }
+  .sb-confirm:hover { background:var(--accent2); }
+  .sb-cancel { min-height:40px; padding:0 16px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); font-family:inherit; font-size:13px; font-weight:500; }
+  .sb-cancel:hover { background:var(--surface2); }
+  @media (max-width: 768px) {
+    #ai-fab { bottom: calc(70px + env(safe-area-inset-bottom, 0px)) !important; right: 14px !important; }
+    #ai-float-panel { left: 10px !important; right: 10px !important; width: auto !important; max-width: none !important;
+      top: calc(env(safe-area-inset-top, 0px) + 10px) !important; bottom: calc(136px + env(safe-area-inset-bottom, 0px)) !important; height: auto !important; }
+  }
+</style>
 </head>
 <body>
 
@@ -1126,21 +1158,25 @@
      covered while logged out; applyTabVisibility() also hides it per-role. -->
 <button id="ai-fab" onclick="toggleAiPanel()" title="Shelfie" style="display:none;position:fixed;right:22px;bottom:22px;z-index:400;width:56px;height:56px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:24px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25);align-items:center;justify-content:center"><svg viewBox="0 0 64 52" width="30" height="24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polygon points="6,10 58,10 50,3 14,3" fill="#e0a35f"/><rect x="6" y="10" width="52" height="6" fill="#cf8f4a"/><rect x="6" y="16" width="52" height="32" rx="3" fill="#cf8f4a"/><rect x="16" y="23" width="32" height="19" rx="6" fill="#20456a"/><circle cx="25" cy="31.5" r="3.2" fill="#bfe0f0"/><circle cx="39" cy="31.5" r="3.2" fill="#bfe0f0"/><path d="M24 37 Q32 41.5 40 37" stroke="#bfe0f0" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg></button>
 
-<div id="ai-float-panel" style="display:none;flex-direction:column;position:fixed;right:22px;bottom:90px;z-index:400;width:360px;max-width:calc(100vw - 32px);height:min(560px, calc(100vh - 130px));border:1px solid var(--border);border-radius:14px;background:var(--surface2);box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden">
-  <div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);background:var(--surface)">
-    <div>
-      <div style="font-size:14px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px"><svg viewBox="0 0 64 52" width="20" height="16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polygon points="6,10 58,10 50,3 14,3" fill="#e0a35f"/><rect x="6" y="10" width="52" height="6" fill="#cf8f4a"/><rect x="6" y="16" width="52" height="32" rx="3" fill="#cf8f4a"/><rect x="16" y="23" width="32" height="19" rx="6" fill="#20456a"/><circle cx="25" cy="31.5" r="3.2" fill="#bfe0f0"/><circle cx="39" cy="31.5" r="3.2" fill="#bfe0f0"/><path d="M24 37 Q32 41.5 40 37" stroke="#bfe0f0" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>Shelfie</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:1px">Always confirms before saving anything</div>
+<div id="ai-float-panel" style="display:none;flex-direction:column;position:fixed;right:22px;bottom:90px;z-index:400;width:380px;max-width:calc(100vw - 32px);height:min(620px, calc(100vh - 130px));border:1px solid var(--border);border-radius:18px;background:var(--surface2);box-shadow:0 24px 60px rgba(15,23,42,.22), 0 4px 12px rgba(15,23,42,.08);overflow:hidden">
+  <div style="flex-shrink:0;display:flex;align-items:center;gap:10px;padding:12px 12px 12px 14px;border-bottom:1px solid var(--border);background:var(--surface)">
+    <div style="position:relative;width:38px;height:38px;border-radius:50%;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+      <span id="ai-head-mascot"></span>
+      <span style="position:absolute;right:0;bottom:1px;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--surface)"></span>
     </div>
-    <div style="display:flex;gap:6px">
-      <button class="btn btn-icon btn-sm" title="New chat" onclick="resetAiChat()">↺</button>
-      <button class="btn btn-icon btn-sm" title="Close" onclick="toggleAiPanel()">✕</button>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.01em">Shelfie</div>
+      <div style="font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Your supplies sidekick · asks before saving</div>
     </div>
+    <button class="sb-iconbtn" title="New chat" onclick="resetAiChat()">↺</button>
+    <button class="sb-iconbtn" title="Close" onclick="toggleAiPanel()">✕</button>
   </div>
-  <div id="ai-chat-messages" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px"></div>
-  <div id="ai-chat-inputrow" style="flex-shrink:0;border-top:1px solid var(--border);padding:10px;display:flex;gap:8px;background:var(--surface)">
-    <textarea id="ai-chat-input" rows="1" placeholder="Ask a question, or tell it what to do…" style="flex:1;resize:none;font-family:inherit;font-size:13px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg,transparent)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiChat();}"></textarea>
-    <button id="ai-chat-send" class="btn btn-primary" onclick="sendAiChat()">Send</button>
+  <div id="ai-chat-messages" style="flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:10px"></div>
+  <div id="ai-chat-inputrow" style="flex-shrink:0;border-top:1px solid var(--border);padding:10px 12px 12px;background:var(--surface)">
+    <div class="sb-inputwrap">
+      <textarea id="ai-chat-input" rows="1" placeholder="Ask Shelfie or tell it what to do…" oninput="aiUpdateSendState()" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiChat();}"></textarea>
+      <button id="ai-chat-send" title="Send" onclick="sendAiChat()" disabled><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M10 16V4M4.5 9.5 10 4l5.5 5.5" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
   </div>
 </div>
 
@@ -11803,15 +11839,50 @@ function aiScrollToBottom() {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-function aiBubbleHtml(role, text) {
-  var isUser = role === 'user';
-  return '<div style="align-self:' + (isUser ? 'flex-end' : 'flex-start') + ';max-width:80%;background:' + (isUser ? 'var(--accent)' : 'var(--surface)') + ';color:' + (isUser ? '#fff' : 'var(--text)') + ';border:1px solid ' + (isUser ? 'transparent' : 'var(--border)') + ';border-radius:12px;padding:9px 13px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word">' + esc(text) + '</div>';
+// Shelfie mascot (the box-face icon) at any size. opts: {blink, bob}
+function aiMascotSvg(w, opts) {
+  opts = opts || {};
+  var h = Math.round(w * 52 / 64 * 10) / 10;
+  var cls = 'sb-mascot' + (opts.blink === false ? '' : ' blink') + (opts.bob ? ' bob' : '');
+  return '<svg class="' + cls + '" viewBox="0 0 64 52" width="' + w + '" height="' + h + '" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+    + '<polygon points="6,10 58,10 50,3 14,3" fill="#e0a35f"/><rect x="6" y="10" width="52" height="6" fill="#cf8f4a"/>'
+    + '<rect x="6" y="16" width="52" height="32" rx="3" fill="#cf8f4a"/><rect x="16" y="23" width="32" height="19" rx="6" fill="#20456a"/>'
+    + '<g class="eyes"><circle cx="25" cy="31.5" r="3.2" fill="#bfe0f0"/><circle cx="39" cy="31.5" r="3.2" fill="#bfe0f0"/></g>'
+    + '<path d="M24 37 Q32 41.5 40 37" stroke="#bfe0f0" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>';
+}
+
+function aiBubbleHtml(role, text, showAvatar) {
+  if (role === 'user') {
+    return '<div style="align-self:flex-end;max-width:82%;background:var(--accent);color:#fff;border-radius:16px 16px 4px 16px;padding:9px 13px;font-size:13.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word">' + esc(text) + '</div>';
+  }
+  return '<div style="display:flex;gap:8px;align-items:flex-end;max-width:90%">'
+    + '<div class="sb-avatar" style="' + (showAvatar === false ? 'visibility:hidden' : '') + '">' + aiMascotSvg(18) + '</div>'
+    + '<div style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:16px 16px 16px 4px;padding:9px 13px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word">' + esc(text) + '</div></div>';
+}
+
+// Small status pill for a settled action (done/failed/cancelled) — replaces
+// the plain italic "system" line from before the refresh.
+function aiPillHtml(text, bg, color) {
+  return '<div style="margin-left:36px;align-self:flex-start;max-width:calc(100% - 36px);background:' + bg + ';color:' + color + ';border-radius:14px;padding:6px 12px;font-size:12px;font-weight:600;line-height:1.4">' + esc(text) + '</div>';
+}
+
+// Two-column label/value grid used inside every action-confirm card. A
+// missing required value (undefined/null/'') is called out in red instead
+// of silently rendering blank.
+function aiFieldGridHtml(pairs) {
+  return '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px">' + pairs.map(function(p) {
+    var missing = p[1] === undefined || p[1] === null || p[1] === '';
+    return '<div style="display:flex;flex-direction:column;gap:1px;min-width:0">'
+      + '<span style="font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">' + esc(p[0]) + '</span>'
+      + '<span style="font-size:13px;line-height:1.35;word-break:break-word;' + (missing ? 'color:var(--danger);font-style:italic' : 'color:var(--text)') + '">' + esc(missing ? 'Missing' : String(p[1])) + '</span></div>';
+  }).join('') + '</div>';
 }
 
 // Detailed itemized preview for a proposed generate_po action — every field
 // that will land on the PDF, shown before the person clicks Confirm.
 function aiPoPreviewHtml(input) {
-  var rows = (input.items || []).map(function(it) {
+  var items = input.items || [];
+  var rows = items.map(function(it) {
     var name, unit;
     if (it.item_id) {
       var found = db.items.find(function(i){ return i.id === it.item_id; });
@@ -11822,125 +11893,183 @@ function aiPoPreviewHtml(input) {
       unit = it.unit || '';
     }
     var qty = it.qty || 0, cost = it.cost || 0;
-    return '<tr><td style="padding:3px 8px 3px 0">' + esc(name) + '</td>'
-      + '<td style="padding:3px 8px;text-align:right;white-space:nowrap">' + esc(String(qty)) + ' ' + esc(unit) + '</td>'
-      + '<td style="padding:3px 0 3px 8px;text-align:right;white-space:nowrap">' + fmtPHP(cost) + '</td>'
-      + '<td style="padding:3px 0 3px 8px;text-align:right;white-space:nowrap">' + fmtPHP(qty * cost) + '</td></tr>';
+    return '<div style="display:flex;gap:10px;align-items:baseline">'
+      + '<div style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px;font-weight:600">' + esc(name) + '</span>'
+      + '<span style="font-size:11.5px;color:var(--muted)">' + esc(String(qty)) + ' ' + esc(unit) + ' × ' + fmtPHP(cost) + '</span></div>'
+      + '<span style="font-size:13px;font-weight:600;white-space:nowrap">' + fmtPHP(qty * cost) + '</span></div>';
   }).join('');
-  var subtotal = (input.items || []).reduce(function(s, it) { return s + (it.qty || 0) * (it.cost || 0); }, 0);
+  var subtotal = items.reduce(function(s, it) { return s + (it.qty || 0) * (it.cost || 0); }, 0);
   var shipCost = input.ship_cost || 0, other = input.other || 0, discount = input.discount || 0;
   var total = subtotal + shipCost + other - discount;
-  var extras = [];
+  var extras = ['Subtotal ' + fmtPHP(subtotal)];
   if (shipCost) extras.push('Shipping ' + fmtPHP(shipCost));
   if (other) extras.push('Other ' + fmtPHP(other));
   if (discount) extras.push('Discount -' + fmtPHP(discount));
 
-  // Every required field, shown plainly so it can be checked before Confirm —
-  // not just the item table.
-  var fieldRows = [
-    ['Supplier', input.supplier],
-    ['Address', input.supplier_address],
-    ['TIN', input.supplier_tin],
-    ['Shipping method', input.ship_method],
-    ['Shipping terms', input.ship_terms],
-    ['Delivery', input.delivery],
-    ['Checked by', input.checked_by],
-    ['Approved by', input.approved_by],
-  ].map(function(pair) {
-    var missing = !pair[1];
-    return '<div style="display:flex;gap:6px"><span style="color:var(--muted);min-width:110px;flex-shrink:0">' + esc(pair[0]) + '</span>'
-      + '<span style="' + (missing ? 'color:var(--danger);font-style:italic' : '') + '">' + esc(missing ? 'missing' : pair[1]) + '</span></div>';
-  }).join('');
-
-  return 'Generate a Purchase Order:'
-    + '<div style="display:flex;flex-direction:column;gap:2px;font-size:12px;margin:8px 0">' + fieldRows + '</div>'
-    + '<table style="width:100%;font-size:12px;border-collapse:collapse;margin:8px 0">'
-    + '<thead><tr style="color:var(--muted);text-align:right"><td style="text-align:left">Item</td><td>Qty</td><td>Unit cost</td><td>Total</td></tr></thead>'
-    + '<tbody>' + rows + '</tbody></table>'
-    + '<div style="font-size:12px;color:var(--muted)">Subtotal ' + fmtPHP(subtotal) + (extras.length ? ' · ' + extras.join(' · ') : '') + '</div>'
-    + '<div style="font-weight:700;margin-top:4px">Total PO Amount (VAT-inc): ' + fmtPHP(total) + '</div>';
+  return {
+    title: 'Purchase Order · ' + (input.supplier || 'No supplier'),
+    body: aiFieldGridHtml([
+      ['Address', input.supplier_address], ['TIN', input.supplier_tin],
+      ['Delivery', input.delivery], ['Shipping', input.ship_method],
+      ['Shipping terms', input.ship_terms], ['Checked by', input.checked_by],
+      ['Approved by', input.approved_by]
+    ])
+    + '<div style="border-top:1px dashed var(--border);padding-top:10px;display:flex;flex-direction:column;gap:8px">' + rows
+    + '<div style="font-size:11.5px;color:var(--muted)">' + extras.join(' · ') + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--border);padding-top:10px">'
+    + '<span style="font-size:12px;color:var(--muted)">Total (VAT-inc)</span>'
+    + '<span style="font-size:18px;font-weight:700;letter-spacing:-.01em">' + fmtPHP(total) + '</span></div></div>',
+    confirm: 'Generate PO'
+  };
 }
 
 function aiActionCardHtml(action) {
-  var item = action.input && action.input.item_id ? db.items.find(function(i){ return i.id === action.input.item_id; }) : null;
-  var desc;
+  var input = action.input || {};
+  var item = input.item_id ? db.items.find(function(i){ return i.id === input.item_id; }) : null;
+  var itemName = item ? item.name : (input.item_id || 'Unknown item');
+  var unit = item ? (item.unit || '') : '';
+  var card;
   if (action.name === 'create_reorder') {
-    desc = 'Create a reorder for <strong>' + esc(item ? item.name : (action.input.item_id||'unknown item')) + '</strong> — qty ' + esc(String(action.input.qty))
-      + (action.input.supplier ? ', from <strong>' + esc(action.input.supplier) + '</strong>' : '')
-      + (action.input.cost ? ' at ' + fmtPHP(action.input.cost) + '/unit' : '') + '.';
+    card = { title: 'New reorder', confirm: 'Create reorder', body: aiFieldGridHtml([
+      ['Item', itemName], ['Qty', input.qty ? fmtInt(input.qty) + ' ' + unit : ''],
+      ['Supplier', input.supplier], ['Cost', input.cost ? fmtPHP(input.cost) + (unit ? ' / ' + unit : '') : '—']
+    ]) };
   } else if (action.name === 'generate_po') {
-    desc = aiPoPreviewHtml(action.input);
+    card = aiPoPreviewHtml(input);
   } else if (action.name === 'mark_reorder_received') {
-    var reorder = db.reorders.find(function(r){ return r.id === action.input.reorder_id; });
+    var reorder = db.reorders.find(function(r){ return r.id === input.reorder_id; });
     var ritem = reorder ? db.items.find(function(i){ return i.id === reorder.itemId; }) : null;
     var recvBefore = reorder ? _reorderReceivedSoFar(reorder) : 0;
     var recvRemaining = reorder ? Math.max(0, (reorder.qty || 0) - recvBefore) : null;
-    var hasQty = action.input.qty !== undefined && action.input.qty !== null && action.input.qty !== '';
-    var recvQty = hasQty ? action.input.qty : recvRemaining;
-    desc = 'Mark <strong>' + esc(recvQty !== null && recvQty !== undefined ? String(recvQty) : '(remaining)') + '</strong> ' + esc(ritem ? (ritem.unit || '') : '')
-      + ' of <strong>' + esc(ritem ? ritem.name : (reorder ? reorder.itemId : (action.input.reorder_id || 'unknown reorder'))) + '</strong> as received'
-      + (reorder && reorder.supplier ? ' from <strong>' + esc(reorder.supplier) + '</strong>' : '')
-      + (action.input.cost ? ' at ' + fmtPHP(action.input.cost) + '/unit' : '') + '.'
-      + (reorder ? '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + fmtInt(recvBefore) + ' of ' + fmtInt(reorder.qty) + ' already received.</div>' : '<div style="font-size:11px;color:var(--danger);margin-top:4px">Reorder not found — it may already be received.</div>');
+    var hasQty = input.qty !== undefined && input.qty !== null && input.qty !== '';
+    var recvQty = hasQty ? input.qty : recvRemaining;
+    var rItemName = ritem ? ritem.name : (reorder ? reorder.itemId : (input.reorder_id || 'Unknown reorder'));
+    var rUnit = ritem ? (ritem.unit || '') : '';
+    var body = aiFieldGridHtml([
+      ['Item', rItemName], ['Receiving', (recvQty !== null && recvQty !== undefined) ? fmtInt(recvQty) + ' ' + rUnit : ''],
+      ['Supplier', reorder ? reorder.supplier : ''], ['Cost', input.cost ? fmtPHP(input.cost) + (rUnit ? ' / ' + rUnit : '') : '—']
+    ]) + '<div style="font-size:11.5px;color:' + (reorder ? 'var(--muted)' : 'var(--danger)') + '">'
+      + (reorder ? fmtInt(recvBefore) + ' of ' + fmtInt(reorder.qty) + ' already received' : 'Reorder not found — it may already be received') + '</div>';
+    card = { title: 'Mark received', confirm: 'Mark received', body: body };
   } else if (action.name === 'create_supply_request') {
-    desc = 'Submit a supply request for <strong>' + esc(item ? item.name : (action.input.item_id || 'unknown item')) + '</strong> — qty ' + esc(String(action.input.qty))
-      + (action.input.priority && action.input.priority !== 'normal' ? ', <strong>' + esc(action.input.priority) + '</strong> priority' : '')
-      + (action.input.notes ? ' — "' + esc(action.input.notes) + '"' : '') + '.';
+    var srPairs = [['Item', itemName], ['Qty', input.qty ? fmtInt(input.qty) + ' ' + unit : '']];
+    if (input.priority && input.priority !== 'normal') srPairs.push(['Priority', input.priority]);
+    if (input.notes) srPairs.push(['Notes', input.notes]);
+    card = { title: 'New supply request', confirm: 'Submit request', body: aiFieldGridHtml(srPairs) };
   } else if (action.name === 'approve_supply_request' || action.name === 'reject_supply_request') {
-    var req = (typeof db_reqs !== 'undefined' ? db_reqs : []).find(function(r){ return r.id === action.input.request_id; });
-    var reqItem = req ? db.items.find(function(i){ return i.id === req.itemId; }) : null;
+    var req = (typeof db_reqs !== 'undefined' ? db_reqs : []).find(function(r){ return r.id === input.request_id; });
     var isApprove = action.name === 'approve_supply_request';
     if (!req) {
-      desc = (isApprove ? 'Approve' : 'Reject') + ' request <strong>' + esc(action.input.request_id || 'unknown') + '</strong>.'
-        + '<div style="font-size:11px;color:var(--danger);margin-top:4px">Request not found — it may already be handled.</div>';
+      card = { title: (isApprove ? 'Approve' : 'Reject') + ' request', confirm: isApprove ? 'Approve' : 'Reject',
+        body: aiFieldGridHtml([['Request', input.request_id]]) + '<div style="font-size:11.5px;color:var(--danger)">Request not found — it may already be handled.</div>' };
     } else {
-      var hasIssueQty = action.input.issue_qty !== undefined && action.input.issue_qty !== null && action.input.issue_qty !== '';
-      var issueQtyShown = hasIssueQty ? action.input.issue_qty : req.qty;
-      var stockNote = reqItem ? ('<div style="font-size:11px;color:var(--muted);margin-top:4px">Current stock: ' + fmtInt(reqItem.qty) + ' ' + esc(reqItem.unit || '') + (reqItem.qty < req.qty ? ' <span style="color:var(--warn);font-weight:600">(less than requested)</span>' : '') + '</div>') : '';
-      desc = (isApprove
-        ? 'Approve <strong>' + esc(req.reqNumber || req.itemName) + '</strong> — issue <strong>' + esc(String(issueQtyShown)) + '</strong> ' + esc(req.unit || '') + ' of <strong>' + esc(req.itemName) + '</strong> to <strong>' + esc(req.requestedBy) + '</strong>' + (hasIssueQty && Number(issueQtyShown) < req.qty ? ' (partial — ' + esc(String(req.qty)) + ' requested)' : '') + '.'
-        : 'Reject <strong>' + esc(req.reqNumber || req.itemName) + '</strong> — ' + esc(req.itemName) + ' x' + esc(String(req.qty)) + ' requested by <strong>' + esc(req.requestedBy) + '</strong>.')
-        + stockNote;
+      var reqItem = db.items.find(function(i){ return i.id === req.itemId; });
+      var hasIssueQty = input.issue_qty !== undefined && input.issue_qty !== null && input.issue_qty !== '';
+      var issueQtyShown = hasIssueQty ? input.issue_qty : req.qty;
+      var pairs2 = [['Request', req.reqNumber || req.itemName], ['Item', req.itemName], ['Requested by', req.requestedBy]];
+      if (isApprove) pairs2.push(['Issuing', fmtInt(issueQtyShown) + ' ' + (req.unit || '') + (hasIssueQty && Number(issueQtyShown) < req.qty ? ' (of ' + fmtInt(req.qty) + ' requested)' : '')]);
+      else pairs2.push(['Qty requested', fmtInt(req.qty) + ' ' + (req.unit || '')]);
+      var body2 = aiFieldGridHtml(pairs2);
+      if (reqItem) {
+        var short = reqItem.qty < req.qty;
+        body2 += '<div style="font-size:11.5px;color:' + (short ? 'var(--danger)' : 'var(--muted)') + '">Current stock: ' + fmtInt(reqItem.qty) + ' ' + esc(reqItem.unit || '') + (short ? ' — less than requested' : '') + '</div>';
+      }
+      card = { title: isApprove ? 'Approve request' : 'Reject request', confirm: isApprove ? 'Approve' : 'Reject', body: body2 };
     }
   } else {
-    desc = 'Log <strong>' + esc(action.input.type) + '</strong> of <strong>' + esc(String(action.input.qty)) + '</strong> for <strong>' + esc(item ? item.name : (action.input.item_id||'unknown item')) + '</strong>'
-      + (action.input.notes ? ' — "' + esc(action.input.notes) + '"' : '') + '.';
+    var typeLabel = { use: 'Use', restock: 'Restock', adjust: 'Manual adjust', damage: 'Damage / Loss' }[input.type] || input.type;
+    var pairs = [['Item', itemName], ['Qty', input.qty ? fmtInt(input.qty) + ' ' + unit : ''], ['Type', typeLabel]];
+    if (input.notes) pairs.push(['Notes', input.notes]);
+    card = { title: 'Log ' + (typeLabel || 'entry').toLowerCase(), confirm: 'Log it', body: aiFieldGridHtml(pairs) };
   }
-  return '<div style="align-self:flex-start;max-width:85%;background:var(--surface);border:1px solid var(--accent);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--text)">'
-    + '<div style="font-weight:700;margin-bottom:6px">📦 Shelfie wants to:</div>'
-    + '<div style="margin-bottom:10px">' + desc + '</div>'
+  return '<div style="margin-left:36px;background:var(--surface);border:1.5px solid var(--accent);border-radius:16px;overflow:hidden;box-shadow:0 6px 18px rgba(22,163,74,.12);color:var(--text)">'
+    + '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--accent-dim)">' + aiMascotSvg(16, { blink: false })
+    + '<span style="flex:1;font-size:12px;font-weight:700;color:var(--accent2)">Needs your OK</span>'
+    + '<span style="font-size:11px;color:var(--accent2)">Nothing saved yet</span></div>'
+    + '<div style="padding:12px;display:flex;flex-direction:column;gap:12px">'
+    + '<div style="font-size:15px;font-weight:700;letter-spacing:-.01em">' + esc(card.title) + '</div>'
+    + card.body
     + '<div style="display:flex;gap:8px">'
-    + '<button class="btn btn-primary" style="font-size:12px;padding:5px 14px" onclick="aiConfirmAction()">✓ Confirm</button>'
-    + '<button class="btn btn-secondary" style="font-size:12px;padding:5px 14px" onclick="aiCancelAction()">✕ Cancel</button>'
-    + '</div></div>';
+    + '<button class="sb-confirm" onclick="aiConfirmAction()">✓ ' + esc(card.confirm) + '</button>'
+    + '<button class="sb-cancel" onclick="aiCancelAction()">Cancel</button>'
+    + '</div></div></div>';
+}
+
+var AI_SUGGESTIONS = [
+  ['📦', 'How much Bubble Wrap 20" do we have?'],
+  ['🔄', 'Create a reorder for 500 units of packing tape'],
+  ['📝', 'Log 20 units of poly mailers as damaged'],
+  ['💰', 'Cost report for this month']
+];
+
+function aiSuggest(i) {
+  var input = document.getElementById('ai-chat-input');
+  if (!input || !AI_SUGGESTIONS[i]) return;
+  input.value = AI_SUGGESTIONS[i][1];
+  sendAiChat();
+}
+
+function aiUpdateSendState() {
+  var input = document.getElementById('ai-chat-input');
+  var sendBtn = document.getElementById('ai-chat-send');
+  if (!input || !sendBtn) return;
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  sendBtn.disabled = aiBusy || !!aiPendingAction || !input.value.trim();
+}
+
+function aiEmptyStateHtml() {
+  var name = (currentUser && currentUser.username) ? currentUser.username : '';
+  var out = '<div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:18px;padding:8px 4px">'
+    + '<div style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px">'
+    + '<div style="width:104px;height:104px;border-radius:50%;background:var(--accent-dim);box-shadow:0 0 0 8px rgba(22,163,74,.07);display:flex;align-items:center;justify-content:center">' + aiMascotSvg(64, { bob: true }) + '</div>'
+    + '<div style="font-size:20px;font-weight:700;letter-spacing:-.02em;margin-top:6px;color:var(--text)">Hi' + (name ? ' ' + esc(name) : '') + ', I\'m Shelfie.</div>'
+    + '<div style="font-size:13px;line-height:1.5;color:var(--muted);max-width:280px">I keep tabs on your shelves. Ask me anything or tell me what to do, and I\'ll check with you before saving.</div>'
+    + '</div><div style="display:flex;flex-direction:column;gap:6px">'
+    + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-left:2px">Try asking</div>';
+  AI_SUGGESTIONS.forEach(function(s, i) {
+    out += '<button class="sb-suggest" onclick="aiSuggest(' + i + ')">'
+      + '<span style="width:26px;height:26px;border-radius:8px;background:var(--surface-alt);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">' + s[0] + '</span>'
+      + '<span style="flex:1">' + esc(s[1]) + '</span><span style="color:var(--accent);font-weight:700">→</span></button>';
+  });
+  return out + '</div></div>';
 }
 
 function renderAiChat() {
   var el = document.getElementById('ai-chat-messages');
   if (!el) return;
+  var head = document.getElementById('ai-head-mascot');
+  if (head && !head.innerHTML) head.innerHTML = aiMascotSvg(24);
   var out = '';
-  if (!aiDisplayLog.length) {
-    out += '<div class="dash-empty">Ask me things like &quot;how much Bubble Wrap 20&quot; do we have?&quot;, &quot;create a reorder for 500 units of X from Supplier Y&quot;, &quot;log 20 units of X as damaged&quot;, or &quot;generate a cost report for Sept 1–10&quot;.</div>';
-  }
-  aiDisplayLog.forEach(function(entry) {
+  if (!aiDisplayLog.length && !aiBusy) out += aiEmptyStateHtml();
+  aiDisplayLog.forEach(function(entry, idx) {
+    var prev = aiDisplayLog[idx - 1];
     if (entry.kind === 'user') out += aiBubbleHtml('user', entry.text);
-    else if (entry.kind === 'assistant') out += aiBubbleHtml('assistant', entry.text);
-    else if (entry.kind === 'error') out += '<div style="align-self:flex-start;max-width:85%;background:rgba(239,68,68,.08);border:1px solid var(--danger);border-radius:12px;padding:9px 13px;font-size:13px;color:var(--danger)">' + esc(entry.text) + '</div>';
-    else if (entry.kind === 'system') out += '<div style="align-self:center;font-size:11px;color:var(--muted);font-style:italic">' + esc(entry.text) + '</div>';
+    else if (entry.kind === 'assistant') out += aiBubbleHtml('assistant', entry.text, !(prev && prev.kind === 'assistant'));
+    else if (entry.kind === 'done') out += aiPillHtml('✓ ' + entry.text, 'var(--accent-dim)', 'var(--accent2)');
+    else if (entry.kind === 'fail') out += aiPillHtml('✕ ' + entry.text, '#fee2e2', 'var(--danger)');
+    else if (entry.kind === 'cancel') out += aiPillHtml(entry.text, 'var(--surface-alt)', 'var(--muted)');
+    else if (entry.kind === 'error') out += '<div style="display:flex;gap:8px;align-items:flex-end;max-width:90%"><div class="sb-avatar" style="background:#fee2e2">' + aiMascotSvg(18, { blink: false }) + '</div>'
+      + '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:16px 16px 16px 4px;padding:9px 13px;font-size:13px;line-height:1.5;color:var(--danger);word-break:break-word">' + esc(entry.text) + '</div></div>';
   });
   if (aiPendingAction) out += aiActionCardHtml(aiPendingAction);
   // While streaming, the reply-in-progress is already the last entry in
   // aiDisplayLog (growing in place) — don't also show "thinking" under it.
   // Show it only for the gap before the first token of a turn arrives.
   var lastEntry = aiDisplayLog.length ? aiDisplayLog[aiDisplayLog.length - 1] : null;
-  if (aiBusy && !(lastEntry && lastEntry.streaming)) out += '<div style="align-self:flex-start;font-size:12px;color:var(--muted);font-style:italic">📦 Shelfie is thinking…</div>';
+  if (aiBusy && !(lastEntry && lastEntry.streaming)) out += '<div style="display:flex;gap:8px;align-items:flex-end"><div class="sb-avatar">' + aiMascotSvg(18, { bob: true }) + '</div>'
+    + '<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px 16px 16px 4px;padding:10px 13px;display:flex;align-items:center;gap:8px">'
+    + '<span class="sb-dots"><span></span><span></span><span></span></span>'
+    + '<span style="font-size:12px;color:var(--muted)">' + (aiPendingAction ? 'Saving…' : 'Checking the shelves…') + '</span></div></div>';
   el.innerHTML = out;
   aiScrollToBottom();
-  var sendBtn = document.getElementById('ai-chat-send');
   var input = document.getElementById('ai-chat-input');
-  var disabled = aiBusy || !!aiPendingAction;
-  if (sendBtn) sendBtn.disabled = disabled;
-  if (input) input.disabled = disabled;
+  var locked = aiBusy || !!aiPendingAction;
+  if (input) {
+    input.disabled = locked;
+    input.placeholder = aiPendingAction ? 'Confirm or cancel above to keep going' : 'Ask Shelfie or tell it what to do…';
+  }
+  aiUpdateSendState();
 }
 
 async function sendAiChat() {
@@ -11962,6 +12091,7 @@ async function sendAiChat() {
     return;
   }
   input.value = '';
+  input.style.height = 'auto';
   aiChatHistory.push({ role: 'user', content: text });
   aiDisplayLog.push({ kind: 'user', text: text });
   renderAiChat();
@@ -12234,7 +12364,7 @@ async function aiConfirmAction() {
     result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
   }
   aiBusy = false;
-  aiDisplayLog.push({ kind: 'system', text: (result.ok ? '✓ ' : '✕ ') + result.message });
+  aiDisplayLog.push({ kind: result.ok ? 'done' : 'fail', text: result.message });
   aiChatHistory.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: action.id, content: result.message, is_error: !result.ok }] });
   aiPendingAction = null;
   await aiCallAssistant();
@@ -12243,7 +12373,7 @@ async function aiConfirmAction() {
 async function aiCancelAction() {
   if (!aiPendingAction || aiBusy) return;
   var action = aiPendingAction;
-  aiDisplayLog.push({ kind: 'system', text: '✕ Cancelled.' });
+  aiDisplayLog.push({ kind: 'cancel', text: 'Cancelled · nothing was saved' });
   aiChatHistory.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: action.id, content: 'The user cancelled this action. It was not applied.' }] });
   aiPendingAction = null;
   await aiCallAssistant();
