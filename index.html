@@ -1177,6 +1177,7 @@
     <button class="sb-iconbtn" title="Close" onclick="toggleAiPanel()">✕</button>
   </div>
   <div id="ai-chat-messages" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:16px 14px;display:flex;flex-direction:column;gap:10px"></div>
+  <div id="ai-action-bar" style="display:none;flex-shrink:0;gap:8px;padding:10px 12px;border-top:1px solid var(--border);background:var(--surface)"></div>
   <div id="ai-chat-inputrow" style="flex-shrink:0;border-top:1px solid var(--border);padding:10px 12px 12px;background:var(--surface)">
     <div class="sb-inputwrap">
       <textarea id="ai-chat-input" rows="1" placeholder="Ask Shelfie or tell it what to do…" oninput="aiUpdateSendState()" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiChat();}"></textarea>
@@ -11799,11 +11800,14 @@ function aiFitPanelSize() {
 
   var el = document.getElementById('ai-chat-messages');
   var inputRow = document.getElementById('ai-chat-inputrow');
+  var actionBar = document.getElementById('ai-action-bar');
   var header = panel.firstElementChild;
   if (el && inputRow && header) {
+    var actionBarH = (actionBar && actionBar.style.display === 'flex') ? actionBar.getBoundingClientRect().height : 0;
     var avail = panel.getBoundingClientRect().height
       - header.getBoundingClientRect().height
-      - inputRow.getBoundingClientRect().height;
+      - inputRow.getBoundingClientRect().height
+      - actionBarH;
     if (avail > 60) el.style.maxHeight = avail + 'px';
   }
 }
@@ -11987,7 +11991,10 @@ function aiPoPreviewHtml(input) {
   };
 }
 
-function aiActionCardHtml(action) {
+// Builds the {title, confirm, body} description of a pending action once,
+// shared by the scrollable review card (aiActionCardHtml) and the sticky
+// Confirm/Cancel bar (aiActionBarHtml) so they never disagree.
+function aiBuildActionCard(action) {
   var input = action.input || {};
   var item = input.item_id ? db.items.find(function(i){ return i.id === input.item_id; }) : null;
   var itemName = item ? item.name : (input.item_id || 'Unknown item');
@@ -12046,6 +12053,14 @@ function aiActionCardHtml(action) {
     if (input.notes) pairs.push(['Notes', input.notes]);
     card = { title: 'Log ' + (typeLabel || 'entry').toLowerCase(), confirm: 'Log it', body: aiFieldGridHtml(pairs) };
   }
+  return card;
+}
+
+// The scrollable review card — everything about the proposed action EXCEPT
+// the Confirm/Cancel controls. Those live in aiActionBarHtml() instead, in
+// a bar that's always on-screen, so a long card (a multi-item PO, say)
+// never buries the buttons somewhere the person has to go hunting for.
+function aiActionCardHtml(card) {
   return '<div style="margin-left:36px;background:var(--surface);border:1.5px solid var(--accent);border-radius:16px;overflow:hidden;box-shadow:0 6px 18px rgba(22,163,74,.12);color:var(--text)">'
     + '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--accent-dim)">' + aiMascotSvg(16, { blink: false })
     + '<span style="flex:1;font-size:12px;font-weight:700;color:var(--accent2)">Needs your OK</span>'
@@ -12053,10 +12068,16 @@ function aiActionCardHtml(action) {
     + '<div style="padding:12px;display:flex;flex-direction:column;gap:12px">'
     + '<div style="font-size:15px;font-weight:700;letter-spacing:-.01em">' + esc(card.title) + '</div>'
     + card.body
-    + '<div style="display:flex;gap:8px">'
-    + '<button class="sb-confirm" onclick="aiConfirmAction()">✓ ' + esc(card.confirm) + '</button>'
-    + '<button class="sb-cancel" onclick="aiCancelAction()">Cancel</button>'
-    + '</div></div></div>';
+    + '</div></div>';
+}
+
+// The persistent Confirm/Cancel bar shown right above the input box
+// whenever there's a pending action — outside the scrollable message
+// list entirely, so it's reachable with zero scrolling no matter how
+// tall the review card above it gets.
+function aiActionBarHtml(card) {
+  return '<button class="sb-confirm" onclick="aiConfirmAction()">✓ ' + esc(card.confirm) + '</button>'
+    + '<button class="sb-cancel" onclick="aiCancelAction()">Cancel</button>';
 }
 
 var AI_SUGGESTIONS = [
@@ -12117,7 +12138,8 @@ function renderAiChat() {
     else if (entry.kind === 'error') out += '<div style="display:flex;gap:8px;align-items:flex-end;max-width:90%"><div class="sb-avatar" style="background:#fee2e2">' + aiMascotSvg(18, { blink: false }) + '</div>'
       + '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:16px 16px 16px 4px;padding:9px 13px;font-size:13px;line-height:1.5;color:var(--danger);word-break:break-word">' + esc(entry.text) + '</div></div>';
   });
-  if (aiPendingAction) out += aiActionCardHtml(aiPendingAction);
+  var pendingCard = aiPendingAction ? aiBuildActionCard(aiPendingAction) : null;
+  if (pendingCard) out += aiActionCardHtml(pendingCard);
   // While streaming, the reply-in-progress is already the last entry in
   // aiDisplayLog (growing in place) — don't also show "thinking" under it.
   // Show it only for the gap before the first token of a turn arrives.
@@ -12128,13 +12150,22 @@ function renderAiChat() {
     + '<span style="font-size:12px;color:var(--muted)">' + (aiPendingAction ? 'Saving…' : 'Checking the shelves…') + '</span></div></div>';
   el.innerHTML = out;
   aiScrollToBottom();
+  // The Confirm/Cancel controls live in their own persistent bar, outside
+  // the scrollable list, so they're always reachable without scrolling —
+  // no matter how tall the review card above (a multi-item PO, say) gets.
+  var actionBar = document.getElementById('ai-action-bar');
+  if (actionBar) {
+    if (pendingCard) { actionBar.innerHTML = aiActionBarHtml(pendingCard); actionBar.style.display = 'flex'; }
+    else { actionBar.style.display = 'none'; actionBar.innerHTML = ''; }
+  }
   var input = document.getElementById('ai-chat-input');
   var locked = aiBusy || !!aiPendingAction;
   if (input) {
     input.disabled = locked;
-    input.placeholder = aiPendingAction ? 'Confirm or cancel above to keep going' : 'Ask Shelfie or tell it what to do…';
+    input.placeholder = aiPendingAction ? 'Confirm or cancel below to continue' : 'Ask Shelfie or tell it what to do…';
   }
   aiUpdateSendState();
+  aiFitPanelSize();
 }
 
 async function sendAiChat() {
@@ -12256,6 +12287,19 @@ async function aiCallAssistant() {
             if (block.name === 'generate_po') {
               if (!block.input.checked_by && poSignatories.checkedBy) block.input.checked_by = poSignatories.checkedBy;
               if (!block.input.approved_by && poSignatories.approvedBy) block.input.approved_by = poSignatories.approvedBy;
+              // Same idea for shipping method and per-item cost — the model
+              // doesn't always carry these over even when SupplyBase already
+              // knows them, so fill them in here too instead of showing
+              // "Missing" or ₱0 on the confirm card for no reason.
+              if (!block.input.ship_method) block.input.ship_method = 'Standard Delivery';
+              if (Array.isArray(block.input.items)) {
+                block.input.items.forEach(function(it) {
+                  if (!it.cost && it.item_id) {
+                    var foundItem = db.items.find(function(i) { return i.id === it.item_id; });
+                    if (foundItem) it.cost = currentUnitCost(foundItem) || foundItem.cost || 0;
+                  }
+                });
+              }
             }
             streamedBlocks.push({ type: 'tool_use', id: block.id, name: block.name, input: block.input, _sig: block._sig });
             if (AI_READONLY_TOOLS.indexOf(block.name) !== -1) {
