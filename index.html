@@ -2271,6 +2271,7 @@
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-messages" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('messages',this.checked)">Messages</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-requests" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('requests',this.checked)">Requests</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-audit" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('audit',this.checked)">Audit Log</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-ai" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('ai',this.checked)">Shelfie (AI Assistant)</label>
     </div>
 
     <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
@@ -8115,13 +8116,14 @@ var ALL_TABS  = ['inventory','usage','reorder','report','dashboard','messages','
 var TAB_LABELS = { inventory:'Inventory', usage:'Usage Log', reorder:'Reorder', report:'Cost Report',
                    dashboard:'Dashboard', messages:'Messages', requests:'Requests', audit:'Audit Log', ai:'Shelfie' };
 // Hidden tabs per role. Superuser is never restricted (prevents lock-out).
-// Defaults mirror the previous hard-coded behaviour. Shelfie is hidden
-// by default for roles that can't log usage or create reorders (viewer,
-// requestor, brand) since it has nothing useful — or safe — for them to do.
+// Shelfie is hidden by default for roles that have nothing useful — or
+// safe — for it to do: viewer and brand can't log, reorder, or submit
+// requests, so there's nothing to hand it. Requestor is NOT in this hidden
+// list (unlike before) — Shelfie can now submit supply requests for them.
 var tabsByRole = {
   user:      ['audit'],
   viewer:    ['audit','ai'],
-  requestor: ['audit','ai'],
+  requestor: ['audit'],
   brand:     ['usage','reorder','report','dashboard','messages','requests','audit','ai']
 };
 var _tabEditRole = 'user'; // which role the superuser is configuring
@@ -11702,6 +11704,10 @@ var aiDisplayLog = [];
 var aiPendingAction = null; // { id, name, input } — a tool_use awaiting Confirm/Cancel
 var aiBusy = false;
 var aiPanelOpen = false; // Shelfie is a floating corner widget, not a tab
+// Tools that never write anything (a chat answer or a local file download),
+// so they run the instant they're seen instead of going through the
+// Confirm/Cancel card the three write actions use.
+var AI_READONLY_TOOLS = ['get_cost_report', 'export_cost_report_csv'];
 
 function toggleAiPanel() {
   aiPanelOpen = !aiPanelOpen;
@@ -11745,6 +11751,50 @@ function aiBuildContextItems() {
 function aiBuildContextSuppliers() {
   return Object.values(supplierDirectory || {}).map(function(s) {
     return { name: s.name || '', address: s.address || '', tin: s.tin || '' };
+  });
+}
+
+// Open (not yet fully received) reorders the assistant can mark received —
+// mirrors renderReorder()'s own Test Mode filter, so the AI never sees or
+// touches a reorder for an item Test Mode is hiding. Exposes each one's
+// exact "id" (mirrors the item catalog's item_id pattern) so the model can
+// name a specific reorder instead of guessing from item name + supplier,
+// which could be ambiguous if the same item has more than one open order.
+function aiBuildContextReorders() {
+  return db.reorders.filter(function(r) {
+    if (r.status === 'received') return false;
+    if (testModeActive && testModeItemIds.indexOf(r.itemId) === -1) return false;
+    return true;
+  }).map(function(r) {
+    var item = db.items.find(function(i) { return i.id === r.itemId; });
+    var receivedSoFar = _reorderReceivedSoFar(r);
+    return {
+      id: r.id, item_id: r.itemId, item_name: item ? item.name : 'Deleted item',
+      supplier: r.supplier || '', po_number: r.poNumber || '', status: r.status,
+      qty_ordered: r.qty, received_so_far: receivedSoFar, remaining: Math.max(0, (r.qty || 0) - receivedSoFar)
+    };
+  });
+}
+
+// Pending supply requests, with a live stock check per item, so Shelfie can
+// proactively flag "this request wants more than we have" — only built for
+// user/superuser (the roles that can ever approve/reject a request); a
+// requestor doesn't need or get visibility into other people's requests
+// through Shelfie. Mirrors isReqVisible's Test Mode filter.
+function aiBuildContextPendingRequests() {
+  if (currentRole !== 'user' && currentRole !== 'superuser') return [];
+  return (typeof db_reqs !== 'undefined' ? db_reqs : []).filter(function(r) {
+    return r.status === 'pending' && isReqVisible(r);
+  }).map(function(r) {
+    var item = db.items.find(function(i) { return i.id === r.itemId; });
+    return {
+      id: r.id, req_number: r.reqNumber || '', item_id: r.itemId, item_name: r.itemName,
+      qty_requested: r.qty, unit: r.unit || '', priority: r.priority || 'normal', notes: r.notes || '',
+      requested_by: r.requestedBy, created_at: r.createdAt,
+      current_stock: item ? item.qty : null,
+      stock_status: item ? stockStatus(item) : null, // 'ok' | 'warn' | 'danger'
+      enough_stock: item ? item.qty >= r.qty : null
+    };
   });
 }
 
@@ -11820,6 +11870,38 @@ function aiActionCardHtml(action) {
       + (action.input.cost ? ' at ' + fmtPHP(action.input.cost) + '/unit' : '') + '.';
   } else if (action.name === 'generate_po') {
     desc = aiPoPreviewHtml(action.input);
+  } else if (action.name === 'mark_reorder_received') {
+    var reorder = db.reorders.find(function(r){ return r.id === action.input.reorder_id; });
+    var ritem = reorder ? db.items.find(function(i){ return i.id === reorder.itemId; }) : null;
+    var recvBefore = reorder ? _reorderReceivedSoFar(reorder) : 0;
+    var recvRemaining = reorder ? Math.max(0, (reorder.qty || 0) - recvBefore) : null;
+    var hasQty = action.input.qty !== undefined && action.input.qty !== null && action.input.qty !== '';
+    var recvQty = hasQty ? action.input.qty : recvRemaining;
+    desc = 'Mark <strong>' + esc(recvQty !== null && recvQty !== undefined ? String(recvQty) : '(remaining)') + '</strong> ' + esc(ritem ? (ritem.unit || '') : '')
+      + ' of <strong>' + esc(ritem ? ritem.name : (reorder ? reorder.itemId : (action.input.reorder_id || 'unknown reorder'))) + '</strong> as received'
+      + (reorder && reorder.supplier ? ' from <strong>' + esc(reorder.supplier) + '</strong>' : '')
+      + (action.input.cost ? ' at ' + fmtPHP(action.input.cost) + '/unit' : '') + '.'
+      + (reorder ? '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + fmtInt(recvBefore) + ' of ' + fmtInt(reorder.qty) + ' already received.</div>' : '<div style="font-size:11px;color:var(--danger);margin-top:4px">Reorder not found — it may already be received.</div>');
+  } else if (action.name === 'create_supply_request') {
+    desc = 'Submit a supply request for <strong>' + esc(item ? item.name : (action.input.item_id || 'unknown item')) + '</strong> — qty ' + esc(String(action.input.qty))
+      + (action.input.priority && action.input.priority !== 'normal' ? ', <strong>' + esc(action.input.priority) + '</strong> priority' : '')
+      + (action.input.notes ? ' — "' + esc(action.input.notes) + '"' : '') + '.';
+  } else if (action.name === 'approve_supply_request' || action.name === 'reject_supply_request') {
+    var req = (typeof db_reqs !== 'undefined' ? db_reqs : []).find(function(r){ return r.id === action.input.request_id; });
+    var reqItem = req ? db.items.find(function(i){ return i.id === req.itemId; }) : null;
+    var isApprove = action.name === 'approve_supply_request';
+    if (!req) {
+      desc = (isApprove ? 'Approve' : 'Reject') + ' request <strong>' + esc(action.input.request_id || 'unknown') + '</strong>.'
+        + '<div style="font-size:11px;color:var(--danger);margin-top:4px">Request not found — it may already be handled.</div>';
+    } else {
+      var hasIssueQty = action.input.issue_qty !== undefined && action.input.issue_qty !== null && action.input.issue_qty !== '';
+      var issueQtyShown = hasIssueQty ? action.input.issue_qty : req.qty;
+      var stockNote = reqItem ? ('<div style="font-size:11px;color:var(--muted);margin-top:4px">Current stock: ' + fmtInt(reqItem.qty) + ' ' + esc(reqItem.unit || '') + (reqItem.qty < req.qty ? ' <span style="color:var(--warn);font-weight:600">(less than requested)</span>' : '') + '</div>') : '';
+      desc = (isApprove
+        ? 'Approve <strong>' + esc(req.reqNumber || req.itemName) + '</strong> — issue <strong>' + esc(String(issueQtyShown)) + '</strong> ' + esc(req.unit || '') + ' of <strong>' + esc(req.itemName) + '</strong> to <strong>' + esc(req.requestedBy) + '</strong>' + (hasIssueQty && Number(issueQtyShown) < req.qty ? ' (partial — ' + esc(String(req.qty)) + ' requested)' : '') + '.'
+        : 'Reject <strong>' + esc(req.reqNumber || req.itemName) + '</strong> — ' + esc(req.itemName) + ' x' + esc(String(req.qty)) + ' requested by <strong>' + esc(req.requestedBy) + '</strong>.')
+        + stockNote;
+    }
   } else {
     desc = 'Log <strong>' + esc(action.input.type) + '</strong> of <strong>' + esc(String(action.input.qty)) + '</strong> for <strong>' + esc(item ? item.name : (action.input.item_id||'unknown item')) + '</strong>'
       + (action.input.notes ? ' — "' + esc(action.input.notes) + '"' : '') + '.';
@@ -11847,7 +11929,11 @@ function renderAiChat() {
     else if (entry.kind === 'system') out += '<div style="align-self:center;font-size:11px;color:var(--muted);font-style:italic">' + esc(entry.text) + '</div>';
   });
   if (aiPendingAction) out += aiActionCardHtml(aiPendingAction);
-  if (aiBusy) out += '<div style="align-self:flex-start;font-size:12px;color:var(--muted);font-style:italic">📦 Shelfie is thinking…</div>';
+  // While streaming, the reply-in-progress is already the last entry in
+  // aiDisplayLog (growing in place) — don't also show "thinking" under it.
+  // Show it only for the gap before the first token of a turn arrives.
+  var lastEntry = aiDisplayLog.length ? aiDisplayLog[aiDisplayLog.length - 1] : null;
+  if (aiBusy && !(lastEntry && lastEntry.streaming)) out += '<div style="align-self:flex-start;font-size:12px;color:var(--muted);font-style:italic">📦 Shelfie is thinking…</div>';
   el.innerHTML = out;
   aiScrollToBottom();
   var sendBtn = document.getElementById('ai-chat-send');
@@ -11867,8 +11953,11 @@ async function sendAiChat() {
     renderAiChat();
     return;
   }
-  if (!can('log') && !can('reorder')) {
-    aiDisplayLog.push({ kind: 'error', text: 'Your role doesn\'t have permission to log usage or create reorders, so there\'s nothing this assistant can do for you.' });
+  // requestor isn't covered by can('log')/can('reorder') — it's checked
+  // explicitly here since supply requests aren't part of the can() system
+  // (the app's own "New Request" button uses the same direct role check).
+  if (!can('log') && !can('reorder') && currentRole !== 'requestor') {
+    aiDisplayLog.push({ kind: 'error', text: 'Your role doesn\'t have permission to log usage, create reorders, or submit supply requests, so there\'s nothing Shelfie can do for you.' });
     renderAiChat();
     return;
   }
@@ -11880,79 +11969,129 @@ async function sendAiChat() {
 }
 
 // Calls the Supabase Edge Function with the full running conversation plus a
-// fresh catalog snapshot, then renders whatever Claude sends back (text
-// and/or a single proposed tool call).
+// fresh catalog snapshot, and renders Shelfie's reply as it streams in
+// (text grows in place; a tool-call still shows its Confirm/Cancel card the
+// moment it's known, without waiting for the rest of the stream to finish).
+//
+// This uses a raw fetch() straight to the function's URL instead of
+// sb.functions.invoke(), because invoke() buffers the whole response and
+// can't hand back a partial body as it arrives. The URL/key pair below is
+// exactly what supabase-js sends under the hood for invoke() on a project
+// with no separate user-auth session (this app's own login is a custom
+// accounts table, not Supabase Auth) — same credential, just via fetch so
+// the stream can be read directly.
 async function aiCallAssistant() {
   aiBusy = true;
+  // The reply-in-progress bubble. It's pushed into aiDisplayLog once the
+  // first bit of text arrives, then mutated in place on every chunk so
+  // renderAiChat() shows it growing rather than appearing all at once.
+  var streamEntry = { kind: 'assistant', text: '', streaming: true };
+  // The exact sequence of content blocks as Gemini sent them, kept
+  // unmerged (one entry per block received) so any thought signature stays
+  // attached to the specific block it arrived on — merging text deltas
+  // together would risk detaching a signature from its part, which breaks
+  // function-calling on the next turn. aiChatHistory doesn't care whether a
+  // reply is one big text block or several small ones next to each other.
+  var streamedBlocks = [];
+  var readOnlyCall = null;
+  var streamError = null;
   renderAiChat();
   try {
-    var res = await sb.functions.invoke('ai-assistant', {
-      body: { messages: aiChatHistory, context: { items: aiBuildContextItems(), suppliers: aiBuildContextSuppliers(), today: new Date().toISOString().slice(0, 10), poSignatories: poSignatories } }
+    var res = await fetch(HARDCODED_SUPABASE_URL + '/functions/v1/ai-assistant', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + HARDCODED_SUPABASE_KEY,
+        'apikey': HARDCODED_SUPABASE_KEY
+      },
+      body: JSON.stringify({ messages: aiChatHistory, context: { items: aiBuildContextItems(), suppliers: aiBuildContextSuppliers(), openReorders: aiBuildContextReorders(), pendingRequests: aiBuildContextPendingRequests(), today: new Date().toISOString().slice(0, 10), poSignatories: poSignatories } })
     });
-    aiBusy = false;
-    if (res.error || !res.data) {
-      // supabase-js only gives a generic "non-2xx status code" message; the
-      // real reason (from the Edge Function or Supabase's gateway) is in the
-      // response body on res.error.context, so read it out and show that.
-      var detail = res.error ? (res.error.message || String(res.error)) : 'Empty response.';
-      var status = '';
+
+    if (!res.ok || !res.body) {
+      var detail = 'HTTP ' + res.status;
       try {
-        var ctx = res.error && res.error.context;
-        if (ctx && typeof ctx.status === 'number') status = 'HTTP ' + ctx.status + ' — ';
-        if (ctx && typeof ctx.text === 'function') {
-          var raw = await ctx.text();
-          var body = null;
-          try { body = JSON.parse(raw); } catch(e) {}
-          if (body && body.error) detail = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
-          else if (body && body.msg) detail = body.msg;
-          else if (body && body.message) detail = body.message;
-          else if (raw) detail = raw.slice(0, 300);
-        }
+        var errBody = await res.json();
+        if (errBody && errBody.error) detail = typeof errBody.error === 'string' ? errBody.error : JSON.stringify(errBody.error);
       } catch(e) {}
-      aiDisplayLog.push({ kind: 'error', text: 'Shelfie error: ' + status + detail });
+      aiBusy = false;
+      aiDisplayLog.push({ kind: 'error', text: 'Shelfie error: ' + detail });
       renderAiChat();
       return;
     }
-    var data = res.data;
-    if (data.error) {
-      aiDisplayLog.push({ kind: 'error', text: 'Shelfie error: ' + (typeof data.error === 'string' ? data.error : JSON.stringify(data.error)) });
-      renderAiChat();
-      return;
-    }
-    var content = data.content || [];
-    aiChatHistory.push({ role: 'assistant', content: content });
-    var readOnlyCall = null;
-    content.forEach(function(block) {
-      if (block.type === 'text' && block.text) {
-        aiDisplayLog.push({ kind: 'assistant', text: block.text });
-      } else if (block.type === 'tool_use' && !aiPendingAction && !readOnlyCall) {
-        // Only act on the first tool call per turn — the Edge Function's
-        // system prompt instructs Claude to propose one action at a time.
-        if (block.name === 'get_cost_report') {
-          // Read-only query — nothing is saved, so this runs immediately
-          // instead of going through the Confirm/Cancel card.
-          readOnlyCall = block;
-        } else {
-          aiPendingAction = { id: block.id, name: block.name, input: block.input || {} };
+
+    var reader = res.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+
+    while (true) {
+      var chunkResult = await reader.read();
+      if (chunkResult.done) break;
+      buffer += decoder.decode(chunkResult.value, { stream: true });
+      var lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // keep a partial trailing line for the next read
+      for (var li = 0; li < lines.length; li++) {
+        var line = lines[li].trim();
+        if (line.slice(0, 5) !== 'data:') continue;
+        var jsonStr = line.slice(5).trim();
+        if (!jsonStr) continue;
+        var evt;
+        try { evt = JSON.parse(jsonStr); } catch(e) { continue; }
+        if (evt.error) { streamError = evt.error; continue; }
+        if (evt.done) continue;
+        var blocks = evt.content || [];
+        for (var bi = 0; bi < blocks.length; bi++) {
+          var block = blocks[bi];
+          if (block.type === 'text' && block.text) {
+            streamEntry.text += block.text;
+            streamedBlocks.push({ type: 'text', text: block.text, _sig: block._sig });
+            if (aiDisplayLog.indexOf(streamEntry) === -1) aiDisplayLog.push(streamEntry);
+            renderAiChat();
+          } else if (block.type === 'tool_use' && !aiPendingAction && !readOnlyCall) {
+            // Only act on the first tool call per turn — the Edge Function's
+            // system prompt instructs the model to propose one action at a
+            // time — and show it the moment it's known rather than waiting
+            // for the stream to finish.
+            streamedBlocks.push({ type: 'tool_use', id: block.id, name: block.name, input: block.input || {}, _sig: block._sig });
+            if (AI_READONLY_TOOLS.indexOf(block.name) !== -1) {
+              // Nothing is saved (a chat answer or a local file download),
+              // so this runs immediately instead of going through the
+              // Confirm/Cancel card.
+              readOnlyCall = block;
+            } else {
+              aiPendingAction = { id: block.id, name: block.name, input: block.input || {} };
+            }
+            renderAiChat();
+          }
         }
       }
-    });
+    }
+
+    streamEntry.streaming = false;
+    aiBusy = false;
+    if (streamError) {
+      aiDisplayLog.push({ kind: 'error', text: 'Shelfie error: ' + (typeof streamError === 'string' ? streamError : JSON.stringify(streamError)) });
+      renderAiChat();
+      return;
+    }
+    if (streamedBlocks.length) aiChatHistory.push({ role: 'assistant', content: streamedBlocks });
     renderAiChat();
     if (readOnlyCall) await aiRunReadOnlyTool(readOnlyCall);
   } catch (e) {
     aiBusy = false;
+    streamEntry.streaming = false;
     aiDisplayLog.push({ kind: 'error', text: 'Shelfie request failed: ' + (e && e.message ? e.message : String(e)) });
     renderAiChat();
   }
 }
 
-// ── Runs a read-only tool call (currently just get_cost_report) right away —
-// no Confirm card, since nothing is written — then feeds the result back to
-// the model so it can narrate it in a normal text reply. ──
+// ── Runs a read-only tool call right away — no Confirm card, since nothing
+// is written — then feeds the result back to the model so it can narrate it
+// in a normal text reply. ──
 async function aiRunReadOnlyTool(block) {
   var result;
   try {
     if (block.name === 'get_cost_report') result = aiGetCostReport(block.input || {});
+    else if (block.name === 'export_cost_report_csv') result = aiExportCostReportCsv(block.input || {});
     else result = { ok: false, message: 'Unknown query: ' + block.name };
   } catch (e) {
     result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
@@ -11961,25 +12100,19 @@ async function aiRunReadOnlyTool(block) {
   await aiCallAssistant();
 }
 
-// ── Read-only query: aggregates db.logs into the same cost-report shape as
-// the Report tab (renderReport), scoped to an optional date range, so the AI
-// Assistant can answer things like "cost report for Sept 1-10" using real
-// historical usage data instead of refusing. Respects the same Test Mode
-// visibility (isLogVisible) and per-role Report tab access as the rest of
-// the app — if a role has the Report tab hidden, the assistant can't see it
-// either. Never writes anything. ──
-function aiGetCostReport(input) {
-  if (isTabHidden('report')) return { ok: false, message: 'Your role doesn\'t have access to Cost Reports.' };
-  input = input || {};
-  var fromStr = (input.from || '').trim();
-  var toStr = (input.to || '').trim();
+// ── Shared date-range aggregation behind both get_cost_report (a chat
+// answer) and export_cost_report_csv (a CSV download) — one calculation so
+// the two never disagree with each other. Mirrors the Report tab
+// (renderReport): same log types counted as a cost event (adjustments are
+// a stocktake correction, not a cost), same Test Mode visibility
+// (isLogVisible), and logCostOf's historically-captured cost so a later
+// cost change doesn't re-price past entries. ──
+function aiComputeCostReportRows(fromStr, toStr) {
   var from = fromStr ? new Date(fromStr + 'T00:00:00') : null;
   var to = toStr ? new Date(toStr + 'T23:59:59') : null;
-  if (fromStr && isNaN(from.getTime())) return { ok: false, message: 'Invalid "from" date: ' + fromStr + '. Use YYYY-MM-DD.' };
-  if (toStr && isNaN(to.getTime())) return { ok: false, message: 'Invalid "to" date: ' + toStr + '. Use YYYY-MM-DD.' };
+  if (fromStr && isNaN(from.getTime())) return { error: 'Invalid "from" date: ' + fromStr + '. Use YYYY-MM-DD.' };
+  if (toStr && isNaN(to.getTime())) return { error: 'Invalid "to" date: ' + toStr + '. Use YYYY-MM-DD.' };
 
-  // Same log types the Report tab counts as a cost event — adjustments are
-  // excluded because they're a stocktake correction, not a cost.
   var logs = db.logs.filter(function(l) {
     if (l.type !== 'use' && l.type !== 'damage' && l.type !== 'restock') return false;
     if (!isLogVisible(l)) return false;
@@ -11990,7 +12123,6 @@ function aiGetCostReport(input) {
   });
 
   var rangeLabel = (fromStr || toStr) ? (fromStr || 'the start') + ' to ' + (toStr || 'now') : 'all time';
-  if (!logs.length) return { ok: true, message: 'No usage, damage, or restock entries found for ' + rangeLabel + '.' };
 
   var map = {};
   logs.forEach(function(l) {
@@ -11999,8 +12131,6 @@ function aiGetCostReport(input) {
     var key = l.itemId + '|' + typeGroup;
     if (!map[key]) map[key] = { name: item ? item.name : 'Deleted item', typeGroup: typeGroup, qty: 0, cost: 0, entries: 0 };
     map[key].qty += l.qty;
-    // logCostOf prefers each log's historically-captured cost, same as the
-    // Report tab, so a later cost change doesn't re-price past entries.
     map[key].cost += logCostOf(l, item);
     map[key].entries++;
   });
@@ -12008,18 +12138,81 @@ function aiGetCostReport(input) {
   var rows = Object.values(map).sort(function(a, b) { return b.cost - a.cost; });
   var consumeTotal = rows.filter(function(r) { return r.typeGroup === 'consumption'; }).reduce(function(s, r) { return s + r.cost; }, 0);
   var restockTotal = rows.filter(function(r) { return r.typeGroup === 'restock'; }).reduce(function(s, r) { return s + r.cost; }, 0);
-  var shown = rows.slice(0, 15);
-  var top = shown.map(function(r) {
-    return (r.typeGroup === 'restock' ? '+ ' : '- ') + r.name + ': ' + fmtInt(r.qty) + ' units, ' + fmtPHP(r.cost) + ' (' + r.entries + ' entr' + (r.entries === 1 ? 'y' : 'ies') + ')';
+
+  return { rangeLabel: rangeLabel, rows: rows, logs: logs, consumeTotal: consumeTotal, restockTotal: restockTotal };
+}
+
+// ── Read-only query: a chat answer summarizing consumption/restocking over
+// a date range, so Shelfie can answer things like "cost report for Sept
+// 1-10" using real historical usage data instead of refusing. Also checks
+// per-role Report tab access — if a role has the Report tab hidden, Shelfie
+// can't see it either. Never writes anything. ──
+function aiGetCostReport(input) {
+  if (isTabHidden('report')) return { ok: false, message: 'Your role doesn\'t have access to Cost Reports.' };
+  input = input || {};
+  var fromStr = (input.from || '').trim();
+  var toStr = (input.to || '').trim();
+  var r = aiComputeCostReportRows(fromStr, toStr);
+  if (r.error) return { ok: false, message: r.error };
+  if (!r.logs.length) return { ok: true, message: 'No usage, damage, or restock entries found for ' + r.rangeLabel + '.' };
+
+  var shown = r.rows.slice(0, 15);
+  var top = shown.map(function(row) {
+    return (row.typeGroup === 'restock' ? '+ ' : '- ') + row.name + ': ' + fmtInt(row.qty) + ' units, ' + fmtPHP(row.cost) + ' (' + row.entries + ' entr' + (row.entries === 1 ? 'y' : 'ies') + ')';
   }).join('\n');
 
-  var summary = 'Cost report for ' + rangeLabel + ':\n'
-    + 'Consumed (use + damage): ' + fmtPHP(consumeTotal) + '\n'
-    + 'Restocked: ' + fmtPHP(restockTotal) + '\n'
-    + 'Log entries: ' + logs.length + ' across ' + rows.length + ' item/type combination' + (rows.length === 1 ? '' : 's') + '\n\n'
-    + 'By item (' + (rows.length > shown.length ? 'top ' + shown.length + ' by cost' : 'all') + '):\n' + top;
+  var summary = 'Cost report for ' + r.rangeLabel + ':\n'
+    + 'Consumed (use + damage): ' + fmtPHP(r.consumeTotal) + '\n'
+    + 'Restocked: ' + fmtPHP(r.restockTotal) + '\n'
+    + 'Log entries: ' + r.logs.length + ' across ' + r.rows.length + ' item/type combination' + (r.rows.length === 1 ? '' : 's') + '\n\n'
+    + 'By item (' + (r.rows.length > shown.length ? 'top ' + shown.length + ' by cost' : 'all') + '):\n' + top;
 
   return { ok: true, message: summary };
+}
+
+function _aiCsvEscape(val) {
+  var s = (val === undefined || val === null) ? '' : String(val);
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+
+// ── Read-only action: export the same cost-report aggregation as a CSV
+// file, downloaded straight to the browser's Downloads folder. Like
+// get_cost_report, nothing is saved or changed anywhere — a file download
+// is a local, reversible action — so this runs immediately with no Confirm
+// card too. ──
+function aiExportCostReportCsv(input) {
+  if (isTabHidden('report')) return { ok: false, message: 'Your role doesn\'t have access to Cost Reports.' };
+  input = input || {};
+  var fromStr = (input.from || '').trim();
+  var toStr = (input.to || '').trim();
+  var r = aiComputeCostReportRows(fromStr, toStr);
+  if (r.error) return { ok: false, message: r.error };
+  if (!r.logs.length) return { ok: true, message: 'Nothing to export — no usage, damage, or restock entries found for ' + r.rangeLabel + '.' };
+
+  var lines = [];
+  lines.push([_aiCsvEscape('Cost Report'), _aiCsvEscape(r.rangeLabel)].join(','));
+  lines.push(['Item', 'Type', 'Qty', 'Total Cost (PHP)', 'Log Entries'].map(_aiCsvEscape).join(','));
+  r.rows.forEach(function(row) {
+    lines.push([
+      _aiCsvEscape(row.name),
+      _aiCsvEscape(row.typeGroup === 'restock' ? 'Restock' : 'Consumption'),
+      _aiCsvEscape(row.qty),
+      _aiCsvEscape(row.cost.toFixed(2)),
+      _aiCsvEscape(row.entries)
+    ].join(','));
+  });
+  lines.push(['', '', '', '', ''].join(','));
+  lines.push([_aiCsvEscape('TOTAL Consumed'), '', '', _aiCsvEscape(r.consumeTotal.toFixed(2)), ''].join(','));
+  lines.push([_aiCsvEscape('TOTAL Restocked'), '', '', _aiCsvEscape(r.restockTotal.toFixed(2)), ''].join(','));
+
+  var filename = 'cost_report_' + (fromStr || 'all') + '_to_' + (toStr || new Date().toISOString().slice(0, 10)) + '.csv';
+  var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+
+  return { ok: true, message: 'Exported ' + filename + ' (' + r.rows.length + ' row' + (r.rows.length === 1 ? '' : 's') + ') — check your browser\'s downloads.' };
 }
 
 async function aiConfirmAction() {
@@ -12032,6 +12225,10 @@ async function aiConfirmAction() {
     if (action.name === 'create_reorder') result = aiCreateReorder(action.input);
     else if (action.name === 'log_usage') result = await aiApplyLogEntry(action.input);
     else if (action.name === 'generate_po') result = await aiGeneratePO(action.input);
+    else if (action.name === 'mark_reorder_received') result = await aiReceiveReorder(action.input);
+    else if (action.name === 'create_supply_request') result = await aiCreateSupplyRequest(action.input);
+    else if (action.name === 'approve_supply_request') result = await aiApproveSupplyRequest(action.input);
+    else if (action.name === 'reject_supply_request') result = await aiRejectSupplyRequest(action.input);
     else result = { ok: false, message: 'Unknown action: ' + action.name };
   } catch (e) {
     result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
@@ -12080,6 +12277,250 @@ function aiCreateReorder(input) {
   renderReorder();
   updateSummary();
   return { ok: true, message: 'Created a "Needed" reorder for ' + fmtInt(qty) + ' ' + (item.unit||'') + ' of ' + item.name + ' from ' + supplier + '.' };
+}
+
+// ── Action executor: mark an open reorder received, fully or partially —
+// mirrors confirmReceive()'s core logic exactly (opens a new FIFO batch via
+// addLayer, logs a 'restock' entry, updates the item's on-hand qty, and
+// marks the reorder 'received' or notes a partial delivery), just taking
+// the AI's proposed values directly instead of reading the Receive
+// Delivery modal's fields. Every field was already shown to the person in
+// the confirmation card before this runs. ──
+async function aiReceiveReorder(input) {
+  if (!can('mark_received')) return { ok: false, message: 'Permission denied: your role can\'t mark reorders as received.' };
+  input = input || {};
+  var r = db.reorders.find(function(x) { return x.id === input.reorder_id; });
+  if (!r) return { ok: false, message: 'Reorder not found: ' + input.reorder_id + '. It may have already been fully received or deleted.' };
+  if (r.status === 'received') return { ok: false, message: 'This reorder is already marked received.' };
+  var item = db.items.find(function(i) { return i.id === r.itemId; });
+  if (!item) return { ok: false, message: 'The item for this reorder no longer exists.' };
+
+  var receivedBefore = _reorderReceivedSoFar(r);
+  var remaining = Math.max(0, (r.qty || 0) - receivedBefore);
+  var qty = (input.qty !== undefined && input.qty !== null && input.qty !== '') ? parseFloat(input.qty) : remaining;
+  if (!qty || qty <= 0) return { ok: false, message: 'Invalid quantity: ' + input.qty };
+  var cost = parseFloat(input.cost);
+  var extraNotes = (input.notes || '').trim();
+
+  // Fresh qty first — this restock must add on top of the latest DB value,
+  // not a possibly-stale local one (same reasoning as the Receive modal).
+  if (sb) {
+    try {
+      var fresh = await sb.from('items').select('qty').eq('id', item.id).single();
+      if (fresh.data && !fresh.error && fresh.data.qty !== undefined) item.qty = fresh.data.qty;
+    } catch(e) {}
+  }
+
+  var now = new Date().toISOString();
+  var newQty = item.qty + qty;
+  getLayers(item);
+  addLayer(item, qty, (!isNaN(cost) && cost > 0) ? cost : undefined);
+
+  var receivedAfter = receivedBefore + qty;
+  var isComplete = receivedAfter >= (r.qty || 0);
+
+  var logEntry = {
+    id: uid(), itemId: r.itemId, type: 'restock', qty: qty, absQty: newQty, by: 'Reorder (Shelfie)', date: now,
+    notes: 'Reorder received from ' + (r.supplier || 'supplier') + (isComplete ? '' : ' (partial)') + (extraNotes ? ' — ' + extraNotes : '') + ' — via Shelfie',
+    ref: '', costAmount: (!isNaN(cost) && cost > 0) ? Math.round(qty * cost * 100) / 100 : null,
+  };
+  db.logs.push(logEntry);
+  item.qty = newQty;
+  item.updatedAt = now;
+  syncItemCost(item);
+  updateMaxRef(item, newQty);
+
+  if (!r.orderedAt) r.orderedAt = now;
+  if (isComplete) {
+    r.status = 'received';
+    if (!r.receivedAt) r.receivedAt = now;
+    r.notes = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
+  } else {
+    var partialNote = '⚠️ Partial delivery: ' + fmtInt(receivedAfter) + ' of ' + fmtInt(r.qty) + ' received (last: '
+      + new Date(now).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + ')';
+    var existingNote = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
+    r.notes = partialNote + (existingNote ? '\n' + existingNote : '');
+  }
+  r.updatedAt = now;
+
+  updateSummary();
+  if (sb) {
+    try {
+      await sbUpdateItem(item, { "maxRef": item.maxRef });
+      await sbInsertLogs([logEntry]);
+      await sb.from('reorders').update({ status: r.status, orderedAt: r.orderedAt, receivedAt: r.receivedAt, notes: r.notes, updatedAt: r.updatedAt }).eq('id', r.id);
+    } catch(e) { save(); }
+  } else {
+    save();
+  }
+  logAudit(isComplete ? 'Reorder received (Shelfie)' : 'Reorder partially received (Shelfie)',
+    (item.name || r.itemId) + ': +' + fmtInt(qty) + (isComplete ? '' : ' (' + fmtInt(receivedAfter) + ' of ' + fmtInt(r.qty) + ')'));
+  renderReorder();
+  renderInventory();
+
+  return {
+    ok: true,
+    message: (isComplete ? 'Marked fully received: ' : 'Logged a partial receipt: ') + fmtInt(qty) + ' ' + (item.unit || '') + ' of ' + item.name + ' from ' + (r.supplier || 'supplier') + '.'
+      + (isComplete ? '' : ' ' + fmtInt(receivedAfter) + ' of ' + fmtInt(r.qty) + ' received so far.')
+  };
+}
+
+// Same eligibility check the Requests tab itself uses to decide whether a
+// person can confirm/reject someone else's pending request. Superuser can
+// always act; a 'user' role can only if the "Confirm & issue supply
+// requests" permission is on AND the requester isn't themselves a 'user'
+// (peer 'user' accounts can't approve each other).
+function _aiCanConfirmRequest(req) {
+  if (currentRole === 'superuser') return true;
+  var requesterAcct = db.accounts.find(function(a) { return a.username === req.requestedBy; });
+  var requesterIsUser = requesterAcct ? requesterAcct.role === 'user' : false;
+  return can('confirm_requests') && !requesterIsUser;
+}
+
+// ── Action executor: submit a new supply request — mirrors submitRequest()'s
+// per-item logic (single item at a time, no batch), just built from the
+// AI's proposed values instead of the request cart. Only requestor and
+// superuser can create requests through Shelfie (matches who sees the "New
+// Request" button in the app itself for this path — 'user' can also
+// request manually, but that's a separate ask from what was requested
+// here). ──
+async function aiCreateSupplyRequest(input) {
+  if (currentRole !== 'requestor' && currentRole !== 'superuser') {
+    return { ok: false, message: 'Permission denied: your role can\'t submit supply requests.' };
+  }
+  input = input || {};
+  var item = db.items.find(function(i) { return i.id === input.item_id; });
+  if (!item) return { ok: false, message: 'Item not found: ' + input.item_id };
+  if ((item.qty || 0) <= 0) return { ok: false, message: item.name + ' is out of stock and can\'t be requested.' };
+  var qty = parseInt(input.qty);
+  if (!qty || qty < 1) return { ok: false, message: 'Invalid quantity: ' + input.qty };
+  var priority = ['normal', 'urgent', 'low'].indexOf(input.priority) !== -1 ? input.priority : 'normal';
+  var notes = (input.notes || '').trim();
+
+  var now = new Date();
+  var yyyymm = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0');
+  var seq = String(db_reqs.length + 1).padStart(4, '0');
+  var req = {
+    id: 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    reqNumber: 'REQ-' + yyyymm + '-' + seq,
+    itemId: item.id, itemName: item.name, unit: item.unit || '',
+    qty: qty, priority: priority, notes: notes,
+    requestedBy: currentUser.username, status: 'pending', createdAt: now.toISOString(),
+    confirmedBy: null, confirmedAt: null, rejectedBy: null, rejectedAt: null,
+    seenByRequestor: false, batchId: null, station: null,
+  };
+  db_reqs.unshift(req);
+  saveReqsLocal();
+  if (sb && REQ_TABLE_OK !== false) {
+    try {
+      await sb.from('supply_requests').insert([req]);
+      REQ_TABLE_OK = true;
+    } catch (e) {
+      // Same schema-mismatch fallback submitRequest() uses — some columns
+      // (priority/reqNumber/batchId/station) may not exist yet on an older
+      // supply_requests table.
+      try {
+        var base = Object.assign({}, req);
+        delete base.priority; delete base.reqNumber; delete base.batchId; delete base.station;
+        await sb.from('supply_requests').insert([base]);
+        REQ_TABLE_OK = true;
+        sb.from('supply_requests').update({ reqNumber: req.reqNumber, batchId: req.batchId, station: req.station }).eq('id', req.id).then(function(){}).catch(function(){});
+      } catch (e2) { REQ_TABLE_OK = false; }
+    }
+  }
+  logAudit('Supply request created (Shelfie)', req.itemName + ' x' + qty + ' for ' + req.requestedBy);
+  updateRequestBadge();
+  renderRequests();
+  return { ok: true, message: 'Submitted ' + req.reqNumber + ' — ' + fmtInt(qty) + ' ' + (item.unit || '') + ' of ' + item.name + '.' };
+}
+
+// ── Action executor: approve/issue a pending supply request — mirrors
+// confirmIssuance()'s core logic exactly (FIFO deduction, a 'use' log entry,
+// marking the request confirmed with whatever qty was actually issued).
+// issue_qty lets Shelfie (or the person, via Shelfie) issue less than what
+// was requested when stock is insufficient, same as adjusting the "Issue
+// qty" field in the app's own Review & Confirm modal. ──
+async function aiApproveSupplyRequest(input) {
+  input = input || {};
+  var req = db_reqs.find(function(r) { return r.id === input.request_id; });
+  if (!req) return { ok: false, message: 'Request not found: ' + input.request_id + '. It may already be handled.' };
+  if (req.status !== 'pending') return { ok: false, message: 'This request is already ' + req.status + '.' };
+  if (!_aiCanConfirmRequest(req)) return { ok: false, message: 'Permission denied: your role can\'t approve this request.' };
+
+  var hasIssueQty = input.issue_qty !== undefined && input.issue_qty !== null && input.issue_qty !== '';
+  var issueQty = Math.max(1, hasIssueQty ? (parseInt(input.issue_qty) || 0) : req.qty);
+
+  var item = db.items.find(function(i) { return i.id === req.itemId; });
+  if (item) {
+    if (sb) {
+      try {
+        var freshAi = await sb.from('items').select('qty').eq('id', item.id).single();
+        if (freshAi.data && !freshAi.error && freshAi.data.qty !== undefined) item.qty = freshAi.data.qty;
+      } catch (e) {}
+    }
+    var newQty = Math.max(0, item.qty - issueQty);
+    getLayers(item);
+    var _detail = describeConsumption(item, issueQty);
+    var _cost = consumeLayers(item, issueQty);
+    item.qty = newQty;
+    item.updatedAt = new Date().toISOString();
+    syncItemCost(item);
+    var logEntry = {
+      id: uid(), itemId: req.itemId, type: 'use', qty: issueQty, absQty: newQty,
+      by: currentUser.username, date: new Date().toISOString(), ref: req.reqNumber || '',
+      notes: 'Confirmed via Shelfie — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
+      costAmount: _cost, costDetail: _detail
+    };
+    db.logs.push(logEntry);
+    updateSummary();
+    if (sb) { await sbInsertLogs([logEntry]); await sbUpdateItem(item); } else { save(); }
+  }
+
+  req.status = 'confirmed';
+  req.confirmedBy = currentUser.username;
+  req.confirmedAt = new Date().toISOString();
+  req.seenByRequestor = false;
+  req.issuedQty = issueQty;
+  saveReqsLocal();
+  if (sb && REQ_TABLE_OK !== false) {
+    try { await sb.from('supply_requests').update({ status: 'confirmed', confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, seenByRequestor: false, issuedQty: issueQty }).eq('id', req.id); }
+    catch (e) { try { await sb.from('supply_requests').update({ status: 'confirmed', confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, seenByRequestor: false }).eq('id', req.id); } catch (e2) {} }
+  }
+  logAudit('Issuance confirmed (Shelfie)', req.itemName + ' x' + issueQty + ' (req by ' + req.requestedBy + ')');
+  updateRequestBadge();
+  renderRequests();
+  renderInventory();
+
+  var partial = issueQty < req.qty;
+  return {
+    ok: true,
+    message: (partial ? 'Partially approved: ' : 'Approved: ') + 'issued ' + fmtInt(issueQty) + ' ' + (req.unit || '') + ' of ' + req.itemName + ' to ' + req.requestedBy + '.'
+      + (partial ? ' (' + fmtInt(req.qty) + ' was requested — only ' + fmtInt(issueQty) + ' was available/issued.)' : '')
+  };
+}
+
+// ── Action executor: reject a pending supply request — mirrors
+// rejectRequest()'s core logic (no stock or log changes, just status). ──
+async function aiRejectSupplyRequest(input) {
+  input = input || {};
+  var req = db_reqs.find(function(r) { return r.id === input.request_id; });
+  if (!req) return { ok: false, message: 'Request not found: ' + input.request_id + '. It may already be handled.' };
+  if (req.status !== 'pending') return { ok: false, message: 'This request is already ' + req.status + '.' };
+  if (!_aiCanConfirmRequest(req)) return { ok: false, message: 'Permission denied: your role can\'t reject this request.' };
+
+  req.status = 'rejected';
+  req.rejectedBy = currentUser.username;
+  req.rejectedAt = new Date().toISOString();
+  req.seenByRequestor = false;
+  saveReqsLocal();
+  if (sb && REQ_TABLE_OK !== false) {
+    try { await sb.from('supply_requests').update({ status: req.status, rejectedBy: req.rejectedBy, rejectedAt: req.rejectedAt, seenByRequestor: false }).eq('id', req.id); }
+    catch (e) {}
+  }
+  logAudit('Request rejected (Shelfie)', req.itemName + ' (requested by ' + req.requestedBy + ')');
+  updateRequestBadge();
+  renderRequests();
+  return { ok: true, message: 'Rejected ' + (req.reqNumber || req.itemName) + ' — ' + req.itemName + ' x' + fmtInt(req.qty) + ' requested by ' + req.requestedBy + '.' };
 }
 
 // ── Action executor: generate a full Purchase Order — PO number, PDF, and
