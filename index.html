@@ -2221,6 +2221,18 @@
       </div>
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+    <p style="color:var(--muted);font-size:13px;margin-bottom:12px">Default names pre-filled on every Purchase Order — used by both the manual Reorder cart form and the AI Assistant's PO action, unless someone types a different name for a one-off PO. Leave blank to require typing a name every time.</p>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Default "Checked by"</label>
+        <input type="text" id="set-po-checked-by" placeholder="e.g. Allan Evangelista" autocomplete="off">
+      </div>
+      <div class="form-group full">
+        <label>Default "Approved by"</label>
+        <input type="text" id="set-po-approved-by" placeholder="e.g. Michael Porto" autocomplete="off">
+      </div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
     <p style="color:var(--muted);font-size:13px;margin-bottom:12px">What <strong>User</strong> accounts are allowed to do.</p>
     <div style="display:flex;flex-direction:column;gap:10px">
       <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
@@ -2630,6 +2642,40 @@ function rememberSupplier(name, address, tin) {
   if (_mergeSupplierEntry(name, address, tin)) saveSupplierDirectory();
 }
 
+// ─── SUPPLIER DIRECTORY SEED ───────────────────────────────────────────────
+// The company's existing supplier list (from the shared spreadsheet), so
+// Address/TIN auto-fill — for both the manual PO form and the AI
+// Assistant's generate_po — works for these suppliers immediately, instead
+// of only after each one has been typed in on a past PO. seedSupplierDirectory
+// only ADDS a name that isn't already in the directory; it never overwrites
+// an existing entry, so anything already customized (e.g. a corrected TIN)
+// is left alone.
+var SUPPLIER_DIR_SEED = [
+  { name: 'ATSAC Consumer Goods Trading', address: '41 T. Santiago, Canumay West Valenzuela City', tin: '410-536-845-00000' },
+  { name: 'XIGMA Consumer Goods OPC', address: '21 Miller St. Bungad, Quezon City', tin: '665-834-087-00000' },
+  { name: 'RP Packaging Supplies Trading', address: 'Phase 8B PKG 1 Blk 12 Lot 9 Brgy 176 Bagong Silang Caloocan City', tin: '257-356-970-00000' },
+  { name: 'GTD Marketing Philippines Inc.', address: '185 Mabini St. Addition Hills 1500 San Juan City, NCR Philippines', tin: '000-181-331-00000' },
+  { name: 'Quality Corrugated Box Mfg. Corporation', address: 'Productivty Drive Lot 59-B Carmelray 1, Canlubang Calamba City Laguna 4027', tin: '238-367-420-001' },
+  { name: 'Stick n Pack Solutions OPC', address: '2F Unit B JKY Bldg. L1a-31-32 Naga Road, Pulang Lupa Dos, 1740, Las Piñas City, NCR, 4th District, Philippines', tin: '600-211-767-00000' },
+  { name: 'RHZ International Industrial Supplies Inc.', address: 'L59B Carmelray Industrial Park 1, Canlubang 4027 City of Calamba Philippines', tin: '621-070-048-00000' },
+  { name: 'Toprank Precision Tech Inc.', address: 'Productivity Drive Lot 59B Carmelray Industrial Park 1, Brgy. Canlubang, Calamba City Philippines', tin: '009-832-486-00001' },
+  { name: 'Secaed Global Enterprises Inc.', address: '168 Ilang-Ilang, Catulinan Baliwag, Bulacan Philippines', tin: '010-253-438-00000' },
+  { name: 'A8 Ink and Toner Trading', address: 'Alabang Town Center Branch, 2/F Madrigal Entrance Alabang Town Center, Brgy. Ayala Alabang Muntinlupa City 1770', tin: '210-166-761-00000' },
+  { name: 'MEK Packaging Supplies Trading', address: '1905 A. Soriano Highway Amaya II 4108 Tanza Cavite Philippines', tin: '238-166-656-00001' },
+];
+
+function seedSupplierDirectory() {
+  var changed = false;
+  SUPPLIER_DIR_SEED.forEach(function(s) {
+    var k = _supKey(s.name);
+    if (k && !supplierDirectory[k]) {
+      supplierDirectory[k] = { name: s.name, address: s.address, tin: s.tin };
+      changed = true;
+    }
+  });
+  if (changed) saveSupplierDirectory();
+}
+
 // Called on blur of a Supplier field — fills in Address/TIN if we've seen
 // this supplier before, without overwriting anything already typed in.
 // `prefix` lets this serve more than one form (e.g. 'rf' for the edit-reorder
@@ -2688,6 +2734,24 @@ async function reserveNextPoNumber() {
   poSequences[period] = seq;
   await savePoSequences();
   return 'PO-' + period + '-' + String(seq).padStart(3, '0');
+}
+
+// ─── PO SIGNATORY DEFAULTS ────────────────────────────────────────────────────
+// Default "Checked by" / "Approved by" names, set once by a superuser in
+// Settings, so nobody has to type the same two names on every PO. Used to
+// pre-fill the manual Reorder-cart PO form (openReorderCreateModal) and sent
+// to the AI Assistant so its generate_po tool can use them too instead of
+// asking every time — either path still lets a person type/say a different
+// name for a one-off PO.
+var PO_SIGNATORIES_KEY = 'poSignatories';
+var poSignatories = { checkedBy: '', approvedBy: '' };
+
+async function savePoSignatories() {
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', PO_SIGNATORIES_KEY);
+    await sb.from('settings').insert([{ key: PO_SIGNATORIES_KEY, value: JSON.stringify(poSignatories) }]);
+  } catch(e) {}
 }
 
 function getRefreshInterval() {
@@ -2784,10 +2848,21 @@ async function loadGlobalSettings() {
         if (supDirParsed && typeof supDirParsed === 'object') supplierDirectory = supDirParsed;
       } catch(e) {}
     }
+    seedSupplierDirectory();
+    populateAllSupplierDatalists();
     if (settingsMap[PO_SEQ_KEY] !== undefined) {
       try {
         var poSeqParsed = JSON.parse(settingsMap[PO_SEQ_KEY]);
         if (poSeqParsed && typeof poSeqParsed === 'object') poSequences = poSeqParsed;
+      } catch(e) {}
+    }
+    if (settingsMap[PO_SIGNATORIES_KEY] !== undefined) {
+      try {
+        var sigParsed = JSON.parse(settingsMap[PO_SIGNATORIES_KEY]);
+        if (sigParsed && typeof sigParsed === 'object') {
+          poSignatories.checkedBy = sigParsed.checkedBy || '';
+          poSignatories.approvedBy = sigParsed.approvedBy || '';
+        }
       } catch(e) {}
     }
     applyTestMode();
@@ -4824,8 +4899,8 @@ function openReorderCreateModal() {
   document.getElementById('pog-ship-cost').value = '';
   document.getElementById('pog-other').value = '';
   document.getElementById('pog-discount').value = '';
-  document.getElementById('pog-checked-by').value = '';
-  document.getElementById('pog-approved-by').value = '';
+  document.getElementById('pog-checked-by').value = poSignatories.checkedBy || '';
+  document.getElementById('pog-approved-by').value = poSignatories.approvedBy || '';
   togglePogCustomItem();
   populateSupplierDatalist('pog-supplier-list');
   renderPoCart();
@@ -9176,6 +9251,8 @@ function openSettings() {
   document.getElementById('set-contact-note').value  = c.note  || '';
   document.getElementById('set-refresh-interval').value = String(getRefreshInterval());
   document.getElementById('set-low-stock-threshold').value = String(getLowStockThreshold());
+  document.getElementById('set-po-checked-by').value = poSignatories.checkedBy || '';
+  document.getElementById('set-po-approved-by').value = poSignatories.approvedBy || '';
   // Populate user permissions checkboxes
   Object.keys(userPermissions).forEach(function(k) {
     var cb = document.getElementById('uperm-' + k);
@@ -9268,6 +9345,11 @@ function saveSettings() {
   // Save low stock threshold globally
   var lowPct = parseInt(document.getElementById('set-low-stock-threshold').value) || 30;
   saveLowStockThresholdGlobal(lowPct).then(function() { renderInventory(); updateSummary(); });
+
+  // Save default PO signatory names globally
+  poSignatories.checkedBy = document.getElementById('set-po-checked-by').value.trim();
+  poSignatories.approvedBy = document.getElementById('set-po-approved-by').value.trim();
+  savePoSignatories();
 
   logAudit('Settings changed', 'Passwords/username updated');
   document.getElementById('settings-msg').textContent = 'Settings saved.';
@@ -11751,7 +11833,7 @@ function renderAiChat() {
   if (!el) return;
   var out = '';
   if (!aiDisplayLog.length) {
-    out += '<div class="dash-empty">Ask me things like &quot;how much Bubble Wrap 20&quot; do we have?&quot;, &quot;create a reorder for 500 units of X from Supplier Y&quot;, or &quot;log 20 units of X as damaged&quot;.</div>';
+    out += '<div class="dash-empty">Ask me things like &quot;how much Bubble Wrap 20&quot; do we have?&quot;, &quot;create a reorder for 500 units of X from Supplier Y&quot;, &quot;log 20 units of X as damaged&quot;, or &quot;generate a cost report for Sept 1–10&quot;.</div>';
   }
   aiDisplayLog.forEach(function(entry) {
     if (entry.kind === 'user') out += aiBubbleHtml('user', entry.text);
@@ -11800,7 +11882,7 @@ async function aiCallAssistant() {
   renderAiChat();
   try {
     var res = await sb.functions.invoke('ai-assistant', {
-      body: { messages: aiChatHistory, context: { items: aiBuildContextItems(), suppliers: aiBuildContextSuppliers() } }
+      body: { messages: aiChatHistory, context: { items: aiBuildContextItems(), suppliers: aiBuildContextSuppliers(), today: new Date().toISOString().slice(0, 10), poSignatories: poSignatories } }
     });
     aiBusy = false;
     if (res.error || !res.data) {
@@ -11834,21 +11916,105 @@ async function aiCallAssistant() {
     }
     var content = data.content || [];
     aiChatHistory.push({ role: 'assistant', content: content });
+    var readOnlyCall = null;
     content.forEach(function(block) {
       if (block.type === 'text' && block.text) {
         aiDisplayLog.push({ kind: 'assistant', text: block.text });
-      } else if (block.type === 'tool_use' && !aiPendingAction) {
+      } else if (block.type === 'tool_use' && !aiPendingAction && !readOnlyCall) {
         // Only act on the first tool call per turn — the Edge Function's
         // system prompt instructs Claude to propose one action at a time.
-        aiPendingAction = { id: block.id, name: block.name, input: block.input || {} };
+        if (block.name === 'get_cost_report') {
+          // Read-only query — nothing is saved, so this runs immediately
+          // instead of going through the Confirm/Cancel card.
+          readOnlyCall = block;
+        } else {
+          aiPendingAction = { id: block.id, name: block.name, input: block.input || {} };
+        }
       }
     });
     renderAiChat();
+    if (readOnlyCall) await aiRunReadOnlyTool(readOnlyCall);
   } catch (e) {
     aiBusy = false;
     aiDisplayLog.push({ kind: 'error', text: 'AI Assistant request failed: ' + (e && e.message ? e.message : String(e)) });
     renderAiChat();
   }
+}
+
+// ── Runs a read-only tool call (currently just get_cost_report) right away —
+// no Confirm card, since nothing is written — then feeds the result back to
+// the model so it can narrate it in a normal text reply. ──
+async function aiRunReadOnlyTool(block) {
+  var result;
+  try {
+    if (block.name === 'get_cost_report') result = aiGetCostReport(block.input || {});
+    else result = { ok: false, message: 'Unknown query: ' + block.name };
+  } catch (e) {
+    result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
+  }
+  aiChatHistory.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: block.id, content: result.message, is_error: !result.ok }] });
+  await aiCallAssistant();
+}
+
+// ── Read-only query: aggregates db.logs into the same cost-report shape as
+// the Report tab (renderReport), scoped to an optional date range, so the AI
+// Assistant can answer things like "cost report for Sept 1-10" using real
+// historical usage data instead of refusing. Respects the same Test Mode
+// visibility (isLogVisible) and per-role Report tab access as the rest of
+// the app — if a role has the Report tab hidden, the assistant can't see it
+// either. Never writes anything. ──
+function aiGetCostReport(input) {
+  if (isTabHidden('report')) return { ok: false, message: 'Your role doesn\'t have access to Cost Reports.' };
+  input = input || {};
+  var fromStr = (input.from || '').trim();
+  var toStr = (input.to || '').trim();
+  var from = fromStr ? new Date(fromStr + 'T00:00:00') : null;
+  var to = toStr ? new Date(toStr + 'T23:59:59') : null;
+  if (fromStr && isNaN(from.getTime())) return { ok: false, message: 'Invalid "from" date: ' + fromStr + '. Use YYYY-MM-DD.' };
+  if (toStr && isNaN(to.getTime())) return { ok: false, message: 'Invalid "to" date: ' + toStr + '. Use YYYY-MM-DD.' };
+
+  // Same log types the Report tab counts as a cost event — adjustments are
+  // excluded because they're a stocktake correction, not a cost.
+  var logs = db.logs.filter(function(l) {
+    if (l.type !== 'use' && l.type !== 'damage' && l.type !== 'restock') return false;
+    if (!isLogVisible(l)) return false;
+    var d = new Date(l.date);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+
+  var rangeLabel = (fromStr || toStr) ? (fromStr || 'the start') + ' to ' + (toStr || 'now') : 'all time';
+  if (!logs.length) return { ok: true, message: 'No usage, damage, or restock entries found for ' + rangeLabel + '.' };
+
+  var map = {};
+  logs.forEach(function(l) {
+    var item = db.items.find(function(i) { return i.id === l.itemId; });
+    var typeGroup = l.type === 'restock' ? 'restock' : 'consumption';
+    var key = l.itemId + '|' + typeGroup;
+    if (!map[key]) map[key] = { name: item ? item.name : 'Deleted item', typeGroup: typeGroup, qty: 0, cost: 0, entries: 0 };
+    map[key].qty += l.qty;
+    // logCostOf prefers each log's historically-captured cost, same as the
+    // Report tab, so a later cost change doesn't re-price past entries.
+    map[key].cost += logCostOf(l, item);
+    map[key].entries++;
+  });
+
+  var rows = Object.values(map).sort(function(a, b) { return b.cost - a.cost; });
+  var consumeTotal = rows.filter(function(r) { return r.typeGroup === 'consumption'; }).reduce(function(s, r) { return s + r.cost; }, 0);
+  var restockTotal = rows.filter(function(r) { return r.typeGroup === 'restock'; }).reduce(function(s, r) { return s + r.cost; }, 0);
+  var shown = rows.slice(0, 15);
+  var top = shown.map(function(r) {
+    return (r.typeGroup === 'restock' ? '+ ' : '- ') + r.name + ': ' + fmtInt(r.qty) + ' units, ' + fmtPHP(r.cost) + ' (' + r.entries + ' entr' + (r.entries === 1 ? 'y' : 'ies') + ')';
+  }).join('\n');
+
+  var summary = 'Cost report for ' + rangeLabel + ':\n'
+    + 'Consumed (use + damage): ' + fmtPHP(consumeTotal) + '\n'
+    + 'Restocked: ' + fmtPHP(restockTotal) + '\n'
+    + 'Log entries: ' + logs.length + ' across ' + rows.length + ' item/type combination' + (rows.length === 1 ? '' : 's') + '\n\n'
+    + 'By item (' + (rows.length > shown.length ? 'top ' + shown.length + ' by cost' : 'all') + '):\n' + top;
+
+  return { ok: true, message: summary };
 }
 
 async function aiConfirmAction() {
