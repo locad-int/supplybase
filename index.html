@@ -625,6 +625,7 @@
     <div id="nav-messages" class="nav-item" data-tab="messages" draggable="true" onclick="switchTab('messages')">📬 <span>Messages</span><span class="nav-drag-handle">⠿</span><span id="msg-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
     <div id="nav-requests" class="nav-item" data-tab="requests" draggable="true" onclick="switchTab('requests')">🛒 <span>Requests</span><span class="nav-drag-handle">⠿</span><span id="req-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
     <div id="nav-audit" class="nav-item" data-tab="audit" draggable="true" onclick="switchTab('audit')">📋 <span>Audit Log</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-ai" class="nav-item" data-tab="ai" draggable="true" onclick="switchTab('ai')">🤖 <span>AI Assistant</span><span class="nav-drag-handle">⠿</span></div>
     <div class="reorder-hint" id="reorder-hint" style="display:none">Drag to reorder</div>
   </nav>
   <div class="sidebar-bottom">
@@ -1115,6 +1116,24 @@
       <button class="btn btn-secondary" onclick="db_audit=[];saveAuditLocal();renderAuditLog()" id="btn-clear-audit" style="font-size:12px;display:none">Clear Log</button>
     </div>
     <div id="audit-list-wrap"></div>
+  </div>
+
+  <!-- AI ASSISTANT TAB -->
+  <div class="tab-panel" id="tab-ai">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--text)">🤖 AI Assistant</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Ask about your inventory, or ask it to create a reorder / PO or log usage — you'll always be asked to confirm before anything is saved.</div>
+      </div>
+      <button class="btn btn-secondary" onclick="resetAiChat()" style="font-size:12px">↺ New Chat</button>
+    </div>
+    <div id="ai-chat-wrap" style="display:flex;flex-direction:column;height:calc(100vh - 210px);min-height:340px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);overflow:hidden">
+      <div id="ai-chat-messages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px"></div>
+      <div id="ai-chat-inputrow" style="flex-shrink:0;border-top:1px solid var(--border);padding:10px;display:flex;gap:8px;background:var(--surface)">
+        <textarea id="ai-chat-input" rows="1" placeholder="Ask a question, or tell it what to do…" style="flex:1;resize:none;font-family:inherit;font-size:13px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg,transparent)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiChat();}"></textarea>
+        <button id="ai-chat-send" class="btn btn-primary" onclick="sendAiChat()">Send</button>
+      </div>
+    </div>
   </div>
 
   </main>
@@ -3160,7 +3179,7 @@ function switchTab(name) {
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests', audit: 'Audit Log' };
+  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests', audit: 'Audit Log', ai: 'AI Assistant' };
   var titleEl = document.getElementById('page-title');
   if (titleEl) titleEl.textContent = (titles[name] || name).toUpperCase();
   if (name === 'inventory') renderInventory();
@@ -3171,6 +3190,7 @@ function switchTab(name) {
   if (name === 'messages') renderMessages();
   if (name === 'requests') { reqVisibleCount = REQ_PAGE_SIZE; renderRequests(); }
   if (name === 'audit') renderAuditLog();
+  if (name === 'ai') renderAiChat();
   // Sync bottom nav active state
   ['inventory','usage','requests','messages'].forEach(function(t) {
     var btn = document.getElementById('bn-' + t);
@@ -7958,16 +7978,18 @@ alter publication supabase_realtime add table settings;</pre>
 
 // ─── TAB ACCESS BY ROLE (superuser-controlled) ───────────────────────────────────
 var TABS_KEY  = 'tabsByRole';
-var ALL_TABS  = ['inventory','usage','reorder','report','dashboard','messages','requests','audit'];
+var ALL_TABS  = ['inventory','usage','reorder','report','dashboard','messages','requests','audit','ai'];
 var TAB_LABELS = { inventory:'Inventory', usage:'Usage Log', reorder:'Reorder', report:'Cost Report',
-                   dashboard:'Dashboard', messages:'Messages', requests:'Requests', audit:'Audit Log' };
+                   dashboard:'Dashboard', messages:'Messages', requests:'Requests', audit:'Audit Log', ai:'AI Assistant' };
 // Hidden tabs per role. Superuser is never restricted (prevents lock-out).
-// Defaults mirror the previous hard-coded behaviour.
+// Defaults mirror the previous hard-coded behaviour. The AI Assistant is hidden
+// by default for roles that can't log usage or create reorders (viewer,
+// requestor, brand) since it has nothing useful — or safe — for them to do.
 var tabsByRole = {
   user:      ['audit'],
-  viewer:    ['audit'],
-  requestor: ['audit'],
-  brand:     ['usage','reorder','report','dashboard','messages','requests','audit']
+  viewer:    ['audit','ai'],
+  requestor: ['audit','ai'],
+  brand:     ['usage','reorder','report','dashboard','messages','requests','audit','ai']
 };
 var _tabEditRole = 'user'; // which role the superuser is configuring
 var TAB_ROLES = ['user','viewer','requestor','brand'];
@@ -11392,6 +11414,305 @@ function renderAuditLog() {
   });
   out += '</div>';
   el.innerHTML = out;
+}
+
+// ─── AI ASSISTANT ───────────────────────────────────────────────────────────
+// Chat state is kept in memory only (not persisted) — each reload starts a
+// fresh conversation, same as opening a new chat with any assistant.
+// aiChatHistory is the conversation sent to the Edge Function each turn, in a
+// simple {role, content} shape (the Edge Function translates it to whatever
+// AI provider it's actually calling — currently Gemini); aiDisplayLog is a
+// simplified list used just to render bubbles.
+var aiChatHistory = [];
+var aiDisplayLog = [];
+var aiPendingAction = null; // { id, name, input } — a tool_use awaiting Confirm/Cancel
+var aiBusy = false;
+
+function resetAiChat() {
+  if (aiBusy) return;
+  aiChatHistory = [];
+  aiDisplayLog = [];
+  aiPendingAction = null;
+  renderAiChat();
+}
+
+// Compact catalog snapshot the assistant can see and act on — respects Test
+// Mode restrictions just like every other view in the app.
+function aiBuildContextItems() {
+  return catalogItemsForSearch().slice(0, 400).map(function(i) {
+    return {
+      id: i.id, name: i.name, sku: i.sku || '', unit: i.unit || '',
+      qty: i.qty, category: i.category || '', minQty: i.minQty,
+      reorderQty: i.reorderQty, cost: currentUnitCost(i) || i.cost || 0,
+      supplier: i.supplier || ''
+    };
+  });
+}
+
+function aiScrollToBottom() {
+  var el = document.getElementById('ai-chat-messages');
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+function aiBubbleHtml(role, text) {
+  var isUser = role === 'user';
+  return '<div style="align-self:' + (isUser ? 'flex-end' : 'flex-start') + ';max-width:80%;background:' + (isUser ? 'var(--accent)' : 'var(--surface)') + ';color:' + (isUser ? '#fff' : 'var(--text)') + ';border:1px solid ' + (isUser ? 'transparent' : 'var(--border)') + ';border-radius:12px;padding:9px 13px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word">' + esc(text) + '</div>';
+}
+
+function aiActionCardHtml(action) {
+  var item = action.input && action.input.item_id ? db.items.find(function(i){ return i.id === action.input.item_id; }) : null;
+  var desc;
+  if (action.name === 'create_reorder') {
+    desc = 'Create a reorder for <strong>' + esc(item ? item.name : (action.input.item_id||'unknown item')) + '</strong> — qty ' + esc(String(action.input.qty))
+      + (action.input.supplier ? ', from <strong>' + esc(action.input.supplier) + '</strong>' : '')
+      + (action.input.cost ? ' at ' + fmtPHP(action.input.cost) + '/unit' : '') + '.';
+  } else {
+    desc = 'Log <strong>' + esc(action.input.type) + '</strong> of <strong>' + esc(String(action.input.qty)) + '</strong> for <strong>' + esc(item ? item.name : (action.input.item_id||'unknown item')) + '</strong>'
+      + (action.input.notes ? ' — "' + esc(action.input.notes) + '"' : '') + '.';
+  }
+  return '<div style="align-self:flex-start;max-width:85%;background:var(--surface);border:1px solid var(--accent);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--text)">'
+    + '<div style="font-weight:700;margin-bottom:6px">🤖 wants to:</div>'
+    + '<div style="margin-bottom:10px">' + desc + '</div>'
+    + '<div style="display:flex;gap:8px">'
+    + '<button class="btn btn-primary" style="font-size:12px;padding:5px 14px" onclick="aiConfirmAction()">✓ Confirm</button>'
+    + '<button class="btn btn-secondary" style="font-size:12px;padding:5px 14px" onclick="aiCancelAction()">✕ Cancel</button>'
+    + '</div></div>';
+}
+
+function renderAiChat() {
+  var el = document.getElementById('ai-chat-messages');
+  if (!el) return;
+  var out = '';
+  if (!aiDisplayLog.length) {
+    out += '<div class="dash-empty">Ask me things like &quot;how much Bubble Wrap 20&quot; do we have?&quot;, &quot;create a reorder for 500 units of X from Supplier Y&quot;, or &quot;log 20 units of X as damaged&quot;.</div>';
+  }
+  aiDisplayLog.forEach(function(entry) {
+    if (entry.kind === 'user') out += aiBubbleHtml('user', entry.text);
+    else if (entry.kind === 'assistant') out += aiBubbleHtml('assistant', entry.text);
+    else if (entry.kind === 'error') out += '<div style="align-self:flex-start;max-width:85%;background:rgba(239,68,68,.08);border:1px solid var(--danger);border-radius:12px;padding:9px 13px;font-size:13px;color:var(--danger)">' + esc(entry.text) + '</div>';
+    else if (entry.kind === 'system') out += '<div style="align-self:center;font-size:11px;color:var(--muted);font-style:italic">' + esc(entry.text) + '</div>';
+  });
+  if (aiPendingAction) out += aiActionCardHtml(aiPendingAction);
+  if (aiBusy) out += '<div style="align-self:flex-start;font-size:12px;color:var(--muted);font-style:italic">🤖 thinking…</div>';
+  el.innerHTML = out;
+  aiScrollToBottom();
+  var sendBtn = document.getElementById('ai-chat-send');
+  var input = document.getElementById('ai-chat-input');
+  var disabled = aiBusy || !!aiPendingAction;
+  if (sendBtn) sendBtn.disabled = disabled;
+  if (input) input.disabled = disabled;
+}
+
+async function sendAiChat() {
+  if (aiBusy || aiPendingAction) return;
+  var input = document.getElementById('ai-chat-input');
+  var text = (input.value || '').trim();
+  if (!text) return;
+  if (!sb) {
+    aiDisplayLog.push({ kind: 'error', text: 'AI Assistant needs SupplyBase to be connected to Supabase — it calls a Supabase Edge Function to talk to the AI. Connect Supabase first.' });
+    renderAiChat();
+    return;
+  }
+  if (!can('log') && !can('reorder')) {
+    aiDisplayLog.push({ kind: 'error', text: 'Your role doesn\'t have permission to log usage or create reorders, so there\'s nothing this assistant can do for you.' });
+    renderAiChat();
+    return;
+  }
+  input.value = '';
+  aiChatHistory.push({ role: 'user', content: text });
+  aiDisplayLog.push({ kind: 'user', text: text });
+  renderAiChat();
+  await aiCallAssistant();
+}
+
+// Calls the Supabase Edge Function with the full running conversation plus a
+// fresh catalog snapshot, then renders whatever Claude sends back (text
+// and/or a single proposed tool call).
+async function aiCallAssistant() {
+  aiBusy = true;
+  renderAiChat();
+  try {
+    var res = await sb.functions.invoke('ai-assistant', {
+      body: { messages: aiChatHistory, context: { items: aiBuildContextItems() } }
+    });
+    aiBusy = false;
+    if (res.error || !res.data) {
+      aiDisplayLog.push({ kind: 'error', text: 'Couldn\'t reach the AI Assistant. Make sure the "ai-assistant" Edge Function is deployed and its GEMINI_API_KEY secret is set (see ai_assistant_setup.md). ' + (res.error ? (res.error.message || String(res.error)) : '') });
+      renderAiChat();
+      return;
+    }
+    var data = res.data;
+    if (data.error) {
+      aiDisplayLog.push({ kind: 'error', text: 'AI Assistant error: ' + (typeof data.error === 'string' ? data.error : JSON.stringify(data.error)) });
+      renderAiChat();
+      return;
+    }
+    var content = data.content || [];
+    aiChatHistory.push({ role: 'assistant', content: content });
+    content.forEach(function(block) {
+      if (block.type === 'text' && block.text) {
+        aiDisplayLog.push({ kind: 'assistant', text: block.text });
+      } else if (block.type === 'tool_use' && !aiPendingAction) {
+        // Only act on the first tool call per turn — the Edge Function's
+        // system prompt instructs Claude to propose one action at a time.
+        aiPendingAction = { id: block.id, name: block.name, input: block.input || {} };
+      }
+    });
+    renderAiChat();
+  } catch (e) {
+    aiBusy = false;
+    aiDisplayLog.push({ kind: 'error', text: 'AI Assistant request failed: ' + (e && e.message ? e.message : String(e)) });
+    renderAiChat();
+  }
+}
+
+async function aiConfirmAction() {
+  if (!aiPendingAction || aiBusy) return;
+  var action = aiPendingAction;
+  aiBusy = true;
+  renderAiChat();
+  var result;
+  try {
+    if (action.name === 'create_reorder') result = aiCreateReorder(action.input);
+    else if (action.name === 'log_usage') result = await aiApplyLogEntry(action.input);
+    else result = { ok: false, message: 'Unknown action: ' + action.name };
+  } catch (e) {
+    result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
+  }
+  aiBusy = false;
+  aiDisplayLog.push({ kind: 'system', text: (result.ok ? '✓ ' : '✕ ') + result.message });
+  aiChatHistory.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: action.id, content: result.message, is_error: !result.ok }] });
+  aiPendingAction = null;
+  await aiCallAssistant();
+}
+
+async function aiCancelAction() {
+  if (!aiPendingAction || aiBusy) return;
+  var action = aiPendingAction;
+  aiDisplayLog.push({ kind: 'system', text: '✕ Cancelled.' });
+  aiChatHistory.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: action.id, content: 'The user cancelled this action. It was not applied.' }] });
+  aiPendingAction = null;
+  await aiCallAssistant();
+}
+
+// ── Action executor: create a single-item reorder (no PDF/PO number — just
+// files it as "Needed", like one row from the Create Reorder cart). If a
+// formal signed PO PDF is wanted, generate that manually from the Reorder tab
+// afterwards; keeping the AI's write action to the simpler, lower-risk one. ──
+function aiCreateReorder(input) {
+  if (!can('reorder')) return { ok: false, message: 'Permission denied: your role can\'t create reorders.' };
+  input = input || {};
+  var item = db.items.find(function(i) { return i.id === input.item_id; });
+  if (!item) return { ok: false, message: 'Item not found: ' + input.item_id };
+  var qty = parseFloat(input.qty);
+  if (!qty || qty <= 0) return { ok: false, message: 'Invalid quantity: ' + input.qty };
+  var supplier = (input.supplier || '').trim();
+  if (!supplier) return { ok: false, message: 'A supplier is required.' };
+  var cost = parseFloat(input.cost) || 0;
+  var now = new Date().toISOString();
+  var r = {
+    id: uid(), itemId: item.id, supplier: supplier,
+    supplierAddress: '', supplierTin: '',
+    qty: qty, cost: cost, orderDate: now.slice(0,10), deliveryDate: '',
+    status: 'needed', notes: 'Created via AI Assistant', createdAt: now, updatedAt: now,
+  };
+  rememberSupplier(supplier, '', '');
+  db.reorders.push(r);
+  logAudit('Reorder created (AI Assistant)', supplier + ' — ' + item.name + ' x' + qty);
+  save();
+  renderReorder();
+  updateSummary();
+  return { ok: true, message: 'Created a "Needed" reorder for ' + fmtInt(qty) + ' ' + (item.unit||'') + ' of ' + item.name + ' from ' + supplier + '.' };
+}
+
+// ── Action executor: apply a use/damage/restock/adjust log entry. Deliberately
+// a standalone copy of saveLog()'s core logic — not a refactor of saveLog
+// itself — so the well-tested manual Log Usage form can't be affected by
+// changes made for this AI path. ──
+async function aiApplyLogEntry(input) {
+  if (!can('log')) return { ok: false, message: 'Permission denied: your role can\'t log inventory usage.' };
+  input = input || {};
+  var type = input.type;
+  if (['use','damage','restock','adjust'].indexOf(type) === -1) return { ok: false, message: 'Invalid type: ' + type };
+  var item = db.items.find(function(i) { return i.id === input.item_id; });
+  if (!item) return { ok: false, message: 'Item not found: ' + input.item_id };
+  var qty = parseFloat(input.qty);
+  if (isNaN(qty) || qty <= 0) return { ok: false, message: 'Invalid quantity: ' + input.qty };
+
+  if (sb) {
+    try {
+      var fresh = await sb.from('items').select('qty').eq('id', item.id).single();
+      if (fresh.data && !fresh.error && fresh.data.qty !== undefined) item.qty = fresh.data.qty;
+    } catch(e) {}
+  }
+  var originalQty = item.qty;
+  var delta = qty;
+  if (type === 'use' || type === 'damage') delta = -qty;
+  if (type === 'adjust') delta = qty - item.qty;
+  var newQty = Math.max(0, item.qty + delta);
+
+  getLayers(item);
+  var fifoCost = null, fifoDetail = '';
+  if (type === 'use' || type === 'damage') {
+    fifoDetail = describeConsumption(item, qty);
+    fifoCost = consumeLayers(item, qty);
+  } else if (type === 'restock') {
+    var uc = parseFloat(input.unit_cost);
+    addLayer(item, qty, (!isNaN(uc) && uc > 0) ? uc : undefined);
+    if (!isNaN(uc) && uc > 0) fifoCost = Math.round(qty * uc * 100) / 100;
+  } else if (type === 'adjust') {
+    var d = newQty - originalQty;
+    if (d < 0) { fifoDetail = describeConsumption(item, -d); fifoCost = consumeLayers(item, -d); }
+    else if (d > 0) { fifoCost = addFoundStock(item, d); }
+  }
+
+  item.qty = newQty;
+  item.updatedAt = new Date().toISOString();
+  if (type === 'restock' || (type === 'adjust' && newQty > originalQty)) updateMaxRef(item, newQty);
+
+  var logDate = new Date().toISOString();
+  var logEntry = {
+    id: uid(), itemId: item.id, type: type,
+    qty: type === 'adjust' ? newQty - originalQty : qty,
+    absQty: newQty,
+    by: (currentUser && currentUser.username) ? currentUser.username + ' (AI Assistant)' : 'AI Assistant',
+    date: logDate, ref: '', notes: (input.notes || '').trim(),
+  };
+  if (type === 'adjust') { logEntry.variance = newQty - originalQty; logEntry.varianceReason = (input.notes || '').trim(); }
+  if (fifoCost !== null) logEntry.costAmount = fifoCost;
+  if (fifoDetail) logEntry.costDetail = fifoDetail;
+  db.logs.push(logEntry);
+  syncItemCost(item);
+
+  if (type === 'restock') {
+    db.reorders.forEach(function(r) {
+      if (r.itemId === item.id && r.status !== 'received') {
+        var since = r.createdAt || '1970-01-01';
+        var totalRestocked = db.logs.filter(function(l){ return l.itemId===item.id && l.type==='restock' && l.date>=since; }).reduce(function(s,l){ return s+(l.qty||0); }, 0);
+        if (totalRestocked >= r.qty) {
+          r.status = 'received';
+          if (!r.receivedAt) r.receivedAt = logDate;
+          r.notes = (r.notes||'').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
+        } else {
+          var partialNote = '⚠️ Partial delivery: ' + fmtInt(totalRestocked) + ' of ' + fmtInt(r.qty) + ' received';
+          var existing = (r.notes||'').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
+          r.notes = partialNote + (existing ? '\n' + existing : '');
+        }
+      }
+    });
+  }
+
+  logAudit('Usage logged (AI Assistant)', type + ' — ' + item.name + ' x' + qty);
+  updateSummary();
+  if (sb) {
+    try { await sbUpdateItem(item, { "maxRef": item.maxRef }); await sbInsertLogs([logEntry]); }
+    catch(e) { save(); }
+  } else { save(); }
+  renderLogs();
+  renderInventory();
+  if (type === 'restock') renderReorder();
+
+  return { ok: true, message: 'Logged ' + type + ' of ' + fmtInt(qty) + ' ' + (item.unit||'') + ' for ' + item.name + '. New qty: ' + fmtInt(newQty) + '.' };
 }
 
 </script>
