@@ -625,7 +625,6 @@
     <div id="nav-messages" class="nav-item" data-tab="messages" draggable="true" onclick="switchTab('messages')">📬 <span>Messages</span><span class="nav-drag-handle">⠿</span><span id="msg-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
     <div id="nav-requests" class="nav-item" data-tab="requests" draggable="true" onclick="switchTab('requests')">🛒 <span>Requests</span><span class="nav-drag-handle">⠿</span><span id="req-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
     <div id="nav-audit" class="nav-item" data-tab="audit" draggable="true" onclick="switchTab('audit')">📋 <span>Audit Log</span><span class="nav-drag-handle">⠿</span></div>
-    <div id="nav-ai" class="nav-item" data-tab="ai" draggable="true" onclick="switchTab('ai')">🤖 <span>AI Assistant</span><span class="nav-drag-handle">⠿</span></div>
     <div class="reorder-hint" id="reorder-hint" style="display:none">Drag to reorder</div>
   </nav>
   <div class="sidebar-bottom">
@@ -831,6 +830,7 @@
       </select>
       <button id="btn-create-reorder" class="btn btn-primary" onclick="openReorderCreateModal()">+ Create Reorder</button>
       <button id="btn-po-history" class="btn btn-secondary" onclick="openPoHistoryModal()">📋 PO History</button>
+      <button id="btn-import-suppliers" class="btn btn-secondary" onclick="openSupplierImportModal()" style="display:none">⬆ Import Suppliers</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -1118,25 +1118,30 @@
     <div id="audit-list-wrap"></div>
   </div>
 
-  <!-- AI ASSISTANT TAB -->
-  <div class="tab-panel" id="tab-ai">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-      <div>
-        <div style="font-size:18px;font-weight:700;color:var(--text)">🤖 AI Assistant</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px">Ask about your inventory, or ask it to create a reorder / PO or log usage — you'll always be asked to confirm before anything is saved.</div>
-      </div>
-      <button class="btn btn-secondary" onclick="resetAiChat()" style="font-size:12px">↺ New Chat</button>
+  </main>
+</div>
+
+<!-- AI ASSISTANT — floating corner widget (not part of the tab flow) -->
+<!-- z-index 400 keeps it below #login-overlay (999), so it's automatically
+     covered while logged out; applyTabVisibility() also hides it per-role. -->
+<button id="ai-fab" onclick="toggleAiPanel()" title="AI Assistant" style="display:none;position:fixed;right:22px;bottom:22px;z-index:400;width:56px;height:56px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:24px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25);align-items:center;justify-content:center">🤖</button>
+
+<div id="ai-float-panel" style="display:none;flex-direction:column;position:fixed;right:22px;bottom:90px;z-index:400;width:360px;max-width:calc(100vw - 32px);height:min(560px, calc(100vh - 130px));border:1px solid var(--border);border-radius:14px;background:var(--surface2);box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden">
+  <div style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);background:var(--surface)">
+    <div>
+      <div style="font-size:14px;font-weight:700;color:var(--text)">🤖 AI Assistant</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:1px">Always confirms before saving anything</div>
     </div>
-    <div id="ai-chat-wrap" style="display:flex;flex-direction:column;height:calc(100vh - 210px);min-height:340px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);overflow:hidden">
-      <div id="ai-chat-messages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px"></div>
-      <div id="ai-chat-inputrow" style="flex-shrink:0;border-top:1px solid var(--border);padding:10px;display:flex;gap:8px;background:var(--surface)">
-        <textarea id="ai-chat-input" rows="1" placeholder="Ask a question, or tell it what to do…" style="flex:1;resize:none;font-family:inherit;font-size:13px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg,transparent)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiChat();}"></textarea>
-        <button id="ai-chat-send" class="btn btn-primary" onclick="sendAiChat()">Send</button>
-      </div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-icon btn-sm" title="New chat" onclick="resetAiChat()">↺</button>
+      <button class="btn btn-icon btn-sm" title="Close" onclick="toggleAiPanel()">✕</button>
     </div>
   </div>
-
-  </main>
+  <div id="ai-chat-messages" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px"></div>
+  <div id="ai-chat-inputrow" style="flex-shrink:0;border-top:1px solid var(--border);padding:10px;display:flex;gap:8px;background:var(--surface)">
+    <textarea id="ai-chat-input" rows="1" placeholder="Ask a question, or tell it what to do…" style="flex:1;resize:none;font-family:inherit;font-size:13px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg,transparent)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiChat();}"></textarea>
+    <button id="ai-chat-send" class="btn btn-primary" onclick="sendAiChat()">Send</button>
+  </div>
 </div>
 
 <!-- NEW SUPPLY REQUEST MODAL -->
@@ -1299,6 +1304,51 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('import-modal');resetImportModal()">Cancel</button>
       <button id="import-apply-btn" class="btn btn-primary" onclick="applyImport()" style="display:none">✓ Apply Updates</button>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT SUPPLIERS MODAL -->
+<div class="modal-bg" id="supplier-import-modal">
+  <div class="modal" style="max-width:640px;width:95vw">
+    <h2>⬆ Import Suppliers</h2>
+    <div id="sup-import-dropzone" style="border:2px dashed var(--border);border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:border-color .2s;margin-bottom:16px"
+      ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+      ondragleave="this.style.borderColor='var(--border)'"
+      ondrop="event.preventDefault();this.style.borderColor='var(--border)';handleSupplierImportFile({files:event.dataTransfer.files})"
+      onclick="document.getElementById('sup-import-file-input').click()">
+      <div style="font-size:28px;margin-bottom:8px">📂</div>
+      <div style="font-size:13px;font-weight:600;color:var(--text)">Click or drag a file here</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Supports <strong>.csv</strong>, <strong>.xlsx</strong>, <strong>.xls</strong></div>
+      <input type="file" id="sup-import-file-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleSupplierImportFile(this)">
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+      <strong>Required column:</strong> <code>Name</code> (or <code>Supplier</code> / <code>Supplier Name</code>).<br>
+      <strong>Optional columns:</strong> <code>Address</code> (or <code>Supplier Address</code>) · <code>TIN</code> (or <code>Tax ID</code> / <code>Supplier TIN</code>).<br>
+      Once imported, selecting this supplier anywhere in SupplyBase — including the AI Assistant — fills in its Address/TIN automatically.
+    </div>
+    <div id="sup-import-preview-wrap" style="display:none">
+      <div id="sup-import-summary-bar" style="font-size:12px;font-weight:600;margin-bottom:10px;padding:8px 12px;border-radius:8px;background:var(--surface2)"></div>
+      <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:var(--surface2);position:sticky;top:0">
+              <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Supplier</th>
+              <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Address</th>
+              <th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">TIN</th>
+              <th style="padding:8px 12px;text-align:center;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase">Status</th>
+            </tr>
+          </thead>
+          <tbody id="sup-import-preview-body"></tbody>
+        </table>
+      </div>
+      <div id="sup-import-skipped-wrap" style="display:none;margin-top:10px;font-size:11px;color:var(--muted)">
+        <strong>⚠ Skipped rows (no supplier name):</strong> <span id="sup-import-skipped-count"></span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('supplier-import-modal');resetSupplierImportModal()">Cancel</button>
+      <button id="sup-import-apply-btn" class="btn btn-primary" onclick="applySupplierImport()" style="display:none">✓ Apply Import</button>
     </div>
   </div>
 </div>
@@ -2558,17 +2608,26 @@ async function saveSupplierDirectory() {
   } catch(e) {}
 }
 
-// Called whenever a reorder is saved — records/updates this supplier's
-// Address/TIN if either was filled in, so it's ready next time.
-function rememberSupplier(name, address, tin) {
+// Merges one supplier's Address/TIN into the in-memory directory without
+// persisting — split out from rememberSupplier() so bulk imports can merge
+// many rows in memory and persist once at the end, instead of firing off a
+// separate delete+insert to Supabase per row (which would race against
+// itself on a big import). Returns true if anything actually changed.
+function _mergeSupplierEntry(name, address, tin) {
   var k = _supKey(name);
-  if (!k) return;
+  if (!k) return false;
   var existing = supplierDirectory[k] || {};
   var changed = false;
   var entry = { name: name.trim(), address: address || existing.address || '', tin: tin || existing.tin || '' };
   if (entry.address !== existing.address || entry.tin !== existing.tin || entry.name !== existing.name) changed = true;
   supplierDirectory[k] = entry;
-  if (changed) saveSupplierDirectory();
+  return changed;
+}
+
+// Called whenever a reorder is saved — records/updates this supplier's
+// Address/TIN if either was filled in, so it's ready next time.
+function rememberSupplier(name, address, tin) {
+  if (_mergeSupplierEntry(name, address, tin)) saveSupplierDirectory();
 }
 
 // Called on blur of a Supplier field — fills in Address/TIN if we've seen
@@ -3190,7 +3249,6 @@ function switchTab(name) {
   if (name === 'messages') renderMessages();
   if (name === 'requests') { reqVisibleCount = REQ_PAGE_SIZE; renderRequests(); }
   if (name === 'audit') renderAuditLog();
-  if (name === 'ai') renderAiChat();
   // Sync bottom nav active state
   ['inventory','usage','requests','messages'].forEach(function(t) {
     var btn = document.getElementById('bn-' + t);
@@ -8013,7 +8071,10 @@ function isTabHidden(tab, role) {
 }
 
 function visibleTabsFor(role) {
-  return ALL_TABS.filter(function(t) { return !isTabHidden(t, role); });
+  // 'ai' is excluded here even though it's in ALL_TABS (for the per-role
+  // hide/show settings UI) — it's a floating widget, not a switchable tab,
+  // so it must never be picked as a fallback "first visible tab" to switch to.
+  return ALL_TABS.filter(function(t) { return t !== 'ai' && !isTabHidden(t, role); });
 }
 
 async function loadTabsByRole() {
@@ -8046,6 +8107,12 @@ function applyTabVisibility() {
     var bnEl = document.getElementById('bn-' + tab);
     if (bnEl) bnEl.style.display = hidden ? 'none' : '';
   });
+  // The AI Assistant isn't a switchable tab (it's a floating corner widget),
+  // but it still uses the same per-role hide list as every other tab.
+  var aiHidden = isTabHidden('ai');
+  var aiFab = document.getElementById('ai-fab');
+  if (aiFab) aiFab.style.display = aiHidden ? 'none' : 'flex';
+  if (aiHidden) { aiPanelOpen = false; var aiPanel = document.getElementById('ai-float-panel'); if (aiPanel) aiPanel.style.display = 'none'; }
   // If the active tab just became hidden, move to the first visible one
   var activePanel = document.querySelector('.tab-panel.active');
   var activeTab = activePanel ? activePanel.id.replace('tab-', '') : '';
@@ -8079,9 +8146,10 @@ async function toggleTabAccess(tab, visible) {
   if (visible) {
     list = list.filter(function(t) { return t !== tab; });
   } else {
-    // Don't allow a role to end up with no tabs at all
+    // Don't allow a role to end up with no real (switchable) tabs at all —
+    // 'ai' doesn't count here since it's a floating widget, not a tab.
     if (list.indexOf(tab) === -1) list.push(tab);
-    if (ALL_TABS.filter(function(t){ return list.indexOf(t) === -1; }).length === 0) {
+    if (ALL_TABS.filter(function(t){ return t !== 'ai' && list.indexOf(t) === -1; }).length === 0) {
       alert('A role must keep at least one visible tab.');
       applyTabVisibility(); // re-tick the checkbox
       return;
@@ -8749,6 +8817,7 @@ function applyRoleUI() {
   show('btn-log-usage',      can('log'));
   show('btn-create-reorder', can('reorder'));
   show('btn-po-history',     can('reorder'));
+  show('btn-import-suppliers', currentRole === 'superuser');
 
   // Tab visibility is driven by the per-role config (see applyTabVisibility)
   show('btn-export-inv-csv', !isBrand);
@@ -9887,6 +9956,129 @@ function resetImportModal() {
   // reset both file inputs so the same file can be re-selected
   document.getElementById('import-file-input').value = '';
   document.getElementById('import-file-input2').value = '';
+}
+
+// ─── IMPORT SUPPLIERS ────────────────────────────────────────────────────────────
+// Bulk-loads a supplier list (Name/Address/TIN) into supplierDirectory, the
+// same store that auto-fills Address/TIN wherever a supplier is selected —
+// including generate_po from the AI Assistant. Mirrors the Import Inventory
+// File flow (dropzone → parse → preview → apply), reusing the same
+// CSV/XLSX parsing helpers.
+var _supImportRows = []; // pending parsed+validated rows awaiting Apply
+
+function openSupplierImportModal() {
+  if (currentRole !== 'superuser') return;
+  resetSupplierImportModal();
+  openModal('supplier-import-modal');
+}
+
+function resetSupplierImportModal() {
+  _supImportRows = [];
+  document.getElementById('sup-import-preview-wrap').style.display = 'none';
+  document.getElementById('sup-import-apply-btn').style.display = 'none';
+  document.getElementById('sup-import-skipped-wrap').style.display = 'none';
+  document.getElementById('sup-import-preview-body').innerHTML = '';
+  document.getElementById('sup-import-file-input').value = '';
+}
+
+function handleSupplierImportFile(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var ext = file.name.split('.').pop().toLowerCase();
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var data = e.target.result;
+    var rows = [];
+    try {
+      if (ext === 'csv') {
+        var text = data;
+        var lines = text.split(/\r?\n/).filter(function(l){ return l.trim(); });
+        var headers = parseCSVLine(lines[0]);
+        for (var i = 1; i < lines.length; i++) {
+          var vals = parseCSVLine(lines[i]);
+          if (!vals.length || vals.every(function(v){ return !v.trim(); })) continue;
+          var obj = {};
+          headers.forEach(function(h, idx){ obj[h.trim()] = (vals[idx] || '').trim(); });
+          rows.push(obj);
+        }
+      } else {
+        var wb = XLSX.read(data, { type: 'array' });
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      }
+    } catch(err) {
+      alert('Could not parse file: ' + err.message);
+      return;
+    }
+    previewSupplierImport(rows);
+  };
+  if (ext === 'csv') reader.readAsText(file);
+  else reader.readAsArrayBuffer(file);
+}
+
+// Column names are matched case/spacing-insensitively against a few common
+// variants, since a supplier list handed over from elsewhere won't
+// necessarily use SupplyBase's exact field names.
+function _findSupplierCol(row, candidates) {
+  var keys = Object.keys(row);
+  for (var i = 0; i < candidates.length; i++) {
+    var target = candidates[i].toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (var j = 0; j < keys.length; j++) {
+      if (keys[j].toLowerCase().replace(/[^a-z0-9]/g, '') === target) return row[keys[j]];
+    }
+  }
+  return '';
+}
+
+function previewSupplierImport(rows) {
+  var parsed = [];
+  var skipped = 0;
+  rows.forEach(function(row) {
+    var name = String(_findSupplierCol(row, ['Name', 'Supplier', 'Supplier Name']) || '').trim();
+    if (!name) { skipped++; return; }
+    var address = String(_findSupplierCol(row, ['Address', 'Supplier Address']) || '').trim();
+    var tin = String(_findSupplierCol(row, ['TIN', 'Tax ID', 'Supplier TIN']) || '').trim();
+    var existing = supplierDirectory[_supKey(name)];
+    var status = !existing ? 'New' : ((existing.address||'') !== address && address) || ((existing.tin||'') !== tin && tin) ? 'Update' : 'Unchanged';
+    parsed.push({ name: name, address: address, tin: tin, status: status });
+  });
+  _supImportRows = parsed;
+
+  var tbody = document.getElementById('sup-import-preview-body');
+  tbody.innerHTML = parsed.map(function(r) {
+    var color = r.status === 'New' ? 'var(--ok)' : r.status === 'Update' ? 'var(--warn)' : 'var(--muted)';
+    return '<tr><td style="padding:6px 12px">' + esc(r.name) + '</td>'
+      + '<td style="padding:6px 12px">' + esc(r.address || '—') + '</td>'
+      + '<td style="padding:6px 12px">' + esc(r.tin || '—') + '</td>'
+      + '<td style="padding:6px 12px;text-align:center;color:' + color + ';font-weight:600">' + r.status + '</td></tr>';
+  }).join('');
+
+  var newCount = parsed.filter(function(r){ return r.status === 'New'; }).length;
+  var updCount = parsed.filter(function(r){ return r.status === 'Update'; }).length;
+  document.getElementById('sup-import-summary-bar').textContent =
+    parsed.length + ' supplier' + (parsed.length===1?'':'s') + ' found — ' + newCount + ' new, ' + updCount + ' to update' + (skipped ? ', ' + skipped + ' row' + (skipped===1?'':'s') + ' skipped (no name)' : '') + '.';
+
+  var skipWrap = document.getElementById('sup-import-skipped-wrap');
+  if (skipped) { skipWrap.style.display = ''; document.getElementById('sup-import-skipped-count').textContent = skipped; }
+  else skipWrap.style.display = 'none';
+
+  document.getElementById('sup-import-preview-wrap').style.display = '';
+  document.getElementById('sup-import-apply-btn').style.display = parsed.length ? '' : 'none';
+}
+
+async function applySupplierImport() {
+  if (currentRole !== 'superuser') return;
+  if (!_supImportRows.length) return;
+  var changedAny = false;
+  _supImportRows.forEach(function(r) {
+    if (_mergeSupplierEntry(r.name, r.address, r.tin)) changedAny = true;
+  });
+  if (changedAny) await saveSupplierDirectory(); // one persist for the whole batch
+  populateAllSupplierDatalists();
+  logAudit('Suppliers imported', _supImportRows.length + ' supplier' + (_supImportRows.length===1?'':'s') + ' from file');
+  closeModal('supplier-import-modal');
+  resetSupplierImportModal();
+  alert('Imported ' + _supImportRows.length + ' supplier' + (_supImportRows.length===1?'':'s') + '.');
 }
 
 function handleImportFile(input) {
@@ -11427,6 +11619,18 @@ var aiChatHistory = [];
 var aiDisplayLog = [];
 var aiPendingAction = null; // { id, name, input } — a tool_use awaiting Confirm/Cancel
 var aiBusy = false;
+var aiPanelOpen = false; // AI Assistant is a floating corner widget, not a tab
+
+function toggleAiPanel() {
+  aiPanelOpen = !aiPanelOpen;
+  var panel = document.getElementById('ai-float-panel');
+  if (panel) panel.style.display = aiPanelOpen ? 'flex' : 'none';
+  if (aiPanelOpen) {
+    renderAiChat();
+    var input = document.getElementById('ai-chat-input');
+    if (input) input.focus();
+  }
+}
 
 function resetAiChat() {
   if (aiBusy) return;
@@ -11449,6 +11653,14 @@ function aiBuildContextItems() {
   });
 }
 
+// Known suppliers (from past POs) so the assistant can fill in a supplier's
+// address/TIN itself instead of asking the person to repeat it every time.
+function aiBuildContextSuppliers() {
+  return Object.values(supplierDirectory || {}).map(function(s) {
+    return { name: s.name || '', address: s.address || '', tin: s.tin || '' };
+  });
+}
+
 function aiScrollToBottom() {
   var el = document.getElementById('ai-chat-messages');
   if (el) el.scrollTop = el.scrollHeight;
@@ -11459,6 +11671,59 @@ function aiBubbleHtml(role, text) {
   return '<div style="align-self:' + (isUser ? 'flex-end' : 'flex-start') + ';max-width:80%;background:' + (isUser ? 'var(--accent)' : 'var(--surface)') + ';color:' + (isUser ? '#fff' : 'var(--text)') + ';border:1px solid ' + (isUser ? 'transparent' : 'var(--border)') + ';border-radius:12px;padding:9px 13px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word">' + esc(text) + '</div>';
 }
 
+// Detailed itemized preview for a proposed generate_po action — every field
+// that will land on the PDF, shown before the person clicks Confirm.
+function aiPoPreviewHtml(input) {
+  var rows = (input.items || []).map(function(it) {
+    var name, unit;
+    if (it.item_id) {
+      var found = db.items.find(function(i){ return i.id === it.item_id; });
+      name = found ? found.name : (it.item_id + ' (not found)');
+      unit = found ? (found.unit || '') : '';
+    } else {
+      name = it.description || 'Custom item';
+      unit = it.unit || '';
+    }
+    var qty = it.qty || 0, cost = it.cost || 0;
+    return '<tr><td style="padding:3px 8px 3px 0">' + esc(name) + '</td>'
+      + '<td style="padding:3px 8px;text-align:right;white-space:nowrap">' + esc(String(qty)) + ' ' + esc(unit) + '</td>'
+      + '<td style="padding:3px 0 3px 8px;text-align:right;white-space:nowrap">' + fmtPHP(cost) + '</td>'
+      + '<td style="padding:3px 0 3px 8px;text-align:right;white-space:nowrap">' + fmtPHP(qty * cost) + '</td></tr>';
+  }).join('');
+  var subtotal = (input.items || []).reduce(function(s, it) { return s + (it.qty || 0) * (it.cost || 0); }, 0);
+  var shipCost = input.ship_cost || 0, other = input.other || 0, discount = input.discount || 0;
+  var total = subtotal + shipCost + other - discount;
+  var extras = [];
+  if (shipCost) extras.push('Shipping ' + fmtPHP(shipCost));
+  if (other) extras.push('Other ' + fmtPHP(other));
+  if (discount) extras.push('Discount -' + fmtPHP(discount));
+
+  // Every required field, shown plainly so it can be checked before Confirm —
+  // not just the item table.
+  var fieldRows = [
+    ['Supplier', input.supplier],
+    ['Address', input.supplier_address],
+    ['TIN', input.supplier_tin],
+    ['Shipping method', input.ship_method],
+    ['Shipping terms', input.ship_terms],
+    ['Delivery', input.delivery],
+    ['Checked by', input.checked_by],
+    ['Approved by', input.approved_by],
+  ].map(function(pair) {
+    var missing = !pair[1];
+    return '<div style="display:flex;gap:6px"><span style="color:var(--muted);min-width:110px;flex-shrink:0">' + esc(pair[0]) + '</span>'
+      + '<span style="' + (missing ? 'color:var(--danger);font-style:italic' : '') + '">' + esc(missing ? 'missing' : pair[1]) + '</span></div>';
+  }).join('');
+
+  return 'Generate a Purchase Order:'
+    + '<div style="display:flex;flex-direction:column;gap:2px;font-size:12px;margin:8px 0">' + fieldRows + '</div>'
+    + '<table style="width:100%;font-size:12px;border-collapse:collapse;margin:8px 0">'
+    + '<thead><tr style="color:var(--muted);text-align:right"><td style="text-align:left">Item</td><td>Qty</td><td>Unit cost</td><td>Total</td></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table>'
+    + '<div style="font-size:12px;color:var(--muted)">Subtotal ' + fmtPHP(subtotal) + (extras.length ? ' · ' + extras.join(' · ') : '') + '</div>'
+    + '<div style="font-weight:700;margin-top:4px">Total PO Amount (VAT-inc): ' + fmtPHP(total) + '</div>';
+}
+
 function aiActionCardHtml(action) {
   var item = action.input && action.input.item_id ? db.items.find(function(i){ return i.id === action.input.item_id; }) : null;
   var desc;
@@ -11466,6 +11731,8 @@ function aiActionCardHtml(action) {
     desc = 'Create a reorder for <strong>' + esc(item ? item.name : (action.input.item_id||'unknown item')) + '</strong> — qty ' + esc(String(action.input.qty))
       + (action.input.supplier ? ', from <strong>' + esc(action.input.supplier) + '</strong>' : '')
       + (action.input.cost ? ' at ' + fmtPHP(action.input.cost) + '/unit' : '') + '.';
+  } else if (action.name === 'generate_po') {
+    desc = aiPoPreviewHtml(action.input);
   } else {
     desc = 'Log <strong>' + esc(action.input.type) + '</strong> of <strong>' + esc(String(action.input.qty)) + '</strong> for <strong>' + esc(item ? item.name : (action.input.item_id||'unknown item')) + '</strong>'
       + (action.input.notes ? ' — "' + esc(action.input.notes) + '"' : '') + '.';
@@ -11533,11 +11800,29 @@ async function aiCallAssistant() {
   renderAiChat();
   try {
     var res = await sb.functions.invoke('ai-assistant', {
-      body: { messages: aiChatHistory, context: { items: aiBuildContextItems() } }
+      body: { messages: aiChatHistory, context: { items: aiBuildContextItems(), suppliers: aiBuildContextSuppliers() } }
     });
     aiBusy = false;
     if (res.error || !res.data) {
-      aiDisplayLog.push({ kind: 'error', text: 'Couldn\'t reach the AI Assistant. Make sure the "ai-assistant" Edge Function is deployed and its GEMINI_API_KEY secret is set (see ai_assistant_setup.md). ' + (res.error ? (res.error.message || String(res.error)) : '') });
+      // supabase-js only gives a generic "non-2xx status code" message; the
+      // real reason (from the Edge Function or Supabase's gateway) is in the
+      // response body on res.error.context, so read it out and show that.
+      var detail = res.error ? (res.error.message || String(res.error)) : 'Empty response.';
+      var status = '';
+      try {
+        var ctx = res.error && res.error.context;
+        if (ctx && typeof ctx.status === 'number') status = 'HTTP ' + ctx.status + ' — ';
+        if (ctx && typeof ctx.text === 'function') {
+          var raw = await ctx.text();
+          var body = null;
+          try { body = JSON.parse(raw); } catch(e) {}
+          if (body && body.error) detail = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
+          else if (body && body.msg) detail = body.msg;
+          else if (body && body.message) detail = body.message;
+          else if (raw) detail = raw.slice(0, 300);
+        }
+      } catch(e) {}
+      aiDisplayLog.push({ kind: 'error', text: 'AI Assistant error: ' + status + detail });
       renderAiChat();
       return;
     }
@@ -11575,6 +11860,7 @@ async function aiConfirmAction() {
   try {
     if (action.name === 'create_reorder') result = aiCreateReorder(action.input);
     else if (action.name === 'log_usage') result = await aiApplyLogEntry(action.input);
+    else if (action.name === 'generate_po') result = await aiGeneratePO(action.input);
     else result = { ok: false, message: 'Unknown action: ' + action.name };
   } catch (e) {
     result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
@@ -11623,6 +11909,103 @@ function aiCreateReorder(input) {
   renderReorder();
   updateSummary();
   return { ok: true, message: 'Created a "Needed" reorder for ' + fmtInt(qty) + ' ' + (item.unit||'') + ' of ' + item.name + ' from ' + supplier + '.' };
+}
+
+// ── Action executor: generate a full Purchase Order — PO number, PDF, and
+// "ordered" reorder records for the catalog items in it. Mirrors
+// saveReorderCart(true)'s core logic, adapted to take a ready-made item list
+// from the AI in one call instead of the interactive cart UI. Every field was
+// already shown to the person in the confirmation card before this runs. ──
+async function aiGeneratePO(input) {
+  if (!can('reorder')) return { ok: false, message: 'Permission denied: your role can\'t generate Purchase Orders.' };
+  input = input || {};
+  var supplier = (input.supplier || '').trim();
+  if (!supplier) return { ok: false, message: 'A supplier is required.' };
+  var rawItems = Array.isArray(input.items) ? input.items : [];
+  if (!rawItems.length) return { ok: false, message: 'At least one item is required.' };
+
+  // Defense in depth: these are marked required in the tool schema, but the
+  // model isn't guaranteed to honor that, so re-check here before writing
+  // anything or generating a PDF.
+  var requiredFields = [
+    ['supplier_address', 'supplier address'], ['supplier_tin', 'supplier TIN'],
+    ['ship_method', 'shipping method'], ['delivery', 'delivery date/terms'],
+    ['checked_by', 'checked by'], ['approved_by', 'approved by'],
+  ];
+  var missing = requiredFields.filter(function(f) { return !(input[f[0]] || '').toString().trim(); }).map(function(f) { return f[1]; });
+  if (missing.length) return { ok: false, message: 'Missing required field(s) before this PO can be generated: ' + missing.join(', ') + '.' };
+
+  var cart = [];
+  for (var i = 0; i < rawItems.length; i++) {
+    var it = rawItems[i] || {};
+    var qty = parseFloat(it.qty);
+    if (!qty || qty <= 0) return { ok: false, message: 'Invalid quantity for item ' + (i + 1) + '.' };
+    var cost = parseFloat(it.cost) || 0;
+    if (it.item_id) {
+      var catItem = db.items.find(function(x) { return x.id === it.item_id; });
+      if (!catItem) return { ok: false, message: 'Item not found: ' + it.item_id };
+      cart.push({ isCustom: false, itemId: catItem.id, name: catItem.name, unit: catItem.unit || '', qty: qty, cost: cost });
+    } else {
+      var desc2 = (it.description || '').trim();
+      if (!desc2) return { ok: false, message: 'Item ' + (i + 1) + ' needs either an item_id or a description.' };
+      cart.push({ isCustom: true, name: desc2, unit: (it.unit || '').trim(), qty: qty, cost: cost });
+    }
+  }
+
+  var supplierAddress = (input.supplier_address || '').trim();
+  var supplierTin = (input.supplier_tin || '').trim();
+  var shipMethod = (input.ship_method || '').trim();
+  var shipTerms = (input.ship_terms || '').trim();
+  var delivery = (input.delivery || '').trim();
+  var shipCost = parseFloat(input.ship_cost) || 0;
+  var other = parseFloat(input.other) || 0;
+  var discount = parseFloat(input.discount) || 0;
+  var checkedBy = (input.checked_by || '').trim();
+  var approvedBy = (input.approved_by || '').trim();
+
+  rememberSupplier(supplier, supplierAddress, supplierTin);
+  var now = new Date().toISOString();
+  var poNumber = await reserveNextPoNumber();
+
+  var catalogCart = cart.filter(function(c) { return !c.isCustom; });
+  var customCart = cart.filter(function(c) { return c.isCustom; });
+
+  var newReorders = catalogCart.map(function(c) {
+    return {
+      id: uid(), itemId: c.itemId, supplier: supplier,
+      supplierAddress: supplierAddress, supplierTin: supplierTin,
+      qty: c.qty, cost: c.cost, orderDate: now.slice(0,10), deliveryDate: delivery,
+      status: 'ordered', notes: 'Created via AI Assistant', createdAt: now, updatedAt: now,
+      orderedAt: now, poNumber: poNumber,
+    };
+  });
+  db.reorders.push.apply(db.reorders, newReorders);
+
+  var lineItems = cart.map(function(c) {
+    return { description: c.name, qty: c.qty || 0, unit: c.unit || '', unitPrice: c.cost || 0, total: (c.qty || 0) * (c.cost || 0) };
+  });
+  var subtotal = lineItems.reduce(function(s, l) { return s + l.total; }, 0);
+  var totalPayable = subtotal + shipCost + other - discount;
+  var poRecord = {
+    id: uid(), poNumber: poNumber, date: now,
+    supplier: supplier, supplierAddress: supplierAddress, supplierTin: supplierTin,
+    shipMethod: shipMethod, shipTerms: shipTerms, delivery: delivery,
+    shipCost: shipCost, other: other, discount: discount,
+    checkedBy: checkedBy, approvedBy: approvedBy,
+    subtotal: subtotal, total: totalPayable,
+    reorderIds: newReorders.map(function(r) { return r.id; }),
+    customItems: customCart.map(function(c) { return { description: c.name, unit: c.unit, qty: c.qty, cost: c.cost }; }),
+    createdBy: (currentUser && currentUser.username) ? currentUser.username + ' (AI Assistant)' : 'AI Assistant',
+    createdAt: now,
+  };
+  db.purchaseOrders.push(poRecord);
+  logAudit('Purchase Order generated (AI Assistant)', poNumber + ' — ' + supplier + ' (' + cart.length + ' item' + (cart.length === 1 ? '' : 's') + ')');
+  save();
+  renderReorder();
+  updateSummary();
+  buildPurchaseOrderPdf(poRecord, lineItems);
+
+  return { ok: true, message: 'Generated ' + poNumber + ' for ' + supplier + ' — ' + fmtInt(cart.length) + ' item' + (cart.length === 1 ? '' : 's') + ', total ' + fmtPHP(totalPayable) + '. PDF downloaded.' };
 }
 
 // ── Action executor: apply a use/damage/restock/adjust log entry. Deliberately
