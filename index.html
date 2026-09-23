@@ -611,8 +611,13 @@
   .sb-cancel:hover { background:var(--surface2); }
   @media (max-width: 768px) {
     #ai-fab { bottom: calc(70px + env(safe-area-inset-bottom, 0px)) !important; right: 14px !important; }
+    /* Height is NOT set here — CSS min()/calc() + flex stretching proved
+       unreliable for capping this panel across browsers, which silently
+       broke the scrollable message list below it. aiFitPanelSize() (JS)
+       measures the real viewport and sets an explicit pixel height
+       instead, so it isn't left to any single browser's layout math. */
     #ai-float-panel { left: 10px !important; right: 10px !important; width: auto !important; max-width: none !important;
-      top: calc(env(safe-area-inset-top, 0px) + 10px) !important; bottom: calc(136px + env(safe-area-inset-bottom, 0px)) !important; height: auto !important; }
+      top: calc(env(safe-area-inset-top, 0px) + 10px) !important; bottom: calc(136px + env(safe-area-inset-bottom, 0px)) !important; }
   }
 </style>
 </head>
@@ -9612,6 +9617,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Re-render inventory on resize (desktop ↔ mobile switch)
   window.addEventListener('resize', function() {
     if (document.getElementById('tab-inventory').classList.contains('active')) renderInventory();
+    if (aiPanelOpen) aiFitPanelSize();
   });
 });
 
@@ -11771,11 +11777,43 @@ var aiPanelOpen = false; // Shelfie is a floating corner widget, not a tab
 // Confirm/Cancel card the three write actions use.
 var AI_READONLY_TOOLS = ['get_cost_report', 'export_cost_report_csv'];
 
+// Computes and applies an exact pixel height for the floating panel and its
+// scrollable message list, in JS rather than CSS. A min()/calc()+flex
+// approach kept getting silently broken by some browsers not stretching a
+// fixed-position flex box to fill the gap between its "top" and "bottom",
+// which left the panel growing to fit its content instead of capping —
+// and with nothing capping it, #ai-chat-messages had nothing to scroll,
+// no matter what overflow-y rule it had. Measuring the real viewport and
+// setting explicit pixel heights sidesteps that entirely. Called whenever
+// the panel opens, re-renders, or the window resizes.
+function aiFitPanelSize() {
+  var panel = document.getElementById('ai-float-panel');
+  if (!panel || panel.style.display !== 'flex') return;
+  var vh = window.innerHeight;
+  var mobile = window.innerWidth <= 768;
+  // Mirrors the space the old CSS reserved: ~146px top+bottom clearance on
+  // mobile (room for a bottom nav bar), or a simple 620px cap with 130px of
+  // breathing room on desktop.
+  var maxH = mobile ? (vh - 146) : Math.min(620, vh - 130);
+  panel.style.height = Math.max(240, maxH) + 'px';
+
+  var el = document.getElementById('ai-chat-messages');
+  var inputRow = document.getElementById('ai-chat-inputrow');
+  var header = panel.firstElementChild;
+  if (el && inputRow && header) {
+    var avail = panel.getBoundingClientRect().height
+      - header.getBoundingClientRect().height
+      - inputRow.getBoundingClientRect().height;
+    if (avail > 60) el.style.maxHeight = avail + 'px';
+  }
+}
+
 function toggleAiPanel() {
   aiPanelOpen = !aiPanelOpen;
   var panel = document.getElementById('ai-float-panel');
   if (panel) panel.style.display = aiPanelOpen ? 'flex' : 'none';
   if (aiPanelOpen) {
+    aiFitPanelSize();
     renderAiChat();
     var input = document.getElementById('ai-chat-input');
     if (input) input.focus();
@@ -12064,6 +12102,7 @@ function aiEmptyStateHtml() {
 function renderAiChat() {
   var el = document.getElementById('ai-chat-messages');
   if (!el) return;
+  aiFitPanelSize();
   var head = document.getElementById('ai-head-mascot');
   if (head && !head.innerHTML) head.innerHTML = aiMascotSvg(24);
   var out = '';
@@ -12207,7 +12246,18 @@ async function aiCallAssistant() {
             // system prompt instructs the model to propose one action at a
             // time — and show it the moment it's known rather than waiting
             // for the stream to finish.
-            streamedBlocks.push({ type: 'tool_use', id: block.id, name: block.name, input: block.input || {}, _sig: block._sig });
+            block.input = block.input || {};
+            // The system prompt *tells* the model to reuse the saved PO
+            // signatory defaults instead of asking, but that's only an
+            // instruction — the model doesn't always follow it. Fill in
+            // checked_by/approved_by here too, deterministically, so a
+            // saved default always actually shows up on the confirm card
+            // instead of relying on the model to remember every time.
+            if (block.name === 'generate_po') {
+              if (!block.input.checked_by && poSignatories.checkedBy) block.input.checked_by = poSignatories.checkedBy;
+              if (!block.input.approved_by && poSignatories.approvedBy) block.input.approved_by = poSignatories.approvedBy;
+            }
+            streamedBlocks.push({ type: 'tool_use', id: block.id, name: block.name, input: block.input, _sig: block._sig });
             if (AI_READONLY_TOOLS.indexOf(block.name) !== -1) {
               // Nothing is saved (a chat answer or a local file download),
               // so this runs immediately instead of going through the
