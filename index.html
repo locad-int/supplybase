@@ -588,6 +588,13 @@
   @keyframes sbBob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
   @keyframes sbBlink { 0%,93%,100% { transform: scaleY(1) } 96% { transform: scaleY(.1) } }
   @keyframes sbDot { 0%,80%,100% { opacity: .25; transform: translateY(0) } 40% { opacity: 1; transform: translateY(-3px) } }
+  /* The message list is a column flexbox, and flex children shrink by
+     default. The action card has overflow:hidden (for its rounded corners),
+     which lets it shrink BELOW its content — so a tall PO card was silently
+     squeezing itself to fit and clipping its own item rows/total, and the
+     list never overflowed, so there was nothing to scroll. Children must
+     keep their natural height so the list overflows and scrolls instead. */
+  #ai-chat-messages > * { flex-shrink: 0; }
   .sb-mascot { display:block; overflow:visible; }
   .sb-mascot.bob { animation: sbBob 1.4s ease-in-out infinite; }
   .sb-mascot .eyes { transform-origin: 32px 31.5px; }
@@ -12120,10 +12127,19 @@ function aiEmptyStateHtml() {
   return out + '</div></div>';
 }
 
+// Coalesces rapid re-renders (one per streamed text chunk) into at most one
+// per screen frame — rebuilding the whole chat on every tiny chunk was pure
+// overhead the eye can't even see.
+var _aiRenderQueued = false;
+function aiScheduleRender() {
+  if (_aiRenderQueued) return;
+  _aiRenderQueued = true;
+  requestAnimationFrame(function() { _aiRenderQueued = false; renderAiChat(); });
+}
+
 function renderAiChat() {
   var el = document.getElementById('ai-chat-messages');
   if (!el) return;
-  aiFitPanelSize();
   var head = document.getElementById('ai-head-mascot');
   if (head && !head.innerHTML) head.innerHTML = aiMascotSvg(24);
   var out = '';
@@ -12271,7 +12287,7 @@ async function aiCallAssistant() {
             streamEntry.text += block.text;
             streamedBlocks.push({ type: 'text', text: block.text, _sig: block._sig });
             if (aiDisplayLog.indexOf(streamEntry) === -1) aiDisplayLog.push(streamEntry);
-            renderAiChat();
+            aiScheduleRender();
           } else if (block.type === 'tool_use' && !aiPendingAction && !readOnlyCall) {
             // Only act on the first tool call per turn — the Edge Function's
             // system prompt instructs the model to propose one action at a
