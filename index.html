@@ -2673,13 +2673,28 @@ function _supKey(name) { return (name || '').trim().toLowerCase(); }
 // the system prompt asks the model to copy the saved name/address/TIN
 // exactly, but that's only ever an instruction, and the model sometimes
 // re-capitalizes or retypes what the person said instead (e.g. "atsac" in
-// chat becoming "Atsac"). Matching is case/whitespace-insensitive via
-// _supKey, same as everywhere else the directory is looked up. Mutates
-// input in place; a no-op if the supplier isn't in the directory yet (a
-// brand-new supplier keeps whatever the model/person provided).
+// chat becoming "Atsac"). Mutates input in place; a no-op if the supplier
+// isn't recognized at all (a brand-new supplier keeps whatever the
+// model/person provided).
 function _aiCanonicalizeSupplier(input) {
   if (!input || !input.supplier) return;
-  var entry = supplierDirectory[_supKey(input.supplier)];
+  var key = _supKey(input.supplier);
+  var entry = supplierDirectory[key];
+  if (!entry) {
+    // No exact match — directory records are often the full registered
+    // name (e.g. "ATSAC Consumer Goods Trading" from the seeded supplier
+    // list) while people/Shelfie naturally refer to it by its short common
+    // name ("atsac", "Atsac"). Fall back to a whole-first-word(s) prefix
+    // match — the typed name must be followed by a space in the stored
+    // name, so "atsac" matches "atsac consumer..." but a stray substring
+    // like "at" can't accidentally match — and only apply it if exactly
+    // one known supplier matches, so two different suppliers that happen
+    // to share a first word are never merged.
+    var candidates = Object.keys(supplierDirectory).filter(function(k) {
+      return k === key || k.indexOf(key + ' ') === 0;
+    });
+    if (candidates.length === 1) entry = supplierDirectory[candidates[0]];
+  }
   if (!entry) return;
   input.supplier = entry.name;
   if (entry.address) input.supplier_address = entry.address;
