@@ -12081,6 +12081,27 @@ function aiBuildActionCard(action) {
       }
       card = { title: isApprove ? 'Approve request' : 'Reject request', confirm: isApprove ? 'Approve' : 'Reject', body: body2 };
     }
+  } else if (action.name === 'mass_approve_requests' || action.name === 'mass_reject_requests') {
+    var mIds = Array.isArray(input.request_ids) ? input.request_ids : [];
+    var isApproveM = action.name === 'mass_approve_requests';
+    var mReqs = mIds.map(function(id){ return (typeof db_reqs !== 'undefined' ? db_reqs : []).find(function(r){ return r.id === id; }); }).filter(Boolean);
+    var rowsHtml = mReqs.slice(0, 8).map(function(r) {
+      var short = false;
+      var it = db.items.find(function(i){ return i.id === r.itemId; });
+      if (isApproveM && it) short = it.qty < r.qty;
+      return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0;' + (short ? 'color:var(--danger)' : '') + '">'
+        + '<span>' + esc(r.itemName) + ' × ' + fmtInt(r.qty) + '</span><span style="color:var(--muted)">' + esc(r.requestedBy) + '</span></div>';
+    }).join('');
+    var extraM = mReqs.length > 8 ? '<div style="font-size:11.5px;color:var(--muted);margin-top:4px">+ ' + (mReqs.length - 8) + ' more</div>' : '';
+    var missingM = mIds.length - mReqs.length;
+    var missingNote = missingM > 0 ? '<div style="font-size:11.5px;color:var(--danger)">' + missingM + ' request' + (missingM !== 1 ? 's' : '') + ' no longer pending — will be skipped.</div>' : '';
+    card = {
+      title: (isApproveM ? 'Approve ' : 'Reject ') + mReqs.length + ' request' + (mReqs.length !== 1 ? 's' : ''),
+      confirm: isApproveM ? 'Approve all' : 'Reject all',
+      body: (mReqs.length ? '<div style="display:flex;flex-direction:column;gap:2px">' + rowsHtml + '</div>' + extraM : '<div style="font-size:12.5px;color:var(--muted)">No matching pending requests.</div>')
+        + missingNote
+        + (isApproveM && mReqs.length ? '<div style="font-size:11.5px;color:var(--muted);margin-top:6px">Each issues its full requested qty from stock.</div>' : '')
+    };
   } else if (action.name === 'cancel_reorder') {
     var cr = db.reorders.find(function(r){ return r.id === input.reorder_id; });
     var crItem = cr ? db.items.find(function(i){ return i.id === cr.itemId; }) : null;
@@ -12592,6 +12613,8 @@ async function aiConfirmAction() {
     else if (action.name === 'create_supply_request') result = await aiCreateSupplyRequest(action.input);
     else if (action.name === 'approve_supply_request') result = await aiApproveSupplyRequest(action.input);
     else if (action.name === 'reject_supply_request') result = await aiRejectSupplyRequest(action.input);
+    else if (action.name === 'mass_approve_requests') result = await aiMassApproveRequests(action.input);
+    else if (action.name === 'mass_reject_requests') result = await aiMassRejectRequests(action.input);
     else if (action.name === 'cancel_reorder') result = await aiCancelReorder(action.input);
     else if (action.name === 'withdraw_supply_request') result = await aiWithdrawSupplyRequest(action.input);
     else if (action.name === 'save_supplier') result = await aiSaveSupplier(action.input);
@@ -12887,6 +12910,108 @@ async function aiRejectSupplyRequest(input) {
   updateRequestBadge();
   renderRequests();
   return { ok: true, message: 'Rejected ' + (req.reqNumber || req.itemName) + ' — ' + req.itemName + ' x' + fmtInt(req.qty) + ' requested by ' + req.requestedBy + '.' };
+}
+
+// ── Action executor: mass-approve multiple pending supply requests in one
+// go. Same per-request logic as aiApproveSupplyRequest (FIFO deduction, a
+// 'use' log entry, full qty_requested each — there's no per-item override
+// in bulk mode), just looped and summarized. Mirrors the Requests tab's own
+// "Mass Confirm" button, re-checking status/permission per request since
+// the list could have changed since the card was built. ──
+async function aiMassApproveRequests(input) {
+  input = input || {};
+  var ids = Array.isArray(input.request_ids) ? input.request_ids : [];
+  if (!ids.length) return { ok: false, message: 'No requests were given to approve.' };
+  var approved = [], skipped = [];
+  for (var i = 0; i < ids.length; i++) {
+    var req = db_reqs.find(function(r) { return r.id === ids[i]; });
+    if (!req) { skipped.push('(unknown request)'); continue; }
+    if (req.status !== 'pending') { skipped.push(req.itemName + ' (already ' + req.status + ')'); continue; }
+    if (!_aiCanConfirmRequest(req)) { skipped.push(req.itemName + ' (no permission)'); continue; }
+
+    var issueQty = req.qty;
+    var item = db.items.find(function(it) { return it.id === req.itemId; });
+    if (item) {
+      if (sb) {
+        try {
+          var freshMA = await sb.from('items').select('qty').eq('id', item.id).single();
+          if (freshMA.data && !freshMA.error && freshMA.data.qty !== undefined) item.qty = freshMA.data.qty;
+        } catch (e) {}
+      }
+      var newQty = Math.max(0, item.qty - issueQty);
+      getLayers(item);
+      var _mDetail = describeConsumption(item, issueQty);
+      var _mCost = consumeLayers(item, issueQty);
+      item.qty = newQty;
+      item.updatedAt = new Date().toISOString();
+      syncItemCost(item);
+      var logEntry = {
+        id: uid(), itemId: req.itemId, type: 'use', qty: issueQty, absQty: newQty,
+        by: currentUser.username, date: new Date().toISOString(), ref: req.reqNumber || '',
+        notes: 'Confirmed via Shelfie (mass) — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
+        costAmount: _mCost, costDetail: _mDetail
+      };
+      db.logs.push(logEntry);
+      if (sb) { await sbInsertLogs([logEntry]); await sbUpdateItem(item); }
+    }
+
+    req.status = 'confirmed';
+    req.confirmedBy = currentUser.username;
+    req.confirmedAt = new Date().toISOString();
+    req.seenByRequestor = false;
+    req.issuedQty = issueQty;
+    if (sb && REQ_TABLE_OK !== false) {
+      try { await sb.from('supply_requests').update({ status: 'confirmed', confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, seenByRequestor: false, issuedQty: issueQty }).eq('id', req.id); }
+      catch (e) {}
+    }
+    logAudit('Issuance confirmed (Shelfie mass)', req.itemName + ' x' + issueQty + ' (req by ' + req.requestedBy + ')');
+    approved.push(req.itemName + ' x' + fmtInt(issueQty));
+  }
+  saveReqsLocal();
+  if (!sb) save(); else updateSummary();
+  updateRequestBadge();
+  renderRequests();
+  renderInventory();
+
+  if (!approved.length) return { ok: false, message: 'Nothing approved' + (skipped.length ? ' — ' + skipped.join('; ') : ' — no matching pending requests') + '.' };
+  var msgA = 'Approved ' + approved.length + ' request' + (approved.length !== 1 ? 's' : '') + ': ' + approved.join(', ') + '.';
+  if (skipped.length) msgA += ' Skipped ' + skipped.length + ': ' + skipped.join('; ') + '.';
+  return { ok: true, message: msgA };
+}
+
+// ── Action executor: mass-reject multiple pending supply requests in one
+// go — same per-request logic as aiRejectSupplyRequest, just looped and
+// summarized. No stock or log changes, just status. ──
+async function aiMassRejectRequests(input) {
+  input = input || {};
+  var ids = Array.isArray(input.request_ids) ? input.request_ids : [];
+  if (!ids.length) return { ok: false, message: 'No requests were given to reject.' };
+  var rejected = [], skipped = [];
+  var now = new Date().toISOString();
+  for (var i = 0; i < ids.length; i++) {
+    var req = db_reqs.find(function(r) { return r.id === ids[i]; });
+    if (!req) { skipped.push('(unknown request)'); continue; }
+    if (req.status !== 'pending') { skipped.push(req.itemName + ' (already ' + req.status + ')'); continue; }
+    if (!_aiCanConfirmRequest(req)) { skipped.push(req.itemName + ' (no permission)'); continue; }
+
+    req.status = 'rejected';
+    req.rejectedBy = currentUser.username;
+    req.rejectedAt = now;
+    req.seenByRequestor = false;
+    if (sb && REQ_TABLE_OK !== false) {
+      try { await sb.from('supply_requests').update({ status: 'rejected', rejectedBy: req.rejectedBy, rejectedAt: req.rejectedAt, seenByRequestor: false }).eq('id', req.id); } catch (e) {}
+    }
+    logAudit('Request rejected (Shelfie mass)', req.itemName + ' (requested by ' + req.requestedBy + ')');
+    rejected.push(req.itemName + ' x' + fmtInt(req.qty));
+  }
+  saveReqsLocal();
+  updateRequestBadge();
+  renderRequests();
+
+  if (!rejected.length) return { ok: false, message: 'Nothing rejected' + (skipped.length ? ' — ' + skipped.join('; ') : ' — no matching pending requests') + '.' };
+  var msgR = 'Rejected ' + rejected.length + ' request' + (rejected.length !== 1 ? 's' : '') + ': ' + rejected.join(', ') + '.';
+  if (skipped.length) msgR += ' Skipped ' + skipped.length + ': ' + skipped.join('; ') + '.';
+  return { ok: true, message: msgR };
 }
 
 // ── Action executor: cancel (delete) an open reorder. Mirrors the Reorder
