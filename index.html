@@ -727,7 +727,8 @@
 
   <!-- TEST MODE BANNER -->
   <div id="testmode-banner">
-    🧪 Test Mode Active — showing <span id="testmode-count">0</span> of <span id="testmode-total">0</span> items
+    <span id="testmode-label">🧪 Test Mode Active</span> — showing <span id="testmode-count">0</span> of <span id="testmode-total">0</span> items
+    <button id="testmode-preview-btn" onclick="toggleTestModePreview()" style="display:none" title="Only changes what you see on this screen — nobody else is affected">👁 Preview as team</button>
     <button id="testmode-off-btn" onclick="toggleTestMode()" style="display:none">Turn Off</button>
   </div>
   <main>
@@ -2449,6 +2450,11 @@ var stocktakeLock = false; // when true, all transactions are blocked
 // ─── TEST MODE (global item-visibility whitelist) ─────────────────────────────
 var testModeActive = false;
 var testModeItemIds = []; // item ids allowed to be visible while active
+// Superuser-only "Preview as team": while on, the superuser's own screen
+// shows only the Test Mode items, exactly like everyone else sees. Kept in
+// memory only (never saved), so it only affects this screen and resets on
+// reload — it can't hide anything for anyone else.
+var testModePreview = false;
 
 // The single choke point every "browse the catalog" surface should read from
 // instead of db.items directly, so hidden items disappear everywhere at once.
@@ -2461,7 +2467,7 @@ function catalogItems() {
 // is active, without opening up the other surfaces (reports, reconciliation,
 // snapshots, exports) that should stay scoped to the pilot set for everyone.
 function catalogItemsForSearch() {
-  if (currentRole === 'superuser') return db.items;
+  if (currentRole === 'superuser' && !(testModeActive && testModePreview)) return db.items;
   return catalogItems();
 }
 function isLogVisible(l) {
@@ -9082,8 +9088,16 @@ function checkStocktakeLock() {
 function applyTestMode() {
   var banner = document.getElementById('testmode-banner');
   var offBtn = document.getElementById('testmode-off-btn');
+  if (!testModeActive || currentRole !== 'superuser') testModePreview = false; // nothing to preview
   if (banner) banner.classList.toggle('active', testModeActive);
   if (offBtn) offBtn.style.display = (testModeActive && currentRole === 'superuser') ? '' : 'none';
+  var previewBtn = document.getElementById('testmode-preview-btn');
+  if (previewBtn) {
+    previewBtn.style.display = (testModeActive && currentRole === 'superuser') ? '' : 'none';
+    previewBtn.textContent = testModePreview ? 'Show all items' : '👁 Preview as team';
+  }
+  var labelEl = document.getElementById('testmode-label');
+  if (labelEl) labelEl.textContent = testModePreview ? '👁 Previewing Test Mode as your team sees it' : '🧪 Test Mode Active';
   var countEl = document.getElementById('testmode-count');
   var totalEl = document.getElementById('testmode-total');
   if (countEl) countEl.textContent = fmtInt(testModeItemIds.length);
@@ -9126,6 +9140,14 @@ async function toggleTestMode() {
   applyTestMode();
   await saveTestModeGlobal();
   logAudit('Test Mode ' + (testModeActive ? 'enabled' : 'disabled'), testModeItemIds.length + ' item(s) whitelisted');
+}
+
+// Superuser only: flip their own screen between the full catalog and the
+// Test Mode view everyone else gets. Nothing is saved or shared.
+function toggleTestModePreview() {
+  if (currentRole !== 'superuser' || !testModeActive) return;
+  testModePreview = !testModePreview;
+  applyTestMode();
 }
 
 function setTestModeItems(ids) {
