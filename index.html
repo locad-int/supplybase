@@ -11783,7 +11783,7 @@ var aiPanelOpen = false; // Shelfie is a floating corner widget, not a tab
 // Tools that never write anything (a chat answer or a local file download),
 // so they run the instant they're seen instead of going through the
 // Confirm/Cancel card the three write actions use.
-var AI_READONLY_TOOLS = ['get_cost_report', 'export_cost_report_csv'];
+var AI_READONLY_TOOLS = ['get_cost_report', 'export_cost_report_csv', 'lookup_history', 'get_monthly_summary'];
 
 // Computes and applies an exact pixel height for the floating panel and its
 // scrollable message list, in JS rather than CSS. A min()/calc()+flex
@@ -11893,9 +11893,14 @@ function aiBuildContextReorders() {
 // requestor doesn't need or get visibility into other people's requests
 // through Shelfie. Mirrors isReqVisible's Test Mode filter.
 function aiBuildContextPendingRequests() {
-  if (currentRole !== 'user' && currentRole !== 'superuser') return [];
+  var approver = currentRole === 'user' || currentRole === 'superuser';
+  // A requestor gets only their OWN pending requests (so Shelfie can
+  // withdraw one for them) — never anyone else's.
+  var ownOnly = currentRole === 'requestor';
+  if (!approver && !ownOnly) return [];
   return (typeof db_reqs !== 'undefined' ? db_reqs : []).filter(function(r) {
-    return r.status === 'pending' && isReqVisible(r);
+    if (r.status !== 'pending' || !isReqVisible(r)) return false;
+    return ownOnly ? !!(currentUser && r.requestedBy === currentUser.username) : true;
   }).map(function(r) {
     var item = db.items.find(function(i) { return i.id === r.itemId; });
     return {
@@ -12054,6 +12059,35 @@ function aiBuildActionCard(action) {
       }
       card = { title: isApprove ? 'Approve request' : 'Reject request', confirm: isApprove ? 'Approve' : 'Reject', body: body2 };
     }
+  } else if (action.name === 'cancel_reorder') {
+    var cr = db.reorders.find(function(r){ return r.id === input.reorder_id; });
+    var crItem = cr ? db.items.find(function(i){ return i.id === cr.itemId; }) : null;
+    var crUnit = crItem ? (crItem.unit || '') : '';
+    var crBody = aiFieldGridHtml([
+      ['Item', crItem ? crItem.name : (cr ? cr.itemId : (input.reorder_id || 'Unknown reorder'))],
+      ['Qty ordered', cr ? fmtInt(cr.qty) + ' ' + crUnit : ''],
+      ['Supplier', cr ? (cr.supplier || '—') : ''], ['PO', cr ? (cr.poNumber || '—') : '']
+    ]);
+    if (!cr) crBody += '<div style="font-size:11.5px;color:var(--danger)">Reorder not found — it may already be cancelled.</div>';
+    else if (cr.poNumber) crBody += '<div style="font-size:11.5px;color:var(--muted)">Only this line is removed. ' + esc(cr.poNumber) + ' stays in PO History.</div>';
+    card = { title: 'Cancel reorder', confirm: 'Yes, cancel it', dismiss: 'Keep it', body: crBody };
+  } else if (action.name === 'withdraw_supply_request') {
+    var wr = (typeof db_reqs !== 'undefined' ? db_reqs : []).find(function(r){ return r.id === input.request_id; });
+    var wrBody = wr ? aiFieldGridHtml([
+      ['Request', wr.reqNumber || '—'], ['Item', wr.itemName],
+      ['Qty', fmtInt(wr.qty) + ' ' + (wr.unit || '')], ['Requested by', wr.requestedBy]
+    ]) : aiFieldGridHtml([['Request', input.request_id]]) + '<div style="font-size:11.5px;color:var(--danger)">Request not found — it may already be withdrawn.</div>';
+    card = { title: 'Withdraw request', confirm: 'Withdraw request', dismiss: 'Keep it', body: wrBody };
+  } else if (action.name === 'save_supplier') {
+    var sName = (input.name || '').trim();
+    var sExisting = supplierDirectory[_supKey(sName)];
+    var sBody = aiFieldGridHtml([
+      ['Supplier', sExisting ? sExisting.name : sName],
+      ['Address', input.address || (sExisting ? sExisting.address + ' (unchanged)' : '')],
+      ['TIN', input.tin || (sExisting ? sExisting.tin + ' (unchanged)' : '')]
+    ]);
+    if (sExisting) sBody += '<div style="font-size:11.5px;color:var(--muted)">Currently on file: ' + esc(sExisting.address || '—') + ' · TIN ' + esc(sExisting.tin || '—') + '</div>';
+    card = { title: sExisting ? 'Update supplier' : 'Add supplier', confirm: sExisting ? 'Update supplier' : 'Add supplier', body: sBody };
   } else {
     var typeLabel = { use: 'Use', restock: 'Restock', adjust: 'Manual adjust', damage: 'Damage / Loss' }[input.type] || input.type;
     var pairs = [['Item', itemName], ['Qty', input.qty ? fmtInt(input.qty) + ' ' + unit : ''], ['Type', typeLabel]];
@@ -12084,20 +12118,58 @@ function aiActionCardHtml(card) {
 // tall the review card above it gets.
 function aiActionBarHtml(card) {
   return '<button class="sb-confirm" onclick="aiConfirmAction()">✓ ' + esc(card.confirm) + '</button>'
-    + '<button class="sb-cancel" onclick="aiCancelAction()">Cancel</button>';
+    + '<button class="sb-cancel" onclick="aiCancelAction()">' + esc(card.dismiss || 'Cancel') + '</button>';
 }
 
-var AI_SUGGESTIONS = [
-  ['📦', 'How much Bubble Wrap 20" do we have?'],
-  ['🔄', 'Create a reorder for 500 units of packing tape'],
-  ['📝', 'Log 20 units of poly mailers as damaged'],
-  ['💰', 'Cost report for this month']
-];
+// "Try asking" suggestions built from the live catalog instead of made-up
+// item names, and filtered by what this person's role can actually do —
+// e.g. no reorder suggestion for a requestor. Picks: the most-used item in
+// the last 30 days for the stock question, the item furthest below its
+// reorder point for the reorder suggestion (so it's a genuinely useful
+// one-tap), and another frequently used item for the damage example.
+var _aiSuggestions = [];
+
+function _aiPlural(unit, n) {
+  if (!unit) return n === 1 ? 'unit' : 'units';
+  if (n === 1 || /s$/i.test(unit)) return unit;
+  return /(x|ch|sh)$/i.test(unit) ? unit + 'es' : unit + 's';
+}
+
+function aiBuildSuggestions() {
+  var items = catalogItemsForSearch().filter(function(i) { return i && i.name; });
+  var out = [];
+  if (items.length) {
+    var since = Date.now() - 30 * 864e5, usage = {};
+    db.logs.forEach(function(l) {
+      if (l.type === 'use' && isLogVisible(l) && new Date(l.date).getTime() >= since) usage[l.itemId] = (usage[l.itemId] || 0) + Math.abs(l.qty || 0);
+    });
+    var byUse = items.slice().sort(function(a, b) { return (usage[b.id] || 0) - (usage[a.id] || 0); });
+    var popular = byUse[0];
+    var low = items.filter(function(i) { return stockStatus(i) !== 'ok'; })
+      .sort(function(a, b) { return (a.qty || 0) / (a.minQty || 1) - (b.qty || 0) / (b.minQty || 1); })[0];
+    out.push(['📦', 'How much ' + popular.name + ' do we have?']);
+    if (can('reorder')) {
+      var ri = low || byUse[1] || popular;
+      var rq = ri.reorderQty > 0 ? ri.reorderQty : 100;
+      out.push(['🔄', 'Create a reorder for ' + fmtInt(rq) + ' ' + _aiPlural(ri.unit, rq) + ' of ' + ri.name]);
+    }
+    if (currentRole === 'requestor') {
+      var qi = byUse[1] || popular;
+      out.push(['🙋', 'Request 10 ' + _aiPlural(qi.unit, 10) + ' of ' + qi.name]);
+    }
+    if (can('log')) {
+      var li = byUse[2] || byUse[1] || popular;
+      out.push(['📝', 'Log 5 ' + _aiPlural(li.unit, 5) + ' of ' + li.name + ' as damaged']);
+    }
+  }
+  out.push(['📊', 'How are we doing this month?']);
+  return out.slice(0, 4);
+}
 
 function aiSuggest(i) {
   var input = document.getElementById('ai-chat-input');
-  if (!input || !AI_SUGGESTIONS[i]) return;
-  input.value = AI_SUGGESTIONS[i][1];
+  if (!input || !_aiSuggestions[i]) return;
+  input.value = _aiSuggestions[i][1];
   sendAiChat();
 }
 
@@ -12119,7 +12191,8 @@ function aiEmptyStateHtml() {
     + '<div style="font-size:13px;line-height:1.5;color:var(--muted);max-width:280px">I keep tabs on your shelves. Ask me anything or tell me what to do, and I\'ll check with you before saving.</div>'
     + '</div><div style="display:flex;flex-direction:column;gap:6px">'
     + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-left:2px">Try asking</div>';
-  AI_SUGGESTIONS.forEach(function(s, i) {
+  _aiSuggestions = aiBuildSuggestions();
+  _aiSuggestions.forEach(function(s, i) {
     out += '<button class="sb-suggest" onclick="aiSuggest(' + i + ')">'
       + '<span style="width:26px;height:26px;border-radius:8px;background:var(--surface-alt);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">' + s[0] + '</span>'
       + '<span style="flex:1">' + esc(s[1]) + '</span><span style="color:var(--accent);font-weight:700">→</span></button>';
@@ -12358,6 +12431,8 @@ async function aiRunReadOnlyTool(block) {
   try {
     if (block.name === 'get_cost_report') result = aiGetCostReport(block.input || {});
     else if (block.name === 'export_cost_report_csv') result = aiExportCostReportCsv(block.input || {});
+    else if (block.name === 'lookup_history') result = aiLookupHistory(block.input || {});
+    else if (block.name === 'get_monthly_summary') result = aiGetMonthlySummary(block.input || {});
     else result = { ok: false, message: 'Unknown query: ' + block.name };
   } catch (e) {
     result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
@@ -12495,6 +12570,9 @@ async function aiConfirmAction() {
     else if (action.name === 'create_supply_request') result = await aiCreateSupplyRequest(action.input);
     else if (action.name === 'approve_supply_request') result = await aiApproveSupplyRequest(action.input);
     else if (action.name === 'reject_supply_request') result = await aiRejectSupplyRequest(action.input);
+    else if (action.name === 'cancel_reorder') result = await aiCancelReorder(action.input);
+    else if (action.name === 'withdraw_supply_request') result = await aiWithdrawSupplyRequest(action.input);
+    else if (action.name === 'save_supplier') result = await aiSaveSupplier(action.input);
     else result = { ok: false, message: 'Unknown action: ' + action.name };
   } catch (e) {
     result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
@@ -12787,6 +12865,215 @@ async function aiRejectSupplyRequest(input) {
   updateRequestBadge();
   renderRequests();
   return { ok: true, message: 'Rejected ' + (req.reqNumber || req.itemName) + ' — ' + req.itemName + ' x' + fmtInt(req.qty) + ' requested by ' + req.requestedBy + '.' };
+}
+
+// ── Action executor: cancel (delete) an open reorder. Mirrors the Reorder
+// tab's deleteReorder(), which is superuser-only. A fully received reorder
+// can't be "cancelled" — there's nothing left outstanding. If the reorder
+// was a line on a PO, only that line is removed; the PO record stays in PO
+// History, same as deleting the line manually. ──
+async function aiCancelReorder(input) {
+  if (currentRole !== 'superuser') return { ok: false, message: 'Permission denied: only a superuser can cancel reorders (same as deleting one from the Reorder tab).' };
+  input = input || {};
+  var r = db.reorders.find(function(x) { return x.id === input.reorder_id; });
+  if (!r) return { ok: false, message: 'Reorder not found: ' + input.reorder_id + '. It may already be cancelled.' };
+  if (r.status === 'received') return { ok: false, message: 'That reorder is already fully received, so there is nothing left to cancel.' };
+  var item = db.items.find(function(i) { return i.id === r.itemId; });
+  var label = (item ? item.name : r.itemId) + ' x' + fmtInt(r.qty) + (r.supplier ? ' from ' + r.supplier : '');
+  db.reorders = db.reorders.filter(function(x) { return x.id !== r.id; });
+  updateSummary();
+  await _sbDeleteReorder(r.id);
+  logAudit('Reorder cancelled (Shelfie)', label + (r.poNumber ? ' (' + r.poNumber + ')' : ''));
+  renderReorder();
+  return { ok: true, message: 'Cancelled the reorder for ' + label + '.'
+    + (r.poNumber ? ' It was a line on ' + r.poNumber + '; the PO record itself is still in PO History.' : '') };
+}
+
+// ── Action executor: withdraw a pending supply request. Mirrors the
+// Requests tab's withdrawRequest(): the person who made it can always
+// withdraw their own pending request, and an approver who could confirm it
+// can remove it. Already-approved or rejected requests can't be withdrawn. ──
+async function aiWithdrawSupplyRequest(input) {
+  input = input || {};
+  var req = db_reqs.find(function(r) { return r.id === input.request_id; });
+  if (!req) return { ok: false, message: 'Request not found: ' + input.request_id + '. It may already be withdrawn.' };
+  if (req.status !== 'pending') return { ok: false, message: 'This request is already ' + req.status + ', so it can no longer be withdrawn.' };
+  var isOwn = !!(currentUser && req.requestedBy === currentUser.username);
+  var isAdmin = currentRole === 'superuser' || currentRole === 'user';
+  if (!isOwn && !(isAdmin && _aiCanConfirmRequest(req))) {
+    return { ok: false, message: 'Permission denied: you can only withdraw your own pending requests.' };
+  }
+  var label = req.reqNumber ? req.reqNumber + ' — ' + req.itemName : req.itemName;
+  db_reqs = db_reqs.filter(function(r) { return r.id !== req.id; });
+  saveReqsLocal();
+  if (sb && REQ_TABLE_OK !== false) {
+    try { await sb.from('supply_requests').delete().eq('id', req.id); } catch (e) {}
+  }
+  logAudit(isOwn ? 'Request withdrawn (Shelfie)' : 'Request line removed (Shelfie)',
+    label + ' (by ' + currentUser.username + (isOwn ? '' : '; requested by ' + req.requestedBy) + ')');
+  updateRequestBadge();
+  renderRequests();
+  return { ok: true, message: (isOwn ? 'Withdrew ' : 'Removed ') + label + '.' };
+}
+
+// ── Action executor: add a new supplier to the directory, or update an
+// existing one's address/TIN. Adding a new one is open to anyone who can
+// reorder (the same people who already add suppliers just by typing a new
+// name on a PO). Changing an EXISTING supplier's address/TIN is superuser
+// only, since those details print on legal Purchase Orders. ──
+async function aiSaveSupplier(input) {
+  input = input || {};
+  var name = (input.name || '').trim();
+  if (!name) return { ok: false, message: 'A supplier name is required.' };
+  var address = (input.address || '').trim();
+  var tin = (input.tin || '').trim();
+  if (!address && !tin) return { ok: false, message: 'Give an address or TIN to save for ' + name + '.' };
+  var existing = supplierDirectory[_supKey(name)];
+  if (existing) {
+    if (currentRole !== 'superuser') return { ok: false, message: 'Permission denied: only a superuser can change an existing supplier\'s address or TIN.' };
+  } else if (!can('reorder')) {
+    return { ok: false, message: 'Permission denied: your role can\'t add suppliers.' };
+  }
+  var savedName = existing ? existing.name : name;
+  _mergeSupplierEntry(savedName, address, tin);
+  await saveSupplierDirectory();
+  if (typeof populateAllSupplierDatalists === 'function') populateAllSupplierDatalists();
+  logAudit(existing ? 'Supplier updated (Shelfie)' : 'Supplier added (Shelfie)',
+    savedName + (address ? ' — address: ' + address : '') + (tin ? ' — TIN: ' + tin : ''));
+  var saved = supplierDirectory[_supKey(savedName)];
+  return { ok: true, message: (existing ? 'Updated ' : 'Added ') + savedName + '. Address: ' + (saved.address || '—') + '. TIN: ' + (saved.tin || '—') + '.' };
+}
+
+function _aiWhen(d) {
+  return d ? new Date(d).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '?';
+}
+
+// ── Read-only query: "who approved REQ-…", "what happened to PO-…", "what
+// did Allan log". Only for roles that can see the Audit Log tab. The Audit
+// Log itself is stored per-device (localStorage), so it only knows about
+// actions taken on THIS browser — the main answers therefore come from the
+// shared records (requests store who approved/rejected them, POs store who
+// created/checked/approved them, stock entries store who logged them), with
+// this device's audit lines added as extra detail. ──
+function aiLookupHistory(input) {
+  if (isTabHidden('audit')) return { ok: false, message: 'Your role doesn\'t have access to the Audit Log, so I can\'t look up history.' };
+  var q = ((input || {}).query || '').trim().toLowerCase();
+  if (!q) return { ok: false, message: 'What should I look up? Give a request number, PO number, item, supplier, or person.' };
+  function hit(vals) { return vals.some(function(v) { return v && String(v).toLowerCase().indexOf(q) !== -1; }); }
+  var lines = [];
+
+  (typeof db_reqs !== 'undefined' ? db_reqs : []).filter(function(r) {
+    return isReqVisible(r) && hit([r.reqNumber, r.itemName, r.requestedBy, r.confirmedBy, r.rejectedBy]);
+  }).slice(0, 8).forEach(function(r) {
+    var s = (r.reqNumber || 'Request') + ': ' + r.itemName + ' x' + fmtInt(r.qty) + ', requested by ' + r.requestedBy + ' on ' + _aiWhen(r.createdAt) + ', status ' + r.status;
+    if (r.status === 'confirmed') s += ', approved by ' + (r.confirmedBy || '?') + ' on ' + _aiWhen(r.confirmedAt)
+      + (r.issuedQty !== undefined && r.issuedQty !== null && r.issuedQty !== r.qty ? ' (issued ' + fmtInt(r.issuedQty) + ')' : '');
+    if (r.status === 'rejected') s += ', rejected by ' + (r.rejectedBy || '?') + ' on ' + _aiWhen(r.rejectedAt);
+    lines.push(s);
+  });
+
+  (db.purchaseOrders || []).filter(function(p) {
+    return hit([p.poNumber, p.supplier, p.createdBy, p.checkedBy, p.approvedBy]);
+  }).slice(0, 8).forEach(function(p) {
+    var linked = db.reorders.filter(function(r) { return String(r.poNumber) === String(p.poNumber); });
+    var received = linked.filter(function(r) { return r.status === 'received'; }).length;
+    lines.push(p.poNumber + ': ' + (p.supplier || '?') + ', total ' + fmtPHP(p.total || 0) + ', created by ' + (p.createdBy || '?') + ' on ' + _aiWhen(p.createdAt || p.date)
+      + ', checked by ' + (p.checkedBy || '—') + ', approved by ' + (p.approvedBy || '—')
+      + (linked.length ? ', ' + received + ' of ' + linked.length + ' line(s) received' : ''));
+  });
+
+  catalogItemsForSearch().filter(function(i) { return (i.name || '').toLowerCase().indexOf(q) !== -1; }).slice(0, 3).forEach(function(item) {
+    var recent = db.logs.filter(function(l) { return l.itemId === item.id && isLogVisible(l); })
+      .sort(function(a, b) { return a.date < b.date ? 1 : -1; }).slice(0, 5);
+    if (recent.length) lines.push('Recent stock entries for ' + item.name + ': ' + recent.map(function(l) {
+      return l.type + ' ' + fmtInt(l.qty) + ' by ' + (l.by || '?') + ' on ' + _aiWhen(l.date) + (l.ref ? ' (' + l.ref + ')' : '');
+    }).join('; '));
+  });
+
+  var byPerson = db.logs.filter(function(l) { return isLogVisible(l) && l.by && String(l.by).toLowerCase().indexOf(q) !== -1; })
+    .sort(function(a, b) { return a.date < b.date ? 1 : -1; }).slice(0, 6);
+  if (byPerson.length) lines.push('Recent stock entries by "' + q + '": ' + byPerson.map(function(l) {
+    var it = db.items.find(function(i) { return i.id === l.itemId; });
+    return l.type + ' ' + fmtInt(l.qty) + ' ' + (it ? it.name : 'item') + ' on ' + _aiWhen(l.date);
+  }).join('; '));
+
+  var aud = (typeof db_audit !== 'undefined' ? db_audit : []).filter(function(e) { return hit([e.action, e.details, e.user]); }).slice(0, 8);
+  if (aud.length) lines.push('From this device\'s audit log: ' + aud.map(function(e) {
+    return _aiWhen(e.ts) + ' ' + e.user + ': ' + e.action + (e.details ? ' — ' + e.details : '');
+  }).join('; '));
+
+  var note = 'Note: requests, POs and stock entries are shared across devices; audit log lines only cover actions taken on this device.';
+  if (!lines.length) return { ok: true, message: 'No history found matching "' + q + '". ' + note };
+  return { ok: true, message: lines.join('\n') + '\n\n' + note };
+}
+
+// ── Read-only query: a "how are we doing" snapshot for one month (default:
+// this month) — spend, most-used items, damage, supply requests, plus the
+// current stock health and open reorders. Spend is only included for roles
+// that can see the Cost Report tab; a requestor only sees their own
+// requests. Never writes anything. ──
+function aiGetMonthlySummary(input) {
+  input = input || {};
+  var now = new Date();
+  var y = now.getFullYear(), mo = now.getMonth() + 1;
+  var m = (input.month || '').trim();
+  if (m) {
+    var mm = /^(\d{4})-(\d{1,2})$/.exec(m);
+    if (!mm || +mm[2] < 1 || +mm[2] > 12) return { ok: false, message: 'Invalid month: ' + m + '. Use YYYY-MM.' };
+    y = +mm[1]; mo = +mm[2];
+  }
+  var pad = String(mo).padStart(2, '0');
+  var fromStr = y + '-' + pad + '-01';
+  var toStr = y + '-' + pad + '-' + String(new Date(y, mo, 0).getDate()).padStart(2, '0');
+  var from = new Date(fromStr + 'T00:00:00'), to = new Date(toStr + 'T23:59:59');
+  function inMonth(d) { var x = new Date(d); return x >= from && x <= to; }
+  function itemName(id) { var it = db.items.find(function(i) { return i.id === id; }); return it ? it.name : 'Deleted item'; }
+  function itemUnit(id) { var it = db.items.find(function(i) { return i.id === id; }); return it ? (it.unit || '') : ''; }
+  var isCurrent = y === now.getFullYear() && mo === now.getMonth() + 1;
+  var label = new Date(y, mo - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  var out = ['Summary for ' + label + (isCurrent ? ' (month to date)' : '') + ':'];
+
+  if (!isTabHidden('report')) {
+    var cr = aiComputeCostReportRows(fromStr, toStr);
+    if (!cr.error) out.push('Spend: ' + fmtPHP(cr.consumeTotal) + ' consumed (use + damage), ' + fmtPHP(cr.restockTotal) + ' restocked.');
+  }
+
+  var used = {}, damaged = {};
+  db.logs.forEach(function(l) {
+    if (!isLogVisible(l) || !inMonth(l.date)) return;
+    if (l.type === 'use') used[l.itemId] = (used[l.itemId] || 0) + Math.abs(l.qty || 0);
+    if (l.type === 'damage') damaged[l.itemId] = (damaged[l.itemId] || 0) + Math.abs(l.qty || 0);
+  });
+  function topList(map, n) {
+    return Object.keys(map).sort(function(a, b) { return map[b] - map[a]; }).slice(0, n)
+      .map(function(id) { return itemName(id) + ' (' + fmtInt(map[id]) + ' ' + _aiPlural(itemUnit(id), map[id]) + ')'; }).join(', ');
+  }
+  out.push('Most used: ' + (Object.keys(used).length ? topList(used, 5) : 'no usage logged') + '.');
+  if (Object.keys(damaged).length) out.push('Damaged / lost: ' + topList(damaged, 5) + '.');
+
+  var reqs = (typeof db_reqs !== 'undefined' ? db_reqs : []).filter(function(r) {
+    return isReqVisible(r) && inMonth(r.createdAt) && (currentRole !== 'requestor' || (currentUser && r.requestedBy === currentUser.username));
+  });
+  if (reqs.length) {
+    var st = { pending: 0, confirmed: 0, rejected: 0 }, reqQty = {};
+    reqs.forEach(function(r) {
+      st[r.status] = (st[r.status] || 0) + 1;
+      reqQty[r.itemId] = (reqQty[r.itemId] || 0) + (r.qty || 0);
+    });
+    out.push('Supply requests: ' + reqs.length + ' (' + st.confirmed + ' approved, ' + st.pending + ' pending, ' + st.rejected + ' rejected). Most requested: ' + topList(reqQty, 3) + '.');
+  } else {
+    out.push('Supply requests: none.');
+  }
+
+  var items = catalogItemsForSearch();
+  var outOfStock = items.filter(function(i) { return (i.qty || 0) <= 0; });
+  var low = items.filter(function(i) { return (i.qty || 0) > 0 && stockStatus(i) === 'warn'; });
+  function names(list) { return list.slice(0, 8).map(function(i) { return i.name; }).join(', ') + (list.length > 8 ? ', and ' + (list.length - 8) + ' more' : ''); }
+  out.push('Stock right now: ' + outOfStock.length + ' out of stock' + (outOfStock.length ? ' (' + names(outOfStock) + ')' : '')
+    + ', ' + low.length + ' low' + (low.length ? ' (' + names(low) + ')' : '') + '.');
+  if (currentRole !== 'requestor') out.push('Open reorders: ' + aiBuildContextReorders().length + '.');
+
+  return { ok: true, message: out.join('\n') };
 }
 
 // ── Action executor: generate a full Purchase Order — PO number, PDF, and
