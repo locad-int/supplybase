@@ -2668,6 +2668,24 @@ var supplierDirectory = {}; // { [normalizedName]: { name, address, tin } }
 
 function _supKey(name) { return (name || '').trim().toLowerCase(); }
 
+// Forces a Shelfie tool call's supplier field(s) back to the on-file
+// supplierDirectory record whenever the named supplier is already known —
+// the system prompt asks the model to copy the saved name/address/TIN
+// exactly, but that's only ever an instruction, and the model sometimes
+// re-capitalizes or retypes what the person said instead (e.g. "atsac" in
+// chat becoming "Atsac"). Matching is case/whitespace-insensitive via
+// _supKey, same as everywhere else the directory is looked up. Mutates
+// input in place; a no-op if the supplier isn't in the directory yet (a
+// brand-new supplier keeps whatever the model/person provided).
+function _aiCanonicalizeSupplier(input) {
+  if (!input || !input.supplier) return;
+  var entry = supplierDirectory[_supKey(input.supplier)];
+  if (!entry) return;
+  input.supplier = entry.name;
+  if (entry.address) input.supplier_address = entry.address;
+  if (entry.tin) input.supplier_tin = entry.tin;
+}
+
 async function saveSupplierDirectory() {
   if (!sb) return;
   try {
@@ -12432,6 +12450,19 @@ async function aiCallAssistant() {
                   }
                 });
               }
+              // The supplier name is also only ever a *prompt-following*
+              // instruction (see above) — the model sometimes re-capitalizes
+              // or retypes it (e.g. "atsac" in chat -> "Atsac" from the
+              // model) instead of copying the saved supplier's exact name.
+              // Force it back to the on-file record whenever this supplier
+              // is already known, and backfill address/TIN the same way, so
+              // the PO always matches the real supplier directory rather
+              // than however it happened to be phrased in chat.
+              _aiCanonicalizeSupplier(block.input);
+            } else if (block.name === 'create_reorder') {
+              // Same supplier-casing fix as generate_po, for the simpler
+              // "Needed" reorder path.
+              _aiCanonicalizeSupplier(block.input);
             }
             streamedBlocks.push({ type: 'tool_use', id: block.id, name: block.name, input: block.input, _sig: block._sig });
             if (AI_READONLY_TOOLS.indexOf(block.name) !== -1) {
