@@ -2679,21 +2679,33 @@ function _supKey(name) { return (name || '').trim().toLowerCase(); }
 function _aiCanonicalizeSupplier(input) {
   if (!input || !input.supplier) return;
   var key = _supKey(input.supplier);
-  var entry = supplierDirectory[key];
-  if (!entry) {
-    // No exact match — directory records are often the full registered
-    // name (e.g. "ATSAC Consumer Goods Trading" from the seeded supplier
-    // list) while people/Shelfie naturally refer to it by its short common
-    // name ("atsac", "Atsac"). Fall back to a whole-first-word(s) prefix
-    // match — the typed name must be followed by a space in the stored
-    // name, so "atsac" matches "atsac consumer..." but a stray substring
-    // like "at" can't accidentally match — and only apply it if exactly
-    // one known supplier matches, so two different suppliers that happen
-    // to share a first word are never merged.
-    var candidates = Object.keys(supplierDirectory).filter(function(k) {
-      return k === key || k.indexOf(key + ' ') === 0;
-    });
-    if (candidates.length === 1) entry = supplierDirectory[candidates[0]];
+  var exact = supplierDirectory[key];
+
+  // Directory records are often the full registered name (e.g. "ATSAC
+  // Consumer Goods Trading" from the seeded supplier list) while
+  // people/Shelfie naturally refer to it by a short common name ("atsac").
+  // That short form can ALSO have its own directory entry — e.g. from a
+  // manual PO made before this fix existed, or typed straight into the
+  // app — which would otherwise win as an "exact" match and mask the
+  // fuller name entirely (the original bug this whole function exists to
+  // fix). So always look for a longer entry whose name starts with this
+  // same first word(s) — "atsac" matches "atsac consumer...", a stray
+  // substring like "at" can't — and prefer it over a short exact match as
+  // long as they don't actively disagree on address/TIN (proof they're
+  // different suppliers, not just the same one filed under two names).
+  // Only ever applies when exactly one such longer entry exists, so two
+  // unrelated suppliers sharing a first word are never merged.
+  var longerKeys = Object.keys(supplierDirectory).filter(function(k) {
+    return k !== key && k.indexOf(key + ' ') === 0;
+  });
+  var entry = exact;
+  if (longerKeys.length === 1) {
+    var longer = supplierDirectory[longerKeys[0]];
+    var conflicts = exact && (
+      (exact.address && longer.address && exact.address !== longer.address) ||
+      (exact.tin && longer.tin && exact.tin !== longer.tin)
+    );
+    if (!conflicts) entry = longer;
   }
   if (!entry) return;
   input.supplier = entry.name;
