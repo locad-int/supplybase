@@ -2586,7 +2586,17 @@ function fmtPHP(n) { return '₱' + fmt(n); }
 // jsPDF's built-in Helvetica font only supports WinAnsi encoding, which has
 // no ₱ (U+20B1) glyph — it silently renders as "±" instead. PDF output uses
 // this ASCII-safe "PHP " prefix instead of fmtPHP()'s ₱ symbol.
-function fmtPHPPdf(n) { return 'PHP ' + fmt(n); }
+//
+// Unlike fmt()/fmtPHP() (used for on-screen amounts, where a whole number
+// intentionally drops the ".00" to stay compact), a Purchase Order PDF is a
+// formal financial document — every amount always shows exactly 2 decimal
+// places, whole or not, so it always reads as PHP 495,000.00, never
+// PHP 495,000.
+function fmtPHPPdf(n) {
+  var num = parseFloat(n);
+  if (isNaN(num)) num = 0;
+  return 'PHP ' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 // Supabase caps a single select('*') response at ~1000 rows. The logs table
 // has grown well past that (thousands of rows), so a plain select was
