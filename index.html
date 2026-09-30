@@ -2066,6 +2066,89 @@
   </div>
 </div>
 
+<!-- EDIT PURCHASE ORDER MODAL -->
+<div class="modal-bg" id="po-edit-modal">
+  <div class="modal" style="max-width:680px">
+    <h2>✏️ Edit Purchase Order</h2>
+    <input type="hidden" id="poe-id">
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Supplier *</label>
+        <input type="text" id="poe-supplier" placeholder="Supplier name" list="poe-supplier-list" onblur="applySupplierDirectoryFor('poe')" autocomplete="off">
+        <datalist id="poe-supplier-list"></datalist>
+      </div>
+      <div class="form-group">
+        <label>Supplier Address</label>
+        <input type="text" id="poe-supplier-address" placeholder="Street, city, province">
+      </div>
+      <div class="form-group">
+        <label>Supplier TIN</label>
+        <input type="text" id="poe-supplier-tin" placeholder="000-000-000-000">
+      </div>
+      <div class="form-group full">
+        <label>Line Items</label>
+        <div id="poe-items" style="display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;background:var(--surface2);border-radius:8px;padding:8px"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+          <input type="text" id="poe-custom-desc" placeholder="Add another item — description" style="flex:1;min-width:160px">
+          <input type="text" id="poe-custom-unit" placeholder="Unit (e.g. pcs)" style="width:100px">
+          <input type="number" id="poe-custom-qty" placeholder="Qty" min="0" step="1" style="width:80px">
+          <input type="number" id="poe-custom-cost" placeholder="Unit cost" min="0" step="0.01" style="width:100px">
+          <button type="button" class="btn btn-secondary" onclick="addCustomLineToEdit()">+ Add</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">To add a catalog item that isn't already on this PO, cancel here and use Create Reorder instead — this form only edits/removes existing lines or adds free-text items.</div>
+      </div>
+      <div class="form-group">
+        <label>Shipping Method</label>
+        <select id="poe-ship-method">
+          <option value="">—</option>
+          <option value="Courier">Courier</option>
+          <option value="Pickup">Pickup</option>
+          <option value="Delivery">Delivery</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Shipping Terms</label>
+        <input type="text" id="poe-ship-terms" placeholder="e.g. FOB, Prepaid">
+      </div>
+      <div class="form-group">
+        <label>Delivery Date / Terms</label>
+        <input type="text" id="poe-delivery" placeholder="e.g. 10/05/2026 or Bi-monthly delivery">
+      </div>
+      <div class="form-group">
+        <label>Shipping Cost (₱)</label>
+        <input type="number" id="poe-ship-cost" min="0" step="0.01" placeholder="0.00" oninput="updatePoEditTotals()">
+      </div>
+      <div class="form-group">
+        <label>Other Charges (₱)</label>
+        <input type="number" id="poe-other" min="0" step="0.01" placeholder="0.00" oninput="updatePoEditTotals()">
+      </div>
+      <div class="form-group">
+        <label>Discount (₱)</label>
+        <input type="number" id="poe-discount" min="0" step="0.01" placeholder="0.00" oninput="updatePoEditTotals()">
+      </div>
+      <div class="form-group">
+        <label>Checked by</label>
+        <input type="text" id="poe-checked-by" placeholder="Name">
+      </div>
+      <div class="form-group">
+        <label>Approved by</label>
+        <input type="text" id="poe-approved-by" placeholder="Name">
+      </div>
+      <div class="form-group full" style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted)"><span>Subtotal</span><strong id="poe-subtotal" style="color:var(--text)">₱0.00</strong></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:2px"><span>Net of VAT</span><span id="poe-net-of-vat">₱0.00</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:2px"><span>VAT (12%)</span><span id="poe-vat-amount">₱0.00</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)"><span>Total PO Amount (VAT-inc)</span><span id="poe-total">₱0.00</span></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('po-edit-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePoEdit()">💾 Save Changes &amp; Re-download PDF</button>
+    </div>
+  </div>
+</div>
+
 <!-- RECEIVE DELIVERY MODAL -->
 <div class="modal-bg" id="receive-modal">
   <div class="modal" style="max-width:440px">
@@ -2804,6 +2887,7 @@ function populateSupplierDatalist(targetId) {
 function populateAllSupplierDatalists() {
   populateSupplierDatalist('rf-supplier-list');
   populateSupplierDatalist('pog-supplier-list');
+  populateSupplierDatalist('poe-supplier-list');
 }
 
 // ─── PURCHASE ORDER NUMBERING ─────────────────────────────────────────────────
@@ -4727,7 +4811,7 @@ function renderReorderGroupRow(tbody, group) {
     <td style="color:var(--muted);font-size:11px">—</td>
     <td><span class="badge badge-${statusColor}">${esc(statusLabel)}</span></td>
     <td style="color:var(--muted);font-size:11px">—</td>
-    <td>${po ? '<button class="btn btn-icon btn-sm" title="Download PO PDF" onclick="event.stopPropagation();redownloadPo(\'' + po.id + '\')">⬇</button>' : ''}${currentRole === 'superuser' ? '<button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="event.stopPropagation();deletePoByNumber(\'' + esc(String(group.poNumber)) + '\')">🗑</button>' : ''}</td>`;
+    <td>${po ? '<button class="btn btn-icon btn-sm" title="Download PO PDF" onclick="event.stopPropagation();redownloadPo(\'' + po.id + '\')">⬇</button>' : ''}${(po && currentRole === 'superuser') ? '<button class="btn btn-icon btn-sm" title="Edit PO" onclick="event.stopPropagation();openEditPoModal(\'' + po.id + '\')">✏️</button>' : ''}${currentRole === 'superuser' ? '<button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="event.stopPropagation();deletePoByNumber(\'' + esc(String(group.poNumber)) + '\')">🗑</button>' : ''}</td>`;
   tbody.appendChild(headerTr);
 
   items.forEach(function(r) {
@@ -5287,6 +5371,7 @@ function renderPoHistory() {
       + '<td>' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>'
       + '<td>' + fmtPHP(po.total || 0) + '</td>'
       + '<td><button class="btn btn-secondary btn-sm" onclick="redownloadPo(\'' + po.id + '\')">⬇ Download PDF</button>'
+      + (currentRole === 'superuser' ? ' <button class="btn btn-icon btn-sm" title="Edit PO" onclick="openEditPoModal(\'' + po.id + '\')">✏️</button>' : '')
       + (currentRole === 'superuser' ? ' <button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="deletePoByNumber(\'' + esc(String(po.poNumber)) + '\')">🗑</button>' : '')
       + '</td>'
       + '</tr>';
@@ -5317,6 +5402,216 @@ function redownloadPo(id) {
     alert('The item details for this PO could not be found — the linked reorder records may have since been deleted. The PO totals are still on record, but the line items can\'t be rebuilt into a PDF.');
     return;
   }
+  buildPurchaseOrderPdf(po, lineItems);
+}
+
+// ─── EDIT PURCHASE ORDER ───────────────────────────────────────────────────
+// Lets a mistake in a generated PO (wrong address, cost, qty, shipping, etc.)
+// be corrected in place instead of deleting and re-generating the whole PO
+// (which would also blow away every linked reorder). Superuser-only, same
+// gating as Delete PO, since this rewrites a financial record after the fact.
+//
+// Working state while the modal is open — mirrors poCart's shape but for an
+// EXISTING po's lines, sourced from its linked reorders (catalog items) plus
+// its customItems (free-text lines). Each line remembers whether it's
+// "locked" (its reorder has already been fully received) so a correction
+// here can't silently disagree with stock/FIFO layers that already used the
+// old qty/cost — those lines render read-only and can't be removed.
+var poEditLines = [];
+var poEditPoId = null;
+var poEditRemovedReorderIds = [];
+
+function openEditPoModal(id) {
+  if (currentRole !== 'superuser') return;
+  var po = (db.purchaseOrders || []).find(function(p) { return p.id === id; });
+  if (!po) { alert('Purchase Order record not found.'); return; }
+
+  poEditPoId = id;
+  poEditRemovedReorderIds = [];
+  poEditLines = (po.reorderIds || []).map(function(rid) {
+    var r = db.reorders.find(function(x) { return x.id === rid; });
+    if (!r) return null;
+    var item = db.items.find(function(i) { return i.id === r.itemId; });
+    return {
+      source: 'reorder', reorderId: r.id, itemId: r.itemId,
+      name: item ? item.name : 'Deleted Item', unit: item ? (item.unit || '') : '',
+      qty: r.qty || 0, cost: r.cost || 0,
+      locked: r.status === 'received',
+      partial: r.status !== 'received' && /Partial delivery/.test(r.notes || ''),
+    };
+  }).filter(Boolean);
+  (po.customItems || []).forEach(function(c) {
+    poEditLines.push({ source: 'custom', name: c.description, unit: c.unit || '', qty: c.qty || 0, cost: c.cost || 0, locked: false, partial: false });
+  });
+
+  document.getElementById('poe-id').value = po.id;
+  document.getElementById('poe-supplier').value = po.supplier || '';
+  document.getElementById('poe-supplier-address').value = po.supplierAddress || '';
+  document.getElementById('poe-supplier-tin').value = po.supplierTin || '';
+  document.getElementById('poe-ship-method').value = po.shipMethod || '';
+  document.getElementById('poe-ship-terms').value = po.shipTerms || '';
+  document.getElementById('poe-delivery').value = po.delivery || '';
+  document.getElementById('poe-ship-cost').value = po.shipCost || '';
+  document.getElementById('poe-other').value = po.other || '';
+  document.getElementById('poe-discount').value = po.discount || '';
+  document.getElementById('poe-checked-by').value = po.checkedBy || '';
+  document.getElementById('poe-approved-by').value = po.approvedBy || '';
+  document.getElementById('poe-custom-desc').value = '';
+  document.getElementById('poe-custom-unit').value = '';
+  document.getElementById('poe-custom-qty').value = '';
+  document.getElementById('poe-custom-cost').value = '';
+  populateSupplierDatalist('poe-supplier-list');
+
+  renderPoEditLines();
+  updatePoEditTotals();
+  openModal('po-edit-modal');
+}
+
+function renderPoEditLines() {
+  var wrap = document.getElementById('poe-items');
+  if (!poEditLines.length) {
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px">No items on this PO.</div>';
+    return;
+  }
+  wrap.innerHTML = poEditLines.map(function(l, idx) {
+    var lineTotal = (l.qty || 0) * (l.cost || 0);
+    var qtyField = l.locked
+      ? '<span style="width:60px;display:inline-block;text-align:right">' + fmtInt(l.qty) + '</span>'
+      : '<input type="number" min="0" step="1" value="' + l.qty + '" style="width:60px" onchange="updatePoEditLine(' + idx + ',\'qty\',this.value)">';
+    var costField = l.locked
+      ? '<span style="width:90px;display:inline-block;text-align:right">' + fmtPHP(l.cost) + '</span>'
+      : '<input type="number" min="0" step="0.01" value="' + l.cost + '" style="width:90px" onchange="updatePoEditLine(' + idx + ',\'cost\',this.value)">';
+    var note = l.locked
+      ? '<div style="font-size:10px;color:var(--danger)">Already received — locked; qty/cost can\'t be changed here.</div>'
+      : (l.partial ? '<div style="font-size:10px;color:#b45309">Partially received — edit qty/cost with care.</div>' : '');
+    return '<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px;border-bottom:1px solid var(--border)">'
+      + '<div style="flex:1">' + esc(l.name) + (l.source === 'custom' ? ' <span style="color:var(--muted);font-size:10px">(custom)</span>' : '') + note + '</div>'
+      + qtyField
+      + '<span style="color:var(--muted);font-size:11px">' + esc(l.unit) + ' ×</span>'
+      + costField
+      + '<strong style="min-width:90px;text-align:right">' + fmtPHP(lineTotal) + '</strong>'
+      + (l.locked ? '<span style="width:28px;display:inline-block"></span>' : '<button type="button" class="btn btn-icon btn-sm" onclick="removePoEditLine(' + idx + ')" title="Remove">✕</button>')
+      + '</div>';
+  }).join('');
+}
+
+function updatePoEditLine(idx, field, value) {
+  var l = poEditLines[idx];
+  if (!l || l.locked) return;
+  var n = parseFloat(value);
+  l[field] = isNaN(n) ? 0 : n;
+  renderPoEditLines();
+  updatePoEditTotals();
+}
+
+function removePoEditLine(idx) {
+  var l = poEditLines[idx];
+  if (!l || l.locked) return;
+  if (l.source === 'reorder' && l.reorderId) poEditRemovedReorderIds.push(l.reorderId);
+  poEditLines.splice(idx, 1);
+  renderPoEditLines();
+  updatePoEditTotals();
+}
+
+function addCustomLineToEdit() {
+  var desc = document.getElementById('poe-custom-desc').value.trim();
+  var unit = document.getElementById('poe-custom-unit').value.trim();
+  var qty = parseFloat(document.getElementById('poe-custom-qty').value);
+  var cost = parseFloat(document.getElementById('poe-custom-cost').value) || 0;
+  if (!desc) { alert('Enter an item description.'); return; }
+  if (!qty || qty <= 0) { alert('Enter a valid quantity.'); return; }
+  poEditLines.push({ source: 'custom', name: desc, unit: unit, qty: qty, cost: cost, locked: false, partial: false });
+  document.getElementById('poe-custom-desc').value = '';
+  document.getElementById('poe-custom-unit').value = '';
+  document.getElementById('poe-custom-qty').value = '';
+  document.getElementById('poe-custom-cost').value = '';
+  renderPoEditLines();
+  updatePoEditTotals();
+}
+
+function updatePoEditTotals() {
+  var subtotal = poEditLines.reduce(function(s, l) { return s + (l.qty || 0) * (l.cost || 0); }, 0);
+  var shipCost = parseFloat(document.getElementById('poe-ship-cost').value) || 0;
+  var other    = parseFloat(document.getElementById('poe-other').value) || 0;
+  var discount = parseFloat(document.getElementById('poe-discount').value) || 0;
+  var total = subtotal + shipCost + other - discount;
+  var netOfVat = total / (1 + PO_VAT_RATE);
+  var vatAmount = netOfVat * PO_VAT_RATE;
+  document.getElementById('poe-subtotal').textContent = fmtPHP(subtotal);
+  document.getElementById('poe-net-of-vat').textContent = fmtPHP(netOfVat);
+  document.getElementById('poe-vat-amount').textContent = fmtPHP(vatAmount);
+  document.getElementById('poe-total').textContent = fmtPHP(total);
+}
+
+function savePoEdit() {
+  var po = (db.purchaseOrders || []).find(function(p) { return p.id === poEditPoId; });
+  if (!po) { alert('Purchase Order record not found.'); return; }
+  var supplier = document.getElementById('poe-supplier').value.trim();
+  if (!supplier) { alert('Enter a supplier.'); return; }
+  if (!poEditLines.length) { alert('A Purchase Order needs at least one item.'); return; }
+
+  var supplierAddress = document.getElementById('poe-supplier-address').value.trim();
+  var supplierTin     = document.getElementById('poe-supplier-tin').value.trim();
+  var shipMethod = document.getElementById('poe-ship-method').value;
+  var shipTerms  = document.getElementById('poe-ship-terms').value.trim();
+  var delivery   = document.getElementById('poe-delivery').value.trim();
+  var shipCost   = parseFloat(document.getElementById('poe-ship-cost').value) || 0;
+  var other      = parseFloat(document.getElementById('poe-other').value) || 0;
+  var discount   = parseFloat(document.getElementById('poe-discount').value) || 0;
+  var checkedBy  = document.getElementById('poe-checked-by').value.trim();
+  var approvedBy = document.getElementById('poe-approved-by').value.trim();
+
+  rememberSupplier(supplier, supplierAddress, supplierTin);
+  var now = new Date().toISOString();
+
+  // Drop reorders removed in this edit — the log/inventory history they
+  // already produced (if any) stays untouched; only the "pending order"
+  // wrapper record goes away.
+  poEditRemovedReorderIds.forEach(function(rid) {
+    db.reorders = db.reorders.filter(function(r) { return r.id !== rid; });
+    _sbDeleteReorder(rid);
+  });
+
+  var keptReorderIds = [];
+  var customItems = [];
+  poEditLines.forEach(function(l) {
+    if (l.source === 'reorder') {
+      var r = db.reorders.find(function(x) { return x.id === l.reorderId; });
+      if (r) {
+        r.supplier = supplier; r.supplierAddress = supplierAddress; r.supplierTin = supplierTin;
+        if (!l.locked) { r.qty = l.qty; r.cost = l.cost; }
+        r.updatedAt = now;
+        keptReorderIds.push(r.id);
+      }
+    } else {
+      customItems.push({ description: l.name, unit: l.unit, qty: l.qty, cost: l.cost });
+    }
+  });
+
+  var subtotal = poEditLines.reduce(function(s, l) { return s + (l.qty || 0) * (l.cost || 0); }, 0);
+  var total = subtotal + shipCost + other - discount;
+
+  po.supplier = supplier; po.supplierAddress = supplierAddress; po.supplierTin = supplierTin;
+  po.shipMethod = shipMethod; po.shipTerms = shipTerms; po.delivery = delivery;
+  po.shipCost = shipCost; po.other = other; po.discount = discount;
+  po.checkedBy = checkedBy; po.approvedBy = approvedBy;
+  po.subtotal = subtotal; po.total = total;
+  po.reorderIds = keptReorderIds;
+  po.customItems = customItems;
+  po.updatedAt = now;
+  po.updatedBy = (currentUser && currentUser.username) || '';
+
+  logAudit('Purchase Order edited', po.poNumber + ' — ' + supplier);
+
+  save();
+  closeModal('po-edit-modal');
+  renderPoHistory();
+  renderReorder();
+  updateSummary();
+
+  var lineItems = poEditLines.map(function(l) {
+    return { description: l.name, qty: l.qty || 0, unit: l.unit || '', unitPrice: l.cost || 0, total: (l.qty || 0) * (l.cost || 0) };
+  });
   buildPurchaseOrderPdf(po, lineItems);
 }
 
