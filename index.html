@@ -2149,6 +2149,19 @@
   </div>
 </div>
 
+<!-- PREVIEW PURCHASE ORDER MODAL -->
+<div class="modal-bg" id="po-preview-modal">
+  <div class="modal" style="max-width:900px;display:flex;flex-direction:column">
+    <h2 style="margin-bottom:10px">👁 <span id="po-preview-title">Purchase Order</span></h2>
+    <iframe id="po-preview-frame" title="Purchase Order preview" style="width:100%;height:70vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Preview blank? Some phone browsers can't show PDFs inside a page — <a id="po-preview-newtab" href="#" target="_blank" rel="noopener">open it in a new tab</a> instead.</div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('po-preview-modal')">Close</button>
+      <button class="btn btn-primary" onclick="downloadPreviewedPo()">⬇ Download PDF</button>
+    </div>
+  </div>
+</div>
+
 <!-- RECEIVE DELIVERY MODAL -->
 <div class="modal-bg" id="receive-modal">
   <div class="modal" style="max-width:440px">
@@ -4879,7 +4892,7 @@ function renderReorderGroupRow(tbody, group) {
     <td style="color:var(--muted);font-size:11px">—</td>
     <td><span class="badge badge-${statusColor}">${esc(statusLabel)}</span></td>
     <td style="color:var(--muted);font-size:11px">—</td>
-    <td>${po ? '<button class="btn btn-icon btn-sm" title="Download PO PDF" onclick="event.stopPropagation();redownloadPo(\'' + po.id + '\')">⬇</button>' : ''}${(po && currentRole === 'superuser') ? '<button class="btn btn-icon btn-sm" title="Edit PO" onclick="event.stopPropagation();openEditPoModal(\'' + po.id + '\')">✏️</button>' : ''}${currentRole === 'superuser' ? '<button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="event.stopPropagation();deletePoByNumber(\'' + esc(String(group.poNumber)) + '\')">🗑</button>' : ''}</td>`;
+    <td>${po ? '<button class="btn btn-icon btn-sm" title="Preview PO" onclick="event.stopPropagation();previewPo(\'' + po.id + '\')">👁</button><button class="btn btn-icon btn-sm" title="Download PO PDF" onclick="event.stopPropagation();redownloadPo(\'' + po.id + '\')">⬇</button>' : ''}${(po && currentRole === 'superuser') ? '<button class="btn btn-icon btn-sm" title="Edit PO" onclick="event.stopPropagation();openEditPoModal(\'' + po.id + '\')">✏️</button>' : ''}${currentRole === 'superuser' ? '<button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="event.stopPropagation();deletePoByNumber(\'' + esc(String(group.poNumber)) + '\')">🗑</button>' : ''}</td>`;
   tbody.appendChild(headerTr);
 
   items.forEach(function(r) {
@@ -5438,7 +5451,8 @@ function renderPoHistory() {
       + '<td>' + esc(po.supplier || '—') + '</td>'
       + '<td>' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>'
       + '<td>' + fmtPHP(po.total || 0) + '</td>'
-      + '<td><button class="btn btn-secondary btn-sm" onclick="redownloadPo(\'' + po.id + '\')">⬇ Download PDF</button>'
+      + '<td><button class="btn btn-secondary btn-sm" onclick="previewPo(\'' + po.id + '\')">👁 Preview</button>'
+      + ' <button class="btn btn-secondary btn-sm" onclick="redownloadPo(\'' + po.id + '\')">⬇ Download PDF</button>'
       + (currentRole === 'superuser' ? ' <button class="btn btn-icon btn-sm" title="Edit PO" onclick="openEditPoModal(\'' + po.id + '\')">✏️</button>' : '')
       + (currentRole === 'superuser' ? ' <button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="deletePoByNumber(\'' + esc(String(po.poNumber)) + '\')">🗑</button>' : '')
       + '</td>'
@@ -5449,6 +5463,43 @@ function renderPoHistory() {
 function redownloadPo(id) {
   var po = (db.purchaseOrders || []).find(function(p) { return p.id === id; });
   if (!po) { alert('Purchase Order record not found.'); return; }
+  var lineItems = _poLineItems(po);
+  if (!lineItems) return;
+  buildPurchaseOrderPdf(po, lineItems);
+}
+
+// ─── PREVIEW PURCHASE ORDER ────────────────────────────────────────────────
+// Renders the exact same PDF Download would produce, but shows it in a modal
+// instead of saving a file. The blob URL is kept so the modal's own Download
+// button and "Open in new tab" link reuse it, and revoked on the next preview
+// so repeated previews don't pile up in memory.
+var _poPreviewUrl = null;
+var _poPreviewId = null;
+
+function previewPo(id) {
+  var po = (db.purchaseOrders || []).find(function(p) { return p.id === id; });
+  if (!po) { alert('Purchase Order record not found.'); return; }
+  var lineItems = _poLineItems(po);
+  if (!lineItems) return;
+  var doc = buildPurchaseOrderPdf(po, lineItems, { preview: true });
+  if (!doc) return; // PDF library failed to load — buildPurchaseOrderPdf already alerted
+  if (_poPreviewUrl) { try { URL.revokeObjectURL(_poPreviewUrl); } catch(e) {} }
+  _poPreviewUrl = URL.createObjectURL(doc.output('blob'));
+  _poPreviewId = id;
+  document.getElementById('po-preview-title').textContent = po.poNumber + (po.supplier ? ' — ' + po.supplier : '');
+  document.getElementById('po-preview-frame').src = _poPreviewUrl;
+  document.getElementById('po-preview-newtab').href = _poPreviewUrl;
+  openModal('po-preview-modal');
+}
+
+function downloadPreviewedPo() {
+  if (_poPreviewId) redownloadPo(_poPreviewId);
+}
+
+// Rebuilds a saved PO's line items from its linked reorders (catalog items)
+// plus its customItems (non-catalog). Shared by Download and Preview so both
+// always show the same thing. Returns null (after alerting) if none remain.
+function _poLineItems(po) {
   var lineItems = (po.reorderIds || []).map(function(rid) {
     var r = db.reorders.find(function(x) { return x.id === rid; });
     if (!r) return null;
@@ -5468,9 +5519,9 @@ function redownloadPo(id) {
   });
   if (!lineItems.length) {
     alert('The item details for this PO could not be found — the linked reorder records may have since been deleted. The PO totals are still on record, but the line items can\'t be rebuilt into a PDF.');
-    return;
+    return null;
   }
-  buildPurchaseOrderPdf(po, lineItems);
+  return lineItems;
 }
 
 // ─── EDIT PURCHASE ORDER ───────────────────────────────────────────────────
@@ -5712,7 +5763,7 @@ function deletePoByNumber(poNumber) {
     }, { danger: true, confirmLabel: 'Delete' });
 }
 
-function buildPurchaseOrderPdf(po, lineItems) {
+function buildPurchaseOrderPdf(po, lineItems, opts) {
   if (!window.jspdf) { alert('PDF library did not load — check your connection and try again.'); return; }
   var doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' });
   var pageWidth = doc.internal.pageSize.getWidth();
@@ -5839,7 +5890,15 @@ function buildPurchaseOrderPdf(po, lineItems) {
   doc.text('This document is electronically generated. No signature required.', pageWidth / 2, y, { align: 'center' });
   doc.setTextColor(0);
 
-  doc.save(po.poNumber + '-' + (po.supplier||'supplier').replace(/[^a-z0-9]+/gi,'-') + '.pdf');
+  // opts.preview: hand the finished document back instead of downloading it,
+  // so previewPo() can show it in-app. Every existing caller passes no opts
+  // and keeps the original download behaviour.
+  if (opts && opts.preview) return doc;
+  doc.save(_poPdfFilename(po));
+}
+
+function _poPdfFilename(po) {
+  return po.poNumber + '-' + (po.supplier||'supplier').replace(/[^a-z0-9]+/gi,'-') + '.pdf';
 }
 
 // ─── VARIANCE ADJUSTMENT ─────────────────────────────────────────────────────────
