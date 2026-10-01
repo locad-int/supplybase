@@ -4828,7 +4828,8 @@ function renderReorderGroupRow(tbody, group) {
   headerTr.style.background = 'var(--surface2)';
   headerTr.onclick = function() { toggleReorderGroup(groupId, headerTr); };
   headerTr.innerHTML = `
-    <td colspan="2"><span class="po-group-arrow" style="display:inline-block;margin-right:6px">▶</span><strong>${esc(String(group.poNumber))}</strong> <span style="color:var(--muted);font-size:12px">— ${esc(items[0].supplier||'—')}</span></td>
+    <td><span class="po-group-arrow" style="display:inline-block;margin-right:6px">▶</span><strong>${esc(String(group.poNumber))}</strong></td>
+    <td style="color:var(--muted)">${esc(items[0].supplier||'—')}</td>
     <td colspan="2" style="color:var(--muted);font-size:12px">${items.length} item${items.length !== 1 ? 's' : ''}</td>
     <td>${fmtPHP(total)}</td>
     <td style="color:var(--muted);font-size:11px">—</td>
