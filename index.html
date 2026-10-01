@@ -4782,12 +4782,16 @@ function renderReorder() {
   });
 
   units.forEach(function(u) {
-    if (u.poNumber && u.items.length > 1) {
+    // Any reorder with a PO number renders as a collapsible PO card — even a
+    // 1-item PO — so the first column consistently reads "PO-xxxxxx —
+    // supplier" for every Purchase Order, never an item name. Only reorders
+    // with no PO at all (still "Needed", never generated into a PO) fall
+    // through to a plain item row, since there's no PO to card them under.
+    if (u.poNumber) {
       renderReorderGroupRow(tbody, u);
     } else {
-      var r = u.poNumber ? u.items[0] : u;
       var tr = document.createElement('tr');
-      tr.innerHTML = reorderRowHtml(r);
+      tr.innerHTML = reorderRowHtml(u);
       tbody.appendChild(tr);
     }
     // A collapsed PO group's header row looks identical to a plain standalone
@@ -4825,7 +4829,7 @@ function renderReorderGroupRow(tbody, group) {
   headerTr.onclick = function() { toggleReorderGroup(groupId, headerTr); };
   headerTr.innerHTML = `
     <td colspan="2"><span class="po-group-arrow" style="display:inline-block;margin-right:6px">▶</span><strong>${esc(String(group.poNumber))}</strong> <span style="color:var(--muted);font-size:12px">— ${esc(items[0].supplier||'—')}</span></td>
-    <td colspan="2" style="color:var(--muted);font-size:12px">${items.length} items</td>
+    <td colspan="2" style="color:var(--muted);font-size:12px">${items.length} item${items.length !== 1 ? 's' : ''}</td>
     <td>${fmtPHP(total)}</td>
     <td style="color:var(--muted);font-size:11px">—</td>
     <td><span class="badge badge-${statusColor}">${esc(statusLabel)}</span></td>
