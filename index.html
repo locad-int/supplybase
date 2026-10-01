@@ -4807,7 +4807,10 @@ function renderReorder() {
   (db.purchaseOrders || []).forEach(function(po) {
     if (!po.customItems || !po.customItems.length) return;
     if (f && f !== 'ordered') return; // synthetic items are always "ordered"
-    if (testModeActive) return; // no real item behind them to test-mode-filter by
+    // Deliberately NOT filtered by Test Mode: the whitelist is a list of
+    // catalog item IDs, and a non-catalog line has no item to whitelist — so
+    // filtering would hide every custom-item PO whenever Test Mode is on,
+    // even though they're real, generated Purchase Orders.
     var g = seenPo[po.poNumber];
     if (!g) { g = { poNumber: po.poNumber, items: [] }; seenPo[po.poNumber] = g; units.push(g); }
     po.customItems.forEach(function(c) {
