@@ -881,7 +881,7 @@
       <table>
         <thead>
           <tr>
-            <th>Item</th>
+            <th>Purchase Order</th>
             <th>Supplier</th>
             <th>Qty to Order</th>
             <th>Cost/Unit</th>
@@ -4739,7 +4739,7 @@ function reorderRowHtml(r) {
   if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteReorder(\'' + r.id + '\')">🗑</button>';
   rAct += '</div>';
   return `
-    <td><strong>${esc(item ? item.name : 'Deleted Item')}</strong></td>
+    <td><strong>${esc(item ? item.name : 'Deleted Item')}</strong>${r.poNumber ? '<div style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</div>' : ''}</td>
     <td>${esc(r.supplier||'—')}</td>
     <td>${fmtInt(r.qty)} ${esc(item ? (item.unit||'') : '')}</td>
     <td>${r.cost ? fmtPHP(r.cost) : '—'}</td>
@@ -4790,6 +4790,15 @@ function renderReorder() {
       tr.innerHTML = reorderRowHtml(r);
       tbody.appendChild(tr);
     }
+    // A collapsed PO group's header row looks identical to a plain standalone
+    // reorder row, so without something marking where one ends and the next
+    // begins, an unrelated row sorted right after a group can look like one
+    // of its items (e.g. a single-item reorder with its own different PO
+    // number landing directly under another PO's collapsed card). This
+    // divider makes that boundary visible regardless of expand/collapse state.
+    var divider = document.createElement('tr');
+    divider.innerHTML = '<td colspan="9" style="height:0;padding:0;border-bottom:2px solid var(--border)"></td>';
+    tbody.appendChild(divider);
   });
 }
 
