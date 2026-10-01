@@ -4730,6 +4730,23 @@ async function saveLog() {
 // Builds the inner <td> markup for a single reorder record — shared by both
 // the plain (no-PO) row and the rows nested inside a PO group card.
 function reorderRowHtml(r) {
+  // Synthetic pseudo-item for a non-catalog PO line (see renderReorder) —
+  // there's no reorder record or inventory item behind it, so it renders
+  // read-only: no Edit/Receive/Delete actions, and its own PO number is the
+  // only way to fix it (via Edit PO), since there's nothing here to edit.
+  if (r.isCustom) {
+    const customTotal = (r.qty || 0) * (r.cost || 0);
+    return `
+      <td><strong>${esc(r.name)}</strong>${r.poNumber ? '<div style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</div>' : ''} <span style="font-size:10px;color:var(--muted)">(non-catalog)</span></td>
+      <td>${esc(r.supplier||'—')}</td>
+      <td>${fmtInt(r.qty)} ${esc(r.unit||'')}</td>
+      <td>${r.cost ? fmtPHP(r.cost) : '—'}</td>
+      <td>${r.cost && r.qty ? fmtPHP(customTotal) : '—'}</td>
+      <td style="min-width:160px;color:var(--muted);font-size:11px">—</td>
+      <td><span class="badge badge-warn">ordered</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</span>' : ''}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">Edit via Edit PO</td>
+      <td style="color:var(--muted);font-size:11px">—</td>`;
+  }
   const item = db.items.find(i => i.id === r.itemId);
   const total = (r.qty * r.cost);
   const statusColor = r.status === 'received' ? 'ok' : r.status === 'ordered' ? 'warn' : 'danger';
@@ -4762,8 +4779,6 @@ function renderReorder() {
   const tbody = document.getElementById('reorder-tbody');
   const empty = document.getElementById('reorder-empty');
   tbody.innerHTML = '';
-  if (reorders.length === 0) { empty.classList.remove('hidden'); return; }
-  empty.classList.add('hidden');
 
   // Reorders created together from the same Purchase Order share a poNumber
   // — group those under a single collapsible card ("1 PO, 1 card") instead
@@ -4780,6 +4795,32 @@ function renderReorder() {
       units.push(r);
     }
   });
+
+  // Non-catalog ("custom") line items only ever live on the PO record itself
+  // — generating a PO never creates a reorder row for them, since there's no
+  // inventory item behind them to track. Left out of the grouping above, a
+  // PO made entirely of custom items would silently never appear in this tab
+  // at all, and a PO mixing both kinds would undercount its items. Each is
+  // folded in here as a synthetic, read-only "item" (isCustom: true) — no id,
+  // no independent status of its own (once its PO exists it's "ordered";
+  // there's nothing further to receive or edit here — see reorderRowHtml).
+  (db.purchaseOrders || []).forEach(function(po) {
+    if (!po.customItems || !po.customItems.length) return;
+    if (f && f !== 'ordered') return; // synthetic items are always "ordered"
+    if (testModeActive) return; // no real item behind them to test-mode-filter by
+    var g = seenPo[po.poNumber];
+    if (!g) { g = { poNumber: po.poNumber, items: [] }; seenPo[po.poNumber] = g; units.push(g); }
+    po.customItems.forEach(function(c) {
+      g.items.push({
+        isCustom: true, poNumber: po.poNumber, supplier: po.supplier,
+        name: c.description, unit: c.unit, qty: c.qty, cost: c.cost,
+        status: 'ordered', notes: '',
+      });
+    });
+  });
+
+  if (units.length === 0) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
 
   units.forEach(function(u) {
     // Any reorder with a PO number renders as a collapsible PO card — even a
@@ -5386,7 +5427,7 @@ function renderPoHistory() {
   }
   empty.classList.add('hidden');
   tbody.innerHTML = list.map(function(po) {
-    var itemCount = (po.reorderIds || []).length;
+    var itemCount = (po.reorderIds || []).length + (po.customItems || []).length;
     var dateStr = po.date ? new Date(po.date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
     return '<tr>'
       + '<td>' + esc(String(po.poNumber || '—')) + '</td>'
