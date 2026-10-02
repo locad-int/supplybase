@@ -2497,8 +2497,8 @@
           </select>
         </div>
         <div class="form-group full" id="acct-brand-wrap" style="display:none">
-          <label>Brand Name <span style="color:var(--muted);font-size:11px">(must match item names, e.g. "Kiehls")</span></label>
-          <input type="text" id="acct-brand" placeholder="e.g. Kiehls" autocomplete="off">
+          <label>Brand Name(s) <span style="color:var(--muted);font-size:11px">(must match item names — separate several with commas, e.g. "Kiehls, Lancome")</span></label>
+          <input type="text" id="acct-brand" placeholder="e.g. Kiehls, Lancome" autocomplete="off">
         </div>
         <div class="form-group">
           <label>Password</label>
@@ -3809,9 +3809,8 @@ function runwayHtml(item) {
 
 function updateSummary() {
   const isBrand = currentRole === 'brand';
-  const brandName = isBrand ? getBrandName().toLowerCase() : '';
   const visibleItems = isBrand
-    ? catalogItems().filter(i => brandName && i.name.toLowerCase().includes(brandName))
+    ? catalogItems().filter(itemMatchesBrand)
     : catalogItems();
   const total = visibleItems.length;
   const out = visibleItems.filter(i => i.qty <= 0).length;
@@ -3841,13 +3840,12 @@ function updateSummary() {
 // ─── INVENTORY ──────────────────────────────────────────────────────────────────
 function renderInventory() {
   const isBrand = currentRole === 'brand';
-  const brandName = getBrandName().toLowerCase();
   const q = document.getElementById('inv-search').value.toLowerCase();
   const activeStatuses = getActiveStatusFilters();
   const fc = document.getElementById('inv-filter-cat').value;
   let items = catalogItemsForSearch().filter(i => {
     // Brand users only see their own items
-    if (isBrand && brandName && !i.name.toLowerCase().includes(brandName)) return false;
+    if (isBrand && !itemMatchesBrand(i)) return false;
     if (q && !i.name.toLowerCase().includes(q) && !i.category?.toLowerCase().includes(q) && !i.sku?.toLowerCase().includes(q)) return false;
     if (activeStatuses.length && !activeStatuses.includes(stockStatus(i))) return false;
     if (fc && i.category !== fc) return false;
@@ -9005,6 +9003,25 @@ function getBrandName() {
   return (currentUser && currentUser.brand) ? currentUser.brand.trim() : '';
 }
 
+// A Brand account's "Brand Name" can list several brands separated by commas
+// (e.g. an agency like Etaily: "Kiehl's, Lancome, YSL") — the account then
+// sees items for ANY of them. Names are compared with apostrophes and case
+// ignored, so "Kiehl's" still matches an item named "Kiehls ...".
+function _brandKey(s) {
+  return String(s || '').toLowerCase().replace(/['‘’`]/g, '').trim();
+}
+function getBrandNames() {
+  return getBrandName().split(',').map(_brandKey).filter(Boolean);
+}
+// True if this item belongs to one of the signed-in Brand account's brands.
+// A Brand account with no brand set matches nothing (never everything).
+function itemMatchesBrand(item) {
+  var brands = getBrandNames();
+  if (!brands.length) return false;
+  var name = _brandKey(item && item.name);
+  return brands.some(function(b) { return name.indexOf(b) !== -1; });
+}
+
 function doLogin() {
   var username = document.getElementById('login-username').value.trim();
   var pass = document.getElementById('login-pass').value;
@@ -9985,7 +10002,7 @@ function renderAccountsList() {
   </tr></thead><tbody>` +
   db.accounts.map(a => `<tr style="border-top:1px solid var(--border)">
     <td style="padding:8px 8px;font-weight:600">${esc(a.username)}</td>
-    <td style="padding:8px 8px"><span class="badge" style="background:rgba(147,197,253,0.1);color:${roleColors[a.role]||'var(--muted)'}">${a.role}</span></td>
+    <td style="padding:8px 8px"><span class="badge" style="background:rgba(147,197,253,0.1);color:${roleColors[a.role]||'var(--muted)'}">${a.role}</span>${a.role === 'brand' && a.brand ? '<div style="font-size:11px;color:var(--muted);margin-top:3px">' + esc(a.brand) + '</div>' : ''}</td>
     <td style="padding:8px 8px;font-size:11px;color:var(--muted)">${a.createdAt ? new Date(a.createdAt).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : '—'}</td>
     <td style="padding:8px 8px;text-align:right">
       <div class="actions-cell" style="justify-content:flex-end">
