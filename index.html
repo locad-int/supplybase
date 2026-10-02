@@ -9434,6 +9434,11 @@ function applyRoleUI() {
   show('btn-create-reorder', can('reorder'));
   show('btn-po-history',     can('reorder'));
   show('btn-import-suppliers', currentRole === 'superuser');
+  // Test Mode banner is superuser-only, so re-check it whenever the role UI
+  // is applied (login / account switch), not just when settings load. Only
+  // the banner itself — applyTestMode() would re-render the whole app.
+  var tmBanner = document.getElementById('testmode-banner');
+  if (tmBanner) tmBanner.classList.toggle('active', testModeActive && currentRole === 'superuser');
 
   // Tab visibility is driven by the per-role config (see applyTabVisibility)
   show('btn-export-inv-csv', !isBrand);
@@ -9573,7 +9578,9 @@ function applyTestMode() {
   var banner = document.getElementById('testmode-banner');
   var offBtn = document.getElementById('testmode-off-btn');
   if (!testModeActive || currentRole !== 'superuser') testModePreview = false; // nothing to preview
-  if (banner) banner.classList.toggle('active', testModeActive);
+  // Only superusers see the Test Mode banner — everyone else just sees the
+  // filtered app, with nothing hinting that a test is running.
+  if (banner) banner.classList.toggle('active', testModeActive && currentRole === 'superuser');
   if (offBtn) offBtn.style.display = (testModeActive && currentRole === 'superuser') ? '' : 'none';
   var previewBtn = document.getElementById('testmode-preview-btn');
   if (previewBtn) {
