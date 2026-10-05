@@ -2089,13 +2089,19 @@
         <label>Line Items</label>
         <div id="poe-items" style="display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto;background:var(--surface2);border-radius:8px;padding:8px"></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
-          <input type="text" id="poe-custom-desc" placeholder="Add another item — description" style="flex:1;min-width:160px">
+          <select id="poe-cat-item" style="flex:1;min-width:180px" onchange="poeCatItemChanged()"></select>
+          <input type="number" id="poe-cat-qty" placeholder="Qty" min="0" step="1" style="width:80px">
+          <input type="number" id="poe-cat-cost" placeholder="Unit cost" min="0" step="0.01" style="width:100px">
+          <button type="button" class="btn btn-secondary" onclick="addCatalogLineToEdit()">+ Add</button>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-top:6px">
+          <input type="text" id="poe-custom-desc" placeholder="Or a non-catalog item — description" style="flex:1;min-width:160px">
           <input type="text" id="poe-custom-unit" placeholder="Unit (e.g. pcs)" style="width:100px">
           <input type="number" id="poe-custom-qty" placeholder="Qty" min="0" step="1" style="width:80px">
           <input type="number" id="poe-custom-cost" placeholder="Unit cost" min="0" step="0.01" style="width:100px">
           <button type="button" class="btn btn-secondary" onclick="addCustomLineToEdit()">+ Add</button>
         </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">To add a catalog item that isn't already on this PO, cancel here and use Create Reorder instead — this form only edits/removes existing lines or adds free-text items.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Catalog items added here become normal reorder lines on this PO (receivable into stock). Non-catalog items are listed on the PO only.</div>
       </div>
       <div class="form-group">
         <label>Shipping Method</label>
@@ -5578,6 +5584,7 @@ function openEditPoModal(id) {
   document.getElementById('poe-custom-qty').value = '';
   document.getElementById('poe-custom-cost').value = '';
   populateSupplierDatalist('poe-supplier-list');
+  populatePoeCatalogSelect();
 
   renderPoEditLines();
   updatePoEditTotals();
@@ -5602,7 +5609,7 @@ function renderPoEditLines() {
       ? '<div style="font-size:10px;color:var(--danger)">Already received — locked; qty/cost can\'t be changed here.</div>'
       : (l.partial ? '<div style="font-size:10px;color:#b45309">Partially received — edit qty/cost with care.</div>' : '');
     return '<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px;border-bottom:1px solid var(--border)">'
-      + '<div style="flex:1">' + esc(l.name) + (l.source === 'custom' ? ' <span style="color:var(--muted);font-size:10px">(custom)</span>' : '') + note + '</div>'
+      + '<div style="flex:1">' + esc(l.name) + (l.source === 'custom' ? ' <span style="color:var(--muted);font-size:10px">(custom)</span>' : '') + (l.source === 'new' ? ' <span style="color:var(--ok);font-size:10px">(added)</span>' : '') + note + '</div>'
       + qtyField
       + '<span style="color:var(--muted);font-size:11px">' + esc(l.unit) + ' ×</span>'
       + costField
@@ -5626,6 +5633,53 @@ function removePoEditLine(idx) {
   if (!l || l.locked) return;
   if (l.source === 'reorder' && l.reorderId) poEditRemovedReorderIds.push(l.reorderId);
   poEditLines.splice(idx, 1);
+  renderPoEditLines();
+  updatePoEditTotals();
+}
+
+// Catalog picker for Edit PO — lets an item be added back (e.g. one removed
+// earlier when the supplier said it was unavailable) as a real reorder line,
+// so it can still be received into stock like any other PO line.
+function populatePoeCatalogSelect() {
+  var sel = document.getElementById('poe-cat-item');
+  if (!sel) return;
+  var items = catalogItems().slice().sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+  sel.innerHTML = '<option value="">Add a catalog item…</option>' + items.map(function(i) {
+    return '<option value="' + esc(i.id) + '">' + esc(i.name) + (i.unit ? ' (' + esc(i.unit) + ')' : '') + '</option>';
+  }).join('');
+  document.getElementById('poe-cat-qty').value = '';
+  document.getElementById('poe-cat-cost').value = '';
+}
+
+// Prefill qty/cost from the item's usual reorder qty and current unit cost
+// (only into empty fields, so nothing already typed gets overwritten).
+function poeCatItemChanged() {
+  var item = db.items.find(function(i) { return i.id === document.getElementById('poe-cat-item').value; });
+  if (!item) return;
+  var qtyEl = document.getElementById('poe-cat-qty');
+  var costEl = document.getElementById('poe-cat-cost');
+  if (!qtyEl.value && item.reorderQty) qtyEl.value = item.reorderQty;
+  if (!costEl.value) { var c = currentUnitCost(item) || item.cost; if (c) costEl.value = c; }
+}
+
+function addCatalogLineToEdit() {
+  var itemId = document.getElementById('poe-cat-item').value;
+  var qty = parseFloat(document.getElementById('poe-cat-qty').value);
+  var cost = parseFloat(document.getElementById('poe-cat-cost').value) || 0;
+  if (!itemId) { alert('Choose a catalog item first.'); return; }
+  if (!qty || qty <= 0) { alert('Enter a valid quantity.'); return; }
+  var item = db.items.find(function(i) { return i.id === itemId; });
+  if (!item) { alert('Item not found.'); return; }
+  // Same item already on this PO (and still editable) → just add to it
+  // rather than creating a duplicate line for the same item.
+  var existing = poEditLines.find(function(l) { return l.source !== 'custom' && l.itemId === itemId && !l.locked; });
+  if (existing) {
+    existing.qty += qty;
+    if (cost) existing.cost = cost;
+  } else {
+    poEditLines.push({ source: 'new', itemId: itemId, name: item.name, unit: item.unit || '', qty: qty, cost: cost, locked: false, partial: false });
+  }
+  populatePoeCatalogSelect();
   renderPoEditLines();
   updatePoEditTotals();
 }
@@ -5700,6 +5754,20 @@ function savePoEdit() {
         r.updatedAt = now;
         keptReorderIds.push(r.id);
       }
+    } else if (l.source === 'new') {
+      // Catalog item added during this edit — becomes a real "ordered"
+      // reorder on this PO, exactly like one created when the PO was first
+      // generated (createdAt = now, so earlier restocks of the same item
+      // aren't counted toward this line's "received so far").
+      var nr = {
+        id: uid(), itemId: l.itemId, supplier: supplier,
+        supplierAddress: supplierAddress, supplierTin: supplierTin,
+        qty: l.qty, cost: l.cost, orderDate: now.slice(0, 10), deliveryDate: delivery,
+        status: 'ordered', notes: '', createdAt: now, updatedAt: now,
+        orderedAt: now, poNumber: po.poNumber,
+      };
+      db.reorders.push(nr);
+      keptReorderIds.push(nr.id);
     } else {
       customItems.push({ description: l.name, unit: l.unit, qty: l.qty, cost: l.cost });
     }
