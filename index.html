@@ -968,6 +968,29 @@
     </div>
     <div class="empty hidden" id="rpt-empty"><div class="icon">💰</div><p>No consumption data for this period.</p></div>
 
+    <!-- NON-CATALOG PURCHASES -->
+    <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:10px">
+        <h3 style="margin:0;font-size:1rem;color:var(--text)">🧾 Non-catalog Purchases</h3>
+        <button class="btn btn-secondary" onclick="exportNonCatalogCSV()" style="font-size:12px">⬇ Export CSV</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Items bought on a PO that aren't tracked in inventory, so they never appear in the consumption/restock figures above. Dated by delivery date once marked delivered, otherwise by PO date — follows the From / To dates above. Line amounts as on the PO (PO-level shipping, other charges and discounts not included).</div>
+      <div class="summary" style="margin-bottom:14px">
+        <div class="card"><div class="label">Delivered</div><div class="value" id="nc-delivered" style="color:var(--ok)">₱0.00</div></div>
+        <div class="card"><div class="label">On Order (not yet delivered)</div><div class="value" id="nc-onorder" style="color:var(--warn)">₱0.00</div></div>
+        <div class="card"><div class="label">Total</div><div class="value" id="nc-total">₱0.00</div></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>PO</th><th>Supplier</th><th>Item</th><th>Qty</th><th>Unit Cost</th><th>Total</th><th>Status</th></tr>
+          </thead>
+          <tbody id="nc-tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty hidden" id="nc-empty"><div class="icon">🧾</div><p>No non-catalog purchases for this period.</p></div>
+    </div>
+
     <!-- VARIANCE SECTION -->
     <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
@@ -6838,6 +6861,9 @@ function renderReport() {
   document.getElementById('rpt-total-qty').textContent = fmt(grandQty);
   document.getElementById('rpt-unique').textContent = [...new Set(rows.map(r => r.itemId))].length;
   document.getElementById('rpt-entries').textContent = logs.length;
+  // Before the early "no log data" return below, so non-catalog spend still
+  // shows for a period with no inventory movements.
+  renderNonCatalogExpenses();
 
   const tbody = document.getElementById('rpt-tbody');
   const empty = document.getElementById('rpt-empty');
@@ -6885,6 +6911,71 @@ function renderReport() {
   tbody.appendChild(tfoot);
   renderMonthlyReport();
   renderUserReport();
+}
+
+// ─── NON-CATALOG PURCHASES (Cost Report) ───────────────────────────────────
+// Non-catalog PO lines never create inventory logs, so the log-based cost
+// figures can't see them. Built straight from each PO's customItems instead,
+// dated by delivery (once marked delivered) or else by the PO date, and
+// filtered by the report's own From / To range.
+function _nonCatalogLines() {
+  var fromVal = document.getElementById('rpt-from').value;
+  var toVal = document.getElementById('rpt-to').value;
+  var from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
+  var to = toVal ? new Date(toVal + 'T23:59:59') : null;
+  var lines = [];
+  (db.purchaseOrders || []).forEach(function(po) {
+    (po.customItems || []).forEach(function(c) {
+      var date = c.receivedAt || po.date || po.createdAt;
+      var d = new Date(date);
+      if (from && d < from) return;
+      if (to && d > to) return;
+      lines.push({
+        date: date, poNumber: po.poNumber || '', supplier: po.supplier || '',
+        name: c.description || '', qty: c.qty || 0, unit: c.unit || '', cost: c.cost || 0,
+        total: (c.qty || 0) * (c.cost || 0), delivered: !!c.receivedAt,
+      });
+    });
+  });
+  return lines.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+}
+
+function renderNonCatalogExpenses() {
+  var tbody = document.getElementById('nc-tbody');
+  if (!tbody) return;
+  var lines = _nonCatalogLines();
+  var delivered = lines.filter(function(l) { return l.delivered; }).reduce(function(s, l) { return s + l.total; }, 0);
+  var onOrder = lines.filter(function(l) { return !l.delivered; }).reduce(function(s, l) { return s + l.total; }, 0);
+  document.getElementById('nc-delivered').textContent = fmtPHP(delivered);
+  document.getElementById('nc-onorder').textContent = fmtPHP(onOrder);
+  document.getElementById('nc-total').textContent = fmtPHP(delivered + onOrder);
+  document.getElementById('nc-empty').classList.toggle('hidden', lines.length > 0);
+  tbody.innerHTML = lines.map(function(l) {
+    return '<tr>'
+      + '<td>' + new Date(l.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) + '</td>'
+      + '<td>' + esc(l.poNumber) + '</td>'
+      + '<td>' + esc(l.supplier) + '</td>'
+      + '<td><strong>' + esc(l.name) + '</strong></td>'
+      + '<td>' + fmtInt(l.qty) + ' ' + esc(l.unit) + '</td>'
+      + '<td>' + fmtPHP(l.cost) + '</td>'
+      + '<td style="font-weight:700">' + fmtPHP(l.total) + '</td>'
+      + '<td><span class="badge badge-' + (l.delivered ? 'ok' : 'warn') + '">' + (l.delivered ? 'delivered' : 'on order') + '</span></td>'
+      + '</tr>';
+  }).join('');
+}
+
+function exportNonCatalogCSV() {
+  var lines = _nonCatalogLines();
+  var q = function(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+  var rows = [['Date', 'PO Number', 'Supplier', 'Item', 'Qty', 'Unit', 'Unit Cost', 'Total', 'Status'].join(',')];
+  lines.forEach(function(l) {
+    rows.push([q(l.date.slice(0, 10)), q(l.poNumber), q(l.supplier), q(l.name), l.qty, q(l.unit), l.cost.toFixed(2), l.total.toFixed(2), q(l.delivered ? 'Delivered' : 'On order')].join(','));
+  });
+  var blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'non_catalog_purchases_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
 }
 
 function sortReport(field) {
