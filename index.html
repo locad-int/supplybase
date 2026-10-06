@@ -4263,6 +4263,16 @@ function deleteLogEntry(logId) {
     if (sb) {
       sb.from('logs').delete().eq('id', logId).then(function(){}).catch(function(){});
     }
+    // A deleted restock no longer counts toward any PO line it was part of —
+    // refresh those lines' received status and "Partial delivery" note so
+    // they don't keep showing the old total.
+    if (log.type === 'restock') {
+      var nowIso = new Date().toISOString();
+      var affected = db.reorders.filter(function(r) { return r.itemId === log.itemId && log.date >= (r.createdAt || '1970-01-01'); });
+      affected.forEach(function(r) { _syncReorderFromLogs(r, nowIso); });
+      _sbSaveReorderStatus(affected);
+      renderReorder();
+    }
     logAudit('Log deleted', label + ' (by ' + (currentUser && currentUser.username) + ')');
     renderLogs();
   }, { confirmLabel: 'Delete', danger: true });
@@ -4907,16 +4917,23 @@ function reorderRowHtml(r) {
   // only way to fix it (via Edit PO), since there's nothing here to edit.
   if (r.isCustom) {
     const customTotal = (r.qty || 0) * (r.cost || 0);
+    const recv = r.status === 'received';
+    // No stock to add for a non-catalog line, so "receiving" it just records
+    // that it arrived (when, and who marked it) on the PO record itself.
+    let cAct = '<div class="actions-cell">';
+    if (!recv && can('mark_received')) cAct += '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Mark delivered" onclick="event.stopPropagation();markCustomItemReceived(\'' + r.poId + '\',' + r.customIndex + ')">📥</button>';
+    if (recv && currentRole === 'superuser') cAct += '<button class="btn btn-icon btn-sm" title="Undo delivered" onclick="event.stopPropagation();unmarkCustomItemReceived(\'' + r.poId + '\',' + r.customIndex + ')">↩️</button>';
+    cAct += '</div>';
     return `
       <td><strong>${esc(r.name)}</strong>${r.poNumber ? '<div style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</div>' : ''} <span style="font-size:10px;color:var(--muted)">(non-catalog)</span></td>
       <td>${esc(r.supplier||'—')}</td>
       <td>${fmtInt(r.qty)} ${esc(r.unit||'')}</td>
       <td>${r.cost ? fmtPHP(r.cost) : '—'}</td>
       <td>${r.cost && r.qty ? fmtPHP(customTotal) : '—'}</td>
-      <td style="min-width:160px;color:var(--muted);font-size:11px">—</td>
-      <td><span class="badge badge-warn">ordered</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</span>' : ''}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">Edit via Edit PO</td>
-      <td style="color:var(--muted);font-size:11px">—</td>`;
+      <td style="min-width:160px">${reorderTimeline({ orderedAt: r.orderedAt, receivedAt: r.receivedAt })}</td>
+      <td><span class="badge badge-${recv ? 'ok' : 'warn'}">${recv ? 'received' : 'ordered'}</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</span>' : ''}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${recv && r.receivedBy ? 'Marked by ' + esc(r.receivedBy) : 'Non-catalog — no stock added'}</td>
+      <td>${cAct}</td>`;
   }
   const item = db.items.find(i => i.id === r.itemId);
   const total = (r.qty * r.cost);
@@ -4936,6 +4953,41 @@ function reorderRowHtml(r) {
     <td><span class="badge badge-${statusColor}">${r.status}</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</span>' : ''}</td>
     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.notes||'—')}</td>
     <td>${rAct}</td>`;
+}
+
+// ─── NON-CATALOG LINE DELIVERY ─────────────────────────────────────────────
+// A non-catalog PO line has no inventory item, so there's no stock to add —
+// marking it delivered only stamps receivedAt/receivedBy onto that entry in
+// the PO's own customItems list (stored with the PO, no extra columns).
+function markCustomItemReceived(poId, idx) {
+  if (!can('mark_received')) return;
+  var po = (db.purchaseOrders || []).find(function(p) { return p.id === poId; });
+  var c = po && po.customItems && po.customItems[idx];
+  if (!c) return;
+  showConfirm('Mark Delivered',
+    'Mark this non-catalog item as delivered?\n\n' + c.description + ' · ' + fmtInt(c.qty) + ' ' + (c.unit || '') + '\n' + po.poNumber + ' · ' + (po.supplier || '')
+      + '\n\nThis records the delivery on the PO only — no inventory stock is added, since it isn\'t a catalog item.',
+    function() {
+      c.receivedAt = new Date().toISOString();
+      c.receivedBy = (currentUser && currentUser.username) || '';
+      logAudit('Non-catalog item delivered', po.poNumber + ' — ' + c.description + ' x' + fmtInt(c.qty));
+      save();
+      renderReorder();
+    }, { confirmLabel: 'Mark delivered' });
+}
+
+function unmarkCustomItemReceived(poId, idx) {
+  if (currentRole !== 'superuser') return;
+  var po = (db.purchaseOrders || []).find(function(p) { return p.id === poId; });
+  var c = po && po.customItems && po.customItems[idx];
+  if (!c || !c.receivedAt) return;
+  showConfirm('Undo Delivered', 'Set ' + c.description + ' on ' + po.poNumber + ' back to "ordered"?', function() {
+    delete c.receivedAt;
+    delete c.receivedBy;
+    logAudit('Non-catalog delivery undone', po.poNumber + ' — ' + c.description);
+    save();
+    renderReorder();
+  }, { confirmLabel: 'Undo' });
 }
 
 function renderReorder() {
@@ -4977,18 +5029,24 @@ function renderReorder() {
   // there's nothing further to receive or edit here — see reorderRowHtml).
   (db.purchaseOrders || []).forEach(function(po) {
     if (!po.customItems || !po.customItems.length) return;
-    if (f && f !== 'ordered') return; // synthetic items are always "ordered"
+    // Which of this PO's custom lines pass the status filter ("ordered"
+    // until marked delivered, then "received" — see markCustomItemReceived).
+    var customShown = po.customItems.map(function(c, idx) { return { c: c, idx: idx, status: c.receivedAt ? 'received' : 'ordered' }; })
+      .filter(function(x) { return !f || x.status === f; });
+    if (!customShown.length) return;
     // Deliberately NOT filtered by Test Mode: the whitelist is a list of
     // catalog item IDs, and a non-catalog line has no item to whitelist — so
     // filtering would hide every custom-item PO whenever Test Mode is on,
     // even though they're real, generated Purchase Orders.
     var g = seenPo[po.poNumber];
     if (!g) { g = { poNumber: po.poNumber, items: [] }; seenPo[po.poNumber] = g; units.push(g); }
-    po.customItems.forEach(function(c) {
+    customShown.forEach(function(x) {
+      var c = x.c;
       g.items.push({
-        isCustom: true, poNumber: po.poNumber, supplier: po.supplier,
+        isCustom: true, poId: po.id, customIndex: x.idx, poNumber: po.poNumber, supplier: po.supplier,
         name: c.description, unit: c.unit, qty: c.qty, cost: c.cost,
-        status: 'ordered', notes: '',
+        status: x.status, orderedAt: po.date || po.createdAt || null,
+        receivedAt: c.receivedAt || null, receivedBy: c.receivedBy || '', notes: '',
       });
     });
   });
@@ -5718,7 +5776,10 @@ function openEditPoModal(id) {
     };
   }).filter(Boolean);
   (po.customItems || []).forEach(function(c) {
-    poEditLines.push({ source: 'custom', name: c.description, unit: c.unit || '', qty: c.qty || 0, cost: c.cost || 0, locked: false, partial: false });
+    // A delivered non-catalog line is locked like a received catalog line,
+    // and carries its delivery stamp through so saving doesn't erase it.
+    poEditLines.push({ source: 'custom', name: c.description, unit: c.unit || '', qty: c.qty || 0, cost: c.cost || 0,
+      locked: !!c.receivedAt, partial: false, receivedAt: c.receivedAt || null, receivedBy: c.receivedBy || '' });
   });
 
   document.getElementById('poe-id').value = po.id;
@@ -5923,7 +5984,9 @@ function savePoEdit() {
       db.reorders.push(nr);
       keptReorderIds.push(nr.id);
     } else {
-      customItems.push({ description: l.name, unit: l.unit, qty: l.qty, cost: l.cost });
+      var ci = { description: l.name, unit: l.unit, qty: l.qty, cost: l.cost };
+      if (l.receivedAt) { ci.receivedAt = l.receivedAt; ci.receivedBy = l.receivedBy || ''; }
+      customItems.push(ci);
     }
   });
 
