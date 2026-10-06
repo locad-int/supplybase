@@ -140,6 +140,10 @@
   /* Modal */
   .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; }
   .modal-bg.open { display: flex; }
+  /* Confirm dialogs are often opened from inside another popup (e.g. Delete
+     PO from PO History) but sit earlier in the page, so without this they'd
+     render underneath the popup that opened them. */
+  #app-confirm-modal { z-index: 110; }
   .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
   .modal h2 { margin-bottom: 18px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
@@ -1818,6 +1822,7 @@
     <h2 id="ld-title">Log Detail</h2>
     <div id="ld-body" style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px"></div>
     <div class="modal-actions">
+      <button class="btn btn-secondary" id="ld-reverse-btn" style="display:none">↩️ Reverse restock</button>
       <button class="btn btn-primary" onclick="closeModal('log-detail-modal')">Close</button>
     </div>
   </div>
@@ -3342,7 +3347,14 @@ async function _sbUpsertAll() {
     if (db.accounts.length) ops.push(sb.from('accounts').upsert(db.accounts));
     if (db.reconciliations.length) ops.push(sb.from('reconciliations').upsert(db.reconciliations));
     if (db.purchaseOrders.length)  ops.push(sb.from('purchase_orders').upsert(db.purchaseOrders));
-    if (ops.length) await Promise.all(ops);
+    if (ops.length) {
+      // supabase-js reports failures in the result ({ error }) rather than
+      // throwing, so check each one — otherwise a rejected save is silent.
+      var results = await Promise.all(ops);
+      results.forEach(function(res) {
+        if (res && res.error) console.error('Supabase sync error:', res.error.message || res.error);
+      });
+    }
   } catch(e) { console.error('Supabase sync error:', e); }
 }
 // Targeted delete helpers
@@ -4221,7 +4233,9 @@ function renderLogs() {
       + '<div class="log-qty" style="color:' + typeColors[log.type] + '">' + qtySign + fmtInt(Math.abs(logQtyForDisplay)) + ' ' + esc(item ? (item.unit||'') : '') + '</div>'
       + '<div style="color:var(--muted);font-size:11px;margin-top:2px">' + (log.absQty != null ? 'Stock: ' + log.absQty : '') + '</div>'
       + '<div style="margin-top:4px"><span class="badge ' + badgeClass + '">' + log.type + '</span></div>'
-      + (currentRole === 'superuser' ? '<div style="margin-top:6px"><button class="btn btn-icon btn-sm btn-danger" title="Delete log entry" onclick="event.stopPropagation();deleteLogEntry(\'' + log.id + '\')">🗑</button></div>' : '')
+      + (currentRole === 'superuser' ? '<div style="margin-top:6px;display:flex;gap:4px;justify-content:flex-end">'
+          + (log.type === 'restock' ? '<button class="btn btn-icon btn-sm" title="Reverse this restock (takes the stock back out)" onclick="event.stopPropagation();reverseRestockLog(\'' + log.id + '\')">↩️</button>' : '')
+          + '<button class="btn btn-icon btn-sm btn-danger" title="Delete log entry" onclick="event.stopPropagation();deleteLogEntry(\'' + log.id + '\')">🗑</button></div>' : '')
       + '</div>';
     list.appendChild(div);
   });
@@ -4252,6 +4266,126 @@ function deleteLogEntry(logId) {
     logAudit('Log deleted', label + ' (by ' + (currentUser && currentUser.username) + ')');
     renderLogs();
   }, { confirmLabel: 'Delete', danger: true });
+}
+
+// ─── RESTOCK REVERSAL ──────────────────────────────────────────────────────
+// Recomputes one reorder's received status/note from the restock logs that
+// count toward it (see _reorderReceivedSoFar). Shared by manual restocks
+// (stock going up) and restock reversals (stock going back down), so a line
+// that's no longer fully covered drops back from "received" to "ordered".
+function _syncReorderFromLogs(r, when) {
+  var total = _reorderReceivedSoFar(r);
+  var cleaned = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
+  if (total > 0 && total >= (r.qty || 0)) {
+    r.status = 'received';
+    if (!r.receivedAt) r.receivedAt = when;
+    r.notes = cleaned;
+  } else {
+    if (r.status === 'received') { r.status = 'ordered'; r.receivedAt = null; }
+    r.notes = total > 0
+      ? '⚠️ Partial delivery: ' + fmtInt(total) + ' of ' + fmtInt(r.qty) + ' received (last: '
+        + new Date(when).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+        + ')' + (cleaned ? '\n' + cleaned : '')
+      : cleaned;
+  }
+  r.updatedAt = new Date().toISOString();
+}
+
+async function _sbSaveReorderStatus(reorders) {
+  if (!sb || !reorders || !reorders.length) return;
+  for (var i = 0; i < reorders.length; i++) {
+    var r = reorders[i];
+    var res = await sb.from('reorders').update({ status: r.status, receivedAt: r.receivedAt || null, notes: r.notes, updatedAt: r.updatedAt }).eq('id', r.id);
+    if (res && res.error) console.warn('Reorder status update failed:', res.error.message);
+  }
+}
+
+// Takes a restock's quantity back out of the FIFO batches. A restock lands
+// on the newest batch at its unit cost, so remove from the newest batches at
+// that cost first, then (if anything's left) from the newest batches of any
+// cost. Returns how much couldn't be found in the batches (normally 0).
+function removeRestockFromLayers(item, qty, unitCost) {
+  var L = getLayers(item);
+  var remaining = qty;
+  function pass(match) {
+    for (var i = L.length - 1; i >= 0 && remaining > 0; i--) {
+      if (!match(L[i])) continue;
+      var take = Math.min(L[i].qty, remaining);
+      L[i].qty -= take;
+      remaining -= take;
+    }
+  }
+  if (unitCost !== null && unitCost !== undefined && !isNaN(unitCost)) {
+    pass(function(l) { return Math.abs(l.cost - unitCost) < 0.005; });
+  }
+  pass(function() { return true; });
+  item.costLayers = L.filter(function(l) { return l.qty > 0; });
+  return remaining;
+}
+
+// Undoes a restock that should never have been logged (e.g. the same
+// delivery saved twice): takes its qty back out of stock and the FIFO
+// batches, removes the entry, re-checks any PO lines it counted toward, and
+// records exactly what was reversed in the audit log. Unlike Delete, this
+// keeps stock, cost and PO receiving in agreement.
+function reverseRestockLog(logId) {
+  if (currentRole !== 'superuser') return;
+  if (checkStocktakeLock()) return;
+  var log = db.logs.find(function(l) { return l.id === logId; });
+  if (!log || log.type !== 'restock') return;
+  var item = db.items.find(function(i) { return i.id === log.itemId; });
+  if (!item) { alert('This entry\'s item no longer exists, so its stock can\'t be reversed.'); return; }
+  var unit = item.unit || '';
+  var when = new Date(log.date).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  var affected = db.reorders.filter(function(r) { return r.itemId === log.itemId && log.date >= (r.createdAt || '1970-01-01'); });
+  showConfirm('Reverse Restock',
+    'Reverse this restock?\n\n' + item.name + ' · +' + fmtInt(log.qty) + ' ' + unit + '\n' + when + ' · by ' + (log.by || '—')
+      + (log.notes ? '\n"' + log.notes + '"' : '')
+      + '\n\nThis takes ' + fmtInt(log.qty) + ' ' + unit + ' back out of stock (now ' + fmtInt(item.qty) + ' → ' + fmtInt(item.qty - log.qty) + ') and out of its cost batch, removes the entry, and recalculates '
+      + (affected.length ? affected.length + ' PO line' + (affected.length === 1 ? '' : 's') + ' it counted toward.' : 'stock.')
+      + ' The reversal is recorded in the audit log.',
+    async function() {
+      // Latest qty first — same stale-read protection as every other stock change
+      if (sb) {
+        try {
+          var fresh = await sb.from('items').select('qty').eq('id', item.id).single();
+          if (fresh.data && !fresh.error && fresh.data.qty !== undefined) item.qty = fresh.data.qty;
+        } catch(e) {}
+      }
+      if (item.qty < log.qty) {
+        alert('Only ' + fmtInt(item.qty) + ' ' + unit + ' of ' + item.name + ' is on hand — less than the ' + fmtInt(log.qty)
+          + ' this entry added, so some of it has already been used. Nothing was changed. Correct it with a stock count adjustment instead.');
+        return;
+      }
+      var unitCost = (log.costAmount != null && log.qty) ? log.costAmount / log.qty : null;
+      removeRestockFromLayers(item, log.qty, unitCost);
+      item.qty = item.qty - log.qty;
+      item.updatedAt = new Date().toISOString();
+      syncItemCost(item);
+
+      db.logs = db.logs.filter(function(l) { return l.id !== logId; });
+      var nowIso = new Date().toISOString();
+      affected.forEach(function(r) { _syncReorderFromLogs(r, nowIso); });
+
+      logAudit('Restock reversed', item.name + ' −' + fmtInt(log.qty) + ' ' + unit + ' (entry of ' + when + ' by ' + (log.by || '—')
+        + (log.notes ? ', "' + log.notes + '"' : '') + ') — stock now ' + fmtInt(item.qty));
+
+      if (sb) {
+        try {
+          await sbUpdateItem(item);
+          var del = await sb.from('logs').delete().eq('id', logId);
+          if (del && del.error) console.warn('Log delete failed:', del.error.message);
+          await _sbSaveReorderStatus(affected);
+        } catch(e) { console.error('Restock reversal sync error:', e); save(); }
+      } else {
+        save();
+      }
+      closeModal('log-detail-modal');
+      updateSummary();
+      renderLogs();
+      renderInventory();
+      renderReorder();
+    }, { confirmLabel: 'Reverse', danger: true });
 }
 
 function openLogDetail(logId) {
@@ -4293,6 +4427,12 @@ function openLogDetail(logId) {
     + (log.varianceReason ? row('Variance reason', esc(log.varianceReason)) : '')
     + row('Notes', log.notes ? esc(log.notes) : '');
 
+  var revBtn = document.getElementById('ld-reverse-btn');
+  if (revBtn) {
+    var canReverse = currentRole === 'superuser' && log.type === 'restock';
+    revBtn.style.display = canReverse ? '' : 'none';
+    revBtn.onclick = canReverse ? function() { reverseRestockLog(log.id); } : null;
+  }
   openModal('log-detail-modal');
 }
 
@@ -4632,7 +4772,18 @@ function openLogForItem(itemId) {
   switchTab('usage');
 }
 
+// Guards against the same entry being saved several times — e.g. Save
+// clicked repeatedly while the first save is still waiting on Supabase
+// (how four identical "300 rolls received" restocks landed seconds apart).
+var _saveLogBusy = false;
 async function saveLog() {
+  if (_saveLogBusy) return; // a save is already in progress — ignore extra clicks
+  _saveLogBusy = true;
+  try { await _saveLogImpl(); }
+  finally { _saveLogBusy = false; }
+}
+
+async function _saveLogImpl() {
   if (checkStocktakeLock()) return;
   const itemId = document.getElementById('lf-item').value;
   const type = document.getElementById('lf-type').value;
@@ -4644,6 +4795,19 @@ async function saveLog() {
   if (!by) { alert('Performed By is required.'); return; }
   const item = db.items.find(i => i.id === itemId);
   if (!item) return;
+  // Same item, type, qty and person within the last 10 minutes is almost
+  // always an accidental repeat — ask before saving it again. (Not for
+  // 'adjust', whose qty is an absolute count rather than a movement.)
+  if (type !== 'adjust') {
+    const dupe = db.logs.find(l => l.itemId === itemId && l.type === type && l.qty === qty
+      && (l.by || '').trim().toLowerCase() === by.toLowerCase()
+      && (Date.now() - new Date(l.date).getTime()) < 10 * 60 * 1000);
+    if (dupe) {
+      const mins = Math.max(1, Math.round((Date.now() - new Date(dupe.date).getTime()) / 60000));
+      if (!confirm('This looks like a duplicate.\n\nThe same ' + type + ' of ' + fmtInt(qty) + ' ' + (item.unit || '') + ' for ' + item.name
+        + ' was already logged by ' + (dupe.by || by) + ' about ' + mins + ' min ago.\n\nSave it again anyway?')) return;
+    }
+  }
   // Always fetch the latest qty from Supabase to prevent stale-read issues
   // when multiple users log transactions concurrently
   if (sb) {
@@ -4703,26 +4867,12 @@ async function saveLog() {
   // item.cost now tracks the oldest remaining batch
   syncItemCost(item);
   // Auto-update open reorders when a restock is logged for the same item
+  const touchedReorders = [];
   if (type === 'restock') {
     db.reorders.forEach(r => {
       if (r.itemId === itemId && r.status !== 'received') {
-        // Sum all restock logs for this item since the reorder was created
-        const since = r.createdAt || '1970-01-01';
-        const totalRestocked = db.logs
-          .filter(l => l.itemId === itemId && l.type === 'restock' && l.date >= since)
-          .reduce((s, l) => s + (l.qty || 0), 0);
-
-        if (totalRestocked >= r.qty) {
-          // Cumulative delivery complete — mark received
-          r.status = 'received';
-          if (!r.receivedAt) r.receivedAt = logDate;
-          r.notes = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
-        } else {
-          // Still partial — update the note with latest cumulative total
-          const partialNote = `⚠️ Partial delivery: ${fmtInt(totalRestocked)} of ${fmtInt(r.qty)} received (last: ${new Date(logDate).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })})`;
-          const existing = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
-          r.notes = partialNote + (existing ? '\n' + existing : '');
-        }
+        _syncReorderFromLogs(r, logDate);
+        touchedReorders.push(r);
       }
     });
   }
@@ -4733,6 +4883,10 @@ async function saveLog() {
     try {
       await sbUpdateItem(item, { "maxRef": item.maxRef });
       await sbInsertLogs([logEntry]);
+      // Previously these reorder status/note changes were only made in
+      // memory and never saved, so a PO line could look received in one
+      // session and revert to "ordered" after a reload.
+      await _sbSaveReorderStatus(touchedReorders);
     } catch(e) { save(); } // fallback to bulk save on error
   } else {
     save();
@@ -5783,8 +5937,11 @@ function savePoEdit() {
   po.subtotal = subtotal; po.total = total;
   po.reorderIds = keptReorderIds;
   po.customItems = customItems;
-  po.updatedAt = now;
-  po.updatedBy = (currentUser && currentUser.username) || '';
+  // No updatedAt/updatedBy on the PO record: purchase_orders may not have
+  // those columns, and one unknown column makes Supabase reject the whole
+  // purchase_orders save. Who edited it and when is in the audit log.
+  delete po.updatedAt;
+  delete po.updatedBy;
 
   logAudit('Purchase Order edited', po.poNumber + ' — ' + supplier);
 
@@ -6389,7 +6546,14 @@ function closeItemDropdown() {
   document.getElementById('lf-item-dropdown').style.display = 'none';
 }
 
-function openModal(id) { document.getElementById(id).classList.add('open'); }
+// Each open stamps an increasing sequence number so Esc can close whichever
+// popup was opened most recently (e.g. Preview opened on top of PO History).
+var _modalSeq = 0;
+function openModal(id) {
+  var el = document.getElementById(id);
+  el.classList.add('open');
+  el.dataset.openSeq = String(++_modalSeq);
+}
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 // ─── STYLED CONFIRM MODAL ───────────────────────────────────────────────────────
@@ -6410,7 +6574,7 @@ function showConfirm(title, message, onConfirm, opts) {
     btn.style.borderColor = '';
   }
   _appConfirmCallback = onConfirm;
-  document.getElementById('app-confirm-modal').classList.add('open');
+  openModal('app-confirm-modal');
 }
 function _runAppConfirm() {
   closeModal('app-confirm-modal');
@@ -6421,6 +6585,28 @@ function _runAppConfirm() {
   }
 }
 document.querySelectorAll('.modal-bg').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }));
+
+// Esc closes the most recently opened popup — same as clicking its
+// background or Cancel (nothing is saved). With no popup open, Esc closes
+// the Shelfie chat panel if it's showing.
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
+  var open = Array.prototype.slice.call(document.querySelectorAll('.modal-bg.open'));
+  if (open.length) {
+    var top = open.reduce(function(best, m) {
+      // ">=" so that, for popups never stamped by openModal, the later one
+      // in the page wins — matching how they visually stack.
+      return (!best || (+m.dataset.openSeq || 0) >= (+best.dataset.openSeq || 0)) ? m : best;
+    }, null);
+    top.classList.remove('open');
+    e.preventDefault();
+    return;
+  }
+  if (typeof aiPanelOpen !== 'undefined' && aiPanelOpen && typeof toggleAiPanel === 'function') {
+    toggleAiPanel();
+    e.preventDefault();
+  }
+});
 
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
