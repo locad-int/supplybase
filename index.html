@@ -164,6 +164,9 @@
 
   /* Filters */
   .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  /* Toolbar dropdowns size to their content instead of inheriting the
+     global width:100% (which stretched them across the whole screen). */
+  .filters > select { width: auto; max-width: 240px; flex: 0 0 auto; }
   .search-wrap { position: relative; flex: 1; min-width: 180px; max-width: 300px; }
   .search-wrap input { padding-left: 32px; }
   .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
@@ -832,9 +835,9 @@
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:0 0 10px 0">
       <span style="font-size:12px;color:var(--muted);font-weight:600">Date range:</span>
-      <input type="date" id="log-date-from" onchange="logVisibleCount=LOG_PAGE_SIZE;renderLogs()" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px">
+      <input type="date" id="log-date-from" onchange="logVisibleCount=LOG_PAGE_SIZE;renderLogs()" style="width:auto;flex:0 0 auto;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px">
       <span style="font-size:12px;color:var(--muted)">to</span>
-      <input type="date" id="log-date-to" onchange="logVisibleCount=LOG_PAGE_SIZE;renderLogs()" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px">
+      <input type="date" id="log-date-to" onchange="logVisibleCount=LOG_PAGE_SIZE;renderLogs()" style="width:auto;flex:0 0 auto;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px">
       <button class="btn btn-secondary" onclick="setLogDatePreset('today')"     style="font-size:11px;padding:4px 10px">Today</button>
       <button class="btn btn-secondary" onclick="setLogDatePreset('week')"      style="font-size:11px;padding:4px 10px">This Week</button>
       <button class="btn btn-secondary" onclick="setLogDatePreset('month')"     style="font-size:11px;padding:4px 10px">This Month</button>
@@ -849,7 +852,7 @@
   <!-- REORDER TAB -->
   <div class="tab-panel" id="tab-reorder">
     <div class="filters">
-      <select id="reorder-filter" onchange="renderReorder()">
+      <select id="reorder-filter" onchange="renderReorder()" style="width:auto;max-width:220px">
         <option value="">All Items</option>
         <option value="needed">Needs Reorder</option>
         <option value="ordered">Ordered</option>
