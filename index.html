@@ -236,28 +236,7 @@
   .dash-hbar-val { font-size: 12px; font-weight: 600; color: var(--text); min-width: 72px; text-align: right; }
   .dash-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 40px 0; }
 
-  /* ── Messages ─────────────────────────────────────────── */
-  .msg-list { display: flex; flex-direction: column; gap: 8px; }
-  .msg-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 16px; cursor: pointer; transition: background .12s, border-color .12s; border-left: 3px solid transparent; }
-  .msg-card:hover { background: var(--surface2); border-color: var(--accent); }
-  .msg-card.msg-unread { border-left-color: var(--accent); }
-  .msg-card.msg-new-reply { border-left-color: #3b82f6; }
-  .msg-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
-  .msg-card-from { font-size: 13px; font-weight: 600; color: var(--text); }
-  .msg-card-date { font-size: 11px; color: var(--muted); white-space: nowrap; }
-  .msg-card-subject { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .msg-card-preview { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .msg-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
-  .msg-badge-new    { background: rgba(22,163,74,0.12); color: var(--accent); }
-  .msg-badge-read   { background: var(--surface2); color: var(--muted); }
-  .msg-badge-replied { background: #dbeafe; color: #1e40af; }
-  .msg-badge-pending { background: #fef3c7; color: #92400e; }
-  .msg-thread-bubble { border-radius: 10px; padding: 12px 14px; }
-  .msg-thread-in  { background: var(--surface2); border: 1px solid var(--border); }
-  .msg-thread-out { background: rgba(22,163,74,0.06); border: 1px solid rgba(22,163,74,0.2); }
   .nav-unread-badge { background: var(--danger); color: #fff; font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 99px; margin-left: auto; }
-  .msg-setup-box { background: var(--surface); border: 1px solid var(--warn); border-radius: 10px; padding: 18px 20px; margin-bottom: 14px; }
-  .msg-setup-box pre { background: var(--surface2); border-radius: 6px; padding: 10px 12px; font-size: 11px; margin-top: 10px; overflow-x: auto; color: var(--text); line-height: 1.5; }
 
   /* ── Supply Requests ───────────────────────────────────── */
   .req-list { display: flex; flex-direction: column; gap: 8px; }
@@ -363,7 +342,7 @@
 
   /* ─── GLOBAL MOBILE FEEL ──────────────────────────────────────────────────── */
   html { -webkit-tap-highlight-color: transparent; }
-  button, .nav-item, .card[onclick], .req-card, .msg-card, .log-entry { -webkit-tap-highlight-color: transparent; }
+  button, .nav-item, .card[onclick], .req-card, .log-entry { -webkit-tap-highlight-color: transparent; }
 
   /* ─── BOTTOM NAV BAR ─────────────────────────────────────────────────────── */
   #bottom-nav {
@@ -670,7 +649,6 @@
     <div id="nav-reorder" class="nav-item" data-tab="reorder" draggable="true" onclick="switchTab('reorder')">🔄 <span>Reorder</span><span class="nav-drag-handle">⠿</span></div>
     <div id="nav-report" class="nav-item" data-tab="report" draggable="true" onclick="switchTab('report')">💰 <span>Cost Report</span><span class="nav-drag-handle">⠿</span></div>
     <div id="nav-dashboard" class="nav-item" data-tab="dashboard" draggable="true" onclick="switchTab('dashboard')">📊 <span>Dashboard</span><span class="nav-drag-handle">⠿</span></div>
-    <div id="nav-messages" class="nav-item" data-tab="messages" draggable="true" onclick="switchTab('messages')">📬 <span>Messages</span><span class="nav-drag-handle">⠿</span><span id="msg-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
     <div id="nav-requests" class="nav-item" data-tab="requests" draggable="true" onclick="switchTab('requests')">🛒 <span>Requests</span><span class="nav-drag-handle">⠿</span><span id="req-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
     <div id="nav-audit" class="nav-item" data-tab="audit" draggable="true" onclick="switchTab('audit')">📋 <span>Audit Log</span><span class="nav-drag-handle">⠿</span></div>
     <div class="reorder-hint" id="reorder-hint" style="display:none">Drag to reorder</div>
@@ -1127,24 +1105,6 @@
       <div id="dash-top-items"></div>
     </div>
 
-  </div>
-
-  <!-- MESSAGES TAB -->
-  <div class="tab-panel" id="tab-messages">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-      <div>
-        <div style="font-size:18px;font-weight:700;color:var(--text)">Messages</div>
-        <div id="msg-view-sub" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
-      </div>
-      <button id="btn-compose-msg" class="btn btn-primary" onclick="openComposeMsg()">✉ New Message</button>
-    </div>
-    <!-- Admin filter chips -->
-    <div id="msg-filter-row" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      <button class="status-chip active" data-mf="all"     onclick="setMsgFilter('all')">All</button>
-      <button class="status-chip" data-mf="unread"  onclick="setMsgFilter('unread')"  style="border-color:var(--accent);color:var(--accent)">Unread</button>
-      <button class="status-chip" data-mf="replied" onclick="setMsgFilter('replied')" style="border-color:#3b82f6;color:#3b82f6">Replied</button>
-    </div>
-    <div id="msg-list-wrap"></div>
   </div>
 
   <!-- REQUESTS TAB -->
@@ -1683,49 +1643,6 @@
   </div>
 </div>
 
-<!-- COMPOSE MESSAGE MODAL -->
-<div class="modal-bg" id="compose-msg-modal">
-  <div class="modal" style="max-width:460px">
-    <h2>✉ New Message</h2>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>To</label>
-        <select id="cm-to" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;width:100%">
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-      <div class="form-group full">
-        <label>Subject</label>
-        <input type="text" id="cm-subject" placeholder="e.g. Low stock alert, Reorder request…">
-      </div>
-      <div class="form-group full">
-        <label>Message *</label>
-        <textarea id="cm-body" rows="4" placeholder="Type your message here…"></textarea>
-      </div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal('compose-msg-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="sendMessage()">Send</button>
-    </div>
-  </div>
-</div>
-
-<!-- VIEW / REPLY MESSAGE MODAL -->
-<div class="modal-bg" id="view-msg-modal">
-  <div class="modal" style="max-width:500px">
-    <div id="view-msg-content"></div>
-    <div id="view-msg-reply-form" style="display:none;margin-top:4px">
-      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0">
-      <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Reply</label>
-      <textarea id="reply-body" rows="3" placeholder="Type your reply…" style="width:100%;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box"></textarea>
-    </div>
-    <div class="modal-actions">
-      <button id="btn-delete-msg" class="btn" style="display:none;background:var(--danger);color:#fff;margin-right:auto" onclick="deleteCurrentMsg()">Delete</button>
-      <button class="btn btn-secondary" onclick="closeModal('view-msg-modal')">Close</button>
-      <button id="btn-send-reply" class="btn btn-primary" style="display:none" onclick="sendReply()">Send Reply</button>
-    </div>
-  </div>
-</div>
 
 <!-- ADD/EDIT ITEM MODAL -->
 <div class="modal-bg" id="item-modal">
@@ -1814,6 +1731,11 @@
         <label>Delivery Cost per Unit (₱)</label>
         <input type="number" id="lf-delivery-cost" min="0" step="0.01" placeholder="0.00" oninput="updateWACPreview()">
         <div id="lf-wac-preview" style="font-size:12px;color:var(--muted);margin-top:4px;display:none"></div>
+      </div>
+      <div class="form-group full" id="lf-po-group" style="display:none">
+        <label>Delivery for PO *</label>
+        <select id="lf-po" onchange="onLogPoChange()"></select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">This item has an open PO. Pick the PO this delivery is for so it counts toward that PO, or "Not a PO delivery" (e.g. a return or transfer).</div>
       </div>
       <div class="form-group">
         <label>Performed By *</label>
@@ -1986,6 +1908,13 @@
         <input type="text" id="pog-supplier-tin" placeholder="000-000-000-000">
       </div>
       <div class="form-group full">
+        <label>Supplier Prices</label>
+        <select id="pog-vat-basis" onchange="onPogVatBasisChange()">
+          <option value="inc">VAT-inclusive (prices already include 12% VAT)</option>
+          <option value="ex">VAT-exclusive (line total = unit price × 1.12 × qty)</option>
+        </select>
+      </div>
+      <div class="form-group full">
         <label>Add Item</label>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
           <div id="pog-item-search-wrap" style="flex:1;min-width:180px;position:relative">
@@ -2099,6 +2028,7 @@
   <div class="modal" style="max-width:680px">
     <h2>✏️ Edit Purchase Order</h2>
     <input type="hidden" id="poe-id">
+    <div id="poe-rev-history" style="display:none;background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:14px;max-height:160px;overflow-y:auto"></div>
     <div class="form-grid">
       <div class="form-group full">
         <label>Supplier *</label>
@@ -2112,6 +2042,14 @@
       <div class="form-group">
         <label>Supplier TIN</label>
         <input type="text" id="poe-supplier-tin" placeholder="000-000-000-000">
+      </div>
+      <div class="form-group full">
+        <label>Supplier Prices</label>
+        <select id="poe-vat-basis" onchange="onPoeVatBasisChange()">
+          <option value="inc">VAT-inclusive (prices already include 12% VAT)</option>
+          <option value="ex">VAT-exclusive (line total = unit price × 1.12 × qty)</option>
+        </select>
+        <div id="poe-vat-locked-note" style="display:none;font-size:11px;color:var(--muted);margin-top:4px">Can't be changed: part of this PO has already been received at the current prices.</div>
       </div>
       <div class="form-group full">
         <label>Line Items</label>
@@ -2176,6 +2114,10 @@
         <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)"><span>Total PO Amount (VAT-inc)</span><span id="poe-total">₱0.00</span></div>
       </div>
     </div>
+    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12.5px;margin-top:12px;color:var(--text)">
+      <input type="checkbox" id="poe-approval-confirm" style="width:15px;height:15px;flex-shrink:0;margin-top:2px">
+      <span>The person in "Approved by" has approved these changes. Required when anything changes; the PO becomes a new revision (Rev 1, Rev 2…) on the PDF.</span>
+    </label>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('po-edit-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="savePoEdit()">💾 Save Changes &amp; Re-download PDF</button>
@@ -2448,7 +2390,6 @@
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-reorder" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('reorder',this.checked)">Reorder</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-report" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('report',this.checked)">Cost Report</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-dashboard" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('dashboard',this.checked)">Dashboard</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-messages" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('messages',this.checked)">Messages</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-requests" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('requests',this.checked)">Requests</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-audit" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('audit',this.checked)">Audit Log</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ttog-ai" style="width:15px;height:15px;flex-shrink:0" onchange="toggleTabAccess('ai',this.checked)">Shelfie (AI Assistant)</label>
@@ -2686,7 +2627,6 @@ async function refreshData() {
     if (r4.data) db.accounts = r4.data;
     if (r5.data) db.reconciliations = r5.data; // graceful — table may not exist yet
     if (r6.data) db.purchaseOrders  = r6.data; // graceful — table may not exist yet
-    await loadMessages();
     await loadRequests();
     updateSummary();
     renderInventory(); renderLogs(); renderReorder(); renderRequests(); updateRequestBadge();
@@ -2871,7 +2811,8 @@ function _mergeSupplierEntry(name, address, tin) {
   if (!k) return false;
   var existing = supplierDirectory[k] || {};
   var changed = false;
-  var entry = { name: name.trim(), address: address || existing.address || '', tin: tin || existing.tin || '' };
+  // Object.assign keeps any other saved preference (e.g. vatExclusive)
+  var entry = Object.assign({}, existing, { name: name.trim(), address: address || existing.address || '', tin: tin || existing.tin || '' });
   if (entry.address !== existing.address || entry.tin !== existing.tin || entry.name !== existing.name) changed = true;
   supplierDirectory[k] = entry;
   return changed;
@@ -2931,8 +2872,23 @@ function applySupplierDirectoryFor(prefix) {
   if (!entry) return;
   if (addrEl && !addrEl.value.trim()) addrEl.value = entry.address || '';
   if (tinEl  && !tinEl.value.trim())  tinEl.value  = entry.tin || '';
+  // Remembered VAT basis for this supplier (PO modals only)
+  var vatEl = document.getElementById(prefix + '-vat-basis');
+  if (vatEl && !vatEl.disabled && typeof entry.vatExclusive === 'boolean') {
+    var want = entry.vatExclusive ? 'ex' : 'inc';
+    if (vatEl.value !== want) { vatEl.value = want; vatEl.dispatchEvent(new Event('change')); }
+  }
 }
 function applySupplierDirectory() { applySupplierDirectoryFor('rf'); }
+
+// Saves whether a supplier quotes VAT-exclusive prices, so the next PO for
+// them defaults to the same setting. Stored in the supplier directory.
+function setSupplierVatPref(name, isEx) {
+  var e = supplierDirectory[_supKey(name)];
+  if (!e || e.vatExclusive === !!isEx) return;
+  e.vatExclusive = !!isEx;
+  saveSupplierDirectory();
+}
 
 function populateSupplierDatalist(targetId) {
   var dl = document.getElementById(targetId || 'rf-supplier-list');
@@ -3107,6 +3063,16 @@ async function loadGlobalSettings() {
         }
       } catch(e) {}
     }
+    // The moment PO-linked receiving went live. Restocks logged before it
+    // (with no PO on them) still count toward a PO line the old way; after
+    // it, a restock only counts if it names that PO. Recorded once — by the
+    // first session that loads this version — and shared by every device.
+    if (settingsMap[PO_LINK_CUTOVER_KEY]) {
+      PO_LINK_CUTOVER = settingsMap[PO_LINK_CUTOVER_KEY];
+    } else if (!PO_LINK_CUTOVER) {
+      PO_LINK_CUTOVER = new Date().toISOString();
+      try { await sb.from('settings').insert([{ key: PO_LINK_CUTOVER_KEY, value: PO_LINK_CUTOVER }]); } catch(e) {}
+    }
     applyTestMode();
   } catch(e) {} // settings table may not exist yet — silently ignore
 }
@@ -3229,7 +3195,7 @@ function stopRealtime() {
 
 var _presenceJoinedAt = null;
 
-var TAB_LABELS = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests', audit: 'Audit Log' };
+var TAB_LABELS = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', requests: 'Requests', audit: 'Audit Log' };
 var ROLE_COLORS = { superuser: '#7c3aed', user: '#2563eb', viewer: '#16a34a', requestor: '#d97706', brand: '#db2777' };
 
 function renderOnlineUsers() {
@@ -3369,7 +3335,19 @@ async function _sbUpsertAll() {
     if (db.reorders.length) ops.push(sb.from('reorders').upsert(db.reorders));
     if (db.accounts.length) ops.push(sb.from('accounts').upsert(db.accounts));
     if (db.reconciliations.length) ops.push(sb.from('reconciliations').upsert(db.reconciliations));
-    if (db.purchaseOrders.length)  ops.push(sb.from('purchase_orders').upsert(db.purchaseOrders));
+    if (db.purchaseOrders.length) {
+      // Revision fields are stripped when the table doesn't have those
+      // columns yet — one unknown column would reject the whole save.
+      var poRows = (_poRevColsOK === false || _poVatColOK === false)
+        ? db.purchaseOrders.map(function(p) {
+            var c = Object.assign({}, p);
+            if (_poRevColsOK === false) { delete c.revision; delete c.revisions; }
+            if (_poVatColOK === false) delete c.vatExclusive;
+            return c;
+          })
+        : db.purchaseOrders;
+      ops.push(sb.from('purchase_orders').upsert(poRows));
+    }
     if (ops.length) {
       // supabase-js reports failures in the result ({ error }) rather than
       // throwing, so check each one — otherwise a rejected save is silent.
@@ -3502,7 +3480,6 @@ async function load() {
     db.purchaseOrders  = r6.data || []; // graceful — feature works locally even if table isn't set up yet
     // Load credentials from Supabase before showing login screen (cross-device support)
     await loadGlobalSettings();
-    await loadMessages(); // graceful — won't throw if table missing
     await loadRequests();
     db_audit = getAuditLocal();
     // First time — seed from Master List
@@ -3521,7 +3498,7 @@ async function load() {
         currentRole = currentUser.role;
         applyRoleUI();
         switchTab('inventory');
-        renderLogs(); renderReorder(); updateSummary(); updateMsgBadge();
+        renderLogs(); renderReorder(); updateSummary();
         resetSessionTimer();
         loadGlobalSettings().then(function() { startAutoRefresh(); });
         loadRequests().then(function() { updateRequestBadge(); });
@@ -3557,12 +3534,15 @@ function switchTab(name) {
     if (!fallback || fallback === name) return;
     name = fallback;
   }
+  // A tab that no longer exists (e.g. an old link or saved state pointing at
+  // the removed Messages tab) falls back to Inventory instead of erroring.
+  if (!document.getElementById('tab-' + name)) name = 'inventory';
   document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === name);
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', messages: 'Messages', requests: 'Requests', audit: 'Audit Log', ai: 'Shelfie' };
+  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', requests: 'Requests', audit: 'Audit Log', ai: 'Shelfie' };
   var titleEl = document.getElementById('page-title');
   if (titleEl) titleEl.textContent = (titles[name] || name).toUpperCase();
   if (name === 'inventory') renderInventory();
@@ -3570,16 +3550,15 @@ function switchTab(name) {
   if (name === 'reorder') renderReorder();
   if (name === 'report') { renderReport(); renderVariance(); renderMonthlyReport(); renderUserReport(); }
   if (name === 'dashboard') renderDashboard();
-  if (name === 'messages') renderMessages();
   if (name === 'requests') { reqVisibleCount = REQ_PAGE_SIZE; renderRequests(); }
   if (name === 'audit') renderAuditLog();
   // Sync bottom nav active state
-  ['inventory','usage','requests','messages'].forEach(function(t) {
+  ['inventory','usage','requests'].forEach(function(t) {
     var btn = document.getElementById('bn-' + t);
     if (btn) btn.classList.toggle('active', t === name);
   });
   var moreBtn = document.getElementById('bn-more');
-  if (moreBtn) moreBtn.classList.toggle('active', !['inventory','usage','requests','messages'].includes(name));
+  if (moreBtn) moreBtn.classList.toggle('active', !['inventory','usage','requests'].includes(name));
   // Close sidebar and more menu on mobile after navigation
   if (window.innerWidth <= 768) { closeMobileSidebar(); closeMobileMoreMenu(); }
 }
@@ -4307,6 +4286,9 @@ function deleteLogEntry(logId) {
 // (stock going up) and restock reversals (stock going back down), so a line
 // that's no longer fully covered drops back from "received" to "ordered".
 function _syncReorderFromLogs(r, when) {
+  // A line closed short stays closed whatever the totals say — that was a
+  // deliberate decision (supplier can't deliver the rest), not a count.
+  if (_isClosedShort(r)) { r.updatedAt = new Date().toISOString(); return; }
   var total = _reorderReceivedSoFar(r);
   var cleaned = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
   if (total > 0 && total >= (r.qty || 0)) {
@@ -4773,7 +4755,36 @@ function updateLogFormLabels() {
   // Show delivery cost field only for restock
   const dcGroup = document.getElementById('lf-delivery-cost-group');
   if (dcGroup) dcGroup.style.display = type === 'restock' ? '' : 'none';
+  refreshLogPoPicker();
   updateWACPreview();
+}
+
+// Manual restock of an item that has an open PO: ask which PO the delivery
+// is for, so it's linked (Reference = PO number) and counts toward that PO
+// line only. Hidden for other types, or when the item has no open PO.
+function refreshLogPoPicker() {
+  var group = document.getElementById('lf-po-group');
+  var sel = document.getElementById('lf-po');
+  if (!group || !sel) return;
+  var type = document.getElementById('lf-type').value;
+  var itemId = document.getElementById('lf-item').value;
+  var lines = (type === 'restock' && itemId) ? _openPoLinesForItem(itemId) : [];
+  if (!lines.length) { group.style.display = 'none'; sel.innerHTML = ''; return; }
+  var item = db.items.find(function(i) { return i.id === itemId; });
+  var unit = item ? (item.unit || '') : '';
+  var prev = sel.value;
+  sel.innerHTML = '<option value="">— Choose —</option>' + lines.map(function(r) {
+    var remaining = Math.max(0, (r.qty || 0) - _reorderReceivedSoFar(r));
+    return '<option value="' + esc(r.id) + '">' + esc(r.poNumber) + ' · ' + esc(r.supplier || '—') + ' · ' + fmtInt(remaining) + ' ' + esc(unit) + ' still due</option>';
+  }).join('') + '<option value="none">Not a PO delivery</option>';
+  if (prev && sel.querySelector('option[value="' + prev + '"]')) sel.value = prev;
+  group.style.display = '';
+}
+
+function onLogPoChange() {
+  var r = db.reorders.find(function(x) { return x.id === document.getElementById('lf-po').value; });
+  var costEl = document.getElementById('lf-delivery-cost');
+  if (r && r.cost && costEl && !costEl.value) { costEl.value = r.cost; updateWACPreview(); }
 }
 
 function updateWACPreview() {
@@ -4802,6 +4813,7 @@ function openLogForItem(itemId) {
   const itm = db.items.find(i => i.id === itemId);
   document.getElementById('lf-item').value = itemId;
   document.getElementById('lf-item-search').value = itm ? itm.name : '';
+  refreshLogPoPicker();
   switchTab('usage');
 }
 
@@ -4839,6 +4851,25 @@ async function _saveLogImpl() {
       const mins = Math.max(1, Math.round((Date.now() - new Date(dupe.date).getTime()) / 60000));
       if (!confirm('This looks like a duplicate.\n\nThe same ' + type + ' of ' + fmtInt(qty) + ' ' + (item.unit || '') + ' for ' + item.name
         + ' was already logged by ' + (dupe.by || by) + ' about ' + mins + ' min ago.\n\nSave it again anyway?')) return;
+    }
+  }
+  // Restock of an item with an open PO: which PO is it for? (see
+  // refreshLogPoPicker). The answer goes into Reference, which is what links
+  // the delivery to that PO line.
+  let refVal = document.getElementById('lf-ref').value.trim();
+  const poGroup = document.getElementById('lf-po-group');
+  if (type === 'restock' && poGroup && poGroup.style.display !== 'none') {
+    const poChoice = document.getElementById('lf-po').value;
+    if (!poChoice) { alert('Choose which PO this delivery is for, or "Not a PO delivery".'); return; }
+    if (poChoice !== 'none') {
+      const line = db.reorders.find(r => r.id === poChoice);
+      if (line) {
+        const due = Math.max(0, (line.qty || 0) - _reorderReceivedSoFar(line));
+        if (qty > due && !confirm(fmtInt(qty) + ' ' + (item.unit || '') + ' is more than the ' + fmtInt(due) + ' still due on ' + line.poNumber + '.\n\nSave it anyway?')) return;
+        if (refVal.toUpperCase().indexOf(String(line.poNumber).toUpperCase()) === -1) {
+          refVal = line.poNumber + (refVal ? ' · ' + refVal : '');
+        }
+      }
     }
   }
   // Always fetch the latest qty from Supabase to prevent stale-read issues
@@ -4886,7 +4917,7 @@ async function _saveLogImpl() {
     absQty: newQty,
     by: by,
     date: logDate,
-    ref: document.getElementById('lf-ref').value.trim(),
+    ref: refVal,
     notes: document.getElementById('lf-notes').value.trim(),
   };
   if (type === 'adjust') {
@@ -4964,6 +4995,9 @@ function reorderRowHtml(r) {
   var rAct = '<div class="actions-cell">';
   if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm" onclick="openReorderModal(\'' + r.id + '\')">✏️</button>';
   if (r.status !== 'received' && can('mark_received')) rAct += '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Receive delivery" onclick="openReceiveModal(\'' + r.id + '\')">📥</button>';
+  const closedShort = _isClosedShort(r);
+  if (currentRole === 'superuser' && r.status === 'ordered') rAct += '<button class="btn btn-icon btn-sm" title="Close line short (supplier can\'t deliver the rest)" onclick="closeReorderShort(\'' + r.id + '\')">⏹</button>';
+  if (currentRole === 'superuser' && closedShort) rAct += '<button class="btn btn-icon btn-sm" title="Reopen line" onclick="reopenReorderLine(\'' + r.id + '\')">↺</button>';
   if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteReorder(\'' + r.id + '\')">🗑</button>';
   rAct += '</div>';
   return `
@@ -4973,8 +5007,8 @@ function reorderRowHtml(r) {
     <td>${r.cost ? fmtPHP(r.cost) : '—'}</td>
     <td>${r.cost && r.qty ? fmtPHP(total) : '—'}</td>
     <td style="min-width:160px">${reorderTimeline(r)}</td>
-    <td><span class="badge badge-${statusColor}">${r.status}</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</span>' : ''}</td>
-    <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.notes||'—')}</td>
+    <td><span class="badge badge-${closedShort ? 'warn' : statusColor}">${closedShort ? 'closed short' : r.status}</span>${r.poNumber ? ' <span style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</span>' : ''}</td>
+    <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.notes||'')}">${esc(r.notes||'—')}</td>
     <td>${rAct}</td>`;
 }
 
@@ -5110,7 +5144,7 @@ function renderReorderGroupRow(tbody, group) {
   var ordered  = items.filter(function(i){ return i.status === 'ordered'; }).length;
   var total = items.reduce(function(s, i){ return s + (i.qty||0) * (i.cost||0); }, 0);
   var statusLabel, statusColor;
-  if (received === items.length)      { statusLabel = 'received'; statusColor = 'ok'; }
+  if (received === items.length)      { statusLabel = items.some(_isClosedShort) ? 'received (short)' : 'received'; statusColor = 'ok'; }
   else if (received === 0 && ordered === 0) { statusLabel = 'needed'; statusColor = 'danger'; }
   else if (received === 0)            { statusLabel = 'ordered'; statusColor = 'warn'; }
   else                                 { statusLabel = received + ' of ' + items.length + ' received'; statusColor = 'warn'; }
@@ -5250,15 +5284,102 @@ function saveReorder() {
   renderReorder();
 }
 
-// Sums every restock log for this reorder's item logged since the reorder
-// was created — the "how much has actually arrived so far" calculation.
-// Kept in one place so both the manual Log Usage → Restock path and the
-// dedicated Receive Delivery modal agree on the running total.
+// ─── PO-LINKED RECEIVING ───────────────────────────────────────────────────
+// A delivery counts toward a PO line only if its restock entry names that PO
+// in its Reference field (Receive Delivery, Shelfie and the manual-restock
+// PO picker all fill it in). Before this, every restock of the item counted
+// toward every open line, so unrelated or duplicate restocks made a PO look
+// received. Restocks logged before PO_LINK_CUTOVER (the day this went live)
+// carry no PO, so they still count the old way unless they name another PO.
+var PO_LINK_CUTOVER_KEY = 'poLinkCutover';
+var PO_LINK_CUTOVER = null;
+var PO_NUMBER_RE = /PO-\d{6}-\d+/i;
+
+function _logRefsPo(l, poNumber) {
+  return !!poNumber && String(l.ref || '').toUpperCase().indexOf(String(poNumber).toUpperCase()) !== -1;
+}
+
+function _logCountsTowardReorder(l, r) {
+  if (l.itemId !== r.itemId || l.type !== 'restock') return false;
+  if (l.date < (r.createdAt || '1970-01-01')) return false;
+  if (!r.poNumber) return true;                       // "Needed" line, no PO yet: any restock counts
+  if (_logRefsPo(l, r.poNumber)) return true;         // linked to this PO
+  if (PO_NUMBER_RE.test(String(l.ref || ''))) return false; // linked to a different PO
+  return !PO_LINK_CUTOVER || l.date < PO_LINK_CUTOVER; // unlinked: only legacy entries count
+}
+
+// How much has actually arrived for this line so far. Shared by Receive
+// Delivery, manual restocks, reversals and Shelfie so they always agree.
 function _reorderReceivedSoFar(r) {
-  var since = r.createdAt || '1970-01-01';
   return db.logs
-    .filter(function(l) { return l.itemId === r.itemId && l.type === 'restock' && l.date >= since; })
+    .filter(function(l) { return _logCountsTowardReorder(l, r); })
     .reduce(function(s, l) { return s + (l.qty || 0); }, 0);
+}
+
+// ─── CLOSE A PO LINE SHORT ─────────────────────────────────────────────────
+// When a supplier can't deliver the rest of a line, it's closed at what
+// actually arrived instead of staying "ordered" forever. The line is marked
+// received (so it stops counting as pending everywhere) and its notes start
+// with a "Closed short" marker, which is how the app tells it apart from a
+// fully received line without needing a new database column. The PO keeps
+// its original ordered quantity; the marker records what was delivered.
+var CLOSED_SHORT_RE = /^⛔ Closed short:[^\n]*\n?/;
+
+function _isClosedShort(r) { return CLOSED_SHORT_RE.test((r && r.notes) || ''); }
+
+function closeReorderShort(id) {
+  if (currentRole !== 'superuser') return;
+  var r = db.reorders.find(function(x) { return x.id === id; });
+  if (!r || r.status === 'received') return;
+  var item = db.items.find(function(i) { return i.id === r.itemId; });
+  var unit = item ? (item.unit || '') : '';
+  var got = _reorderReceivedSoFar(r);
+  var missing = Math.max(0, (r.qty || 0) - got);
+  showConfirm('Close Line Short',
+    'Close this line at what has arrived?\n\n' + (item ? item.name : 'Item') + (r.poNumber ? ' · ' + r.poNumber : '') + (r.supplier ? ' · ' + r.supplier : '')
+      + '\nReceived ' + fmtInt(got) + ' of ' + fmtInt(r.qty) + ' ' + unit + '.\n\n'
+      + 'The remaining ' + fmtInt(missing) + ' ' + unit + ' will no longer be expected and the line is marked received. '
+      + 'The PO keeps its original quantity. You can reopen the line later if the supplier does deliver.',
+    async function() {
+      var now = new Date().toISOString();
+      var by = (currentUser && currentUser.username) || '';
+      var stamp = new Date(now).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+      var rest = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
+      r.notes = '⛔ Closed short: ' + fmtInt(got) + ' of ' + fmtInt(r.qty) + ' received (' + stamp + (by ? ', ' + by : '') + ')' + (rest ? '\n' + rest : '');
+      r.status = 'received';
+      if (!r.orderedAt) r.orderedAt = now;
+      if (!r.receivedAt) r.receivedAt = now;
+      r.updatedAt = now;
+      logAudit('PO line closed short', (item ? item.name : r.itemId) + (r.poNumber ? ' (' + r.poNumber + ')' : '') + ' — ' + fmtInt(got) + ' of ' + fmtInt(r.qty) + ' ' + unit + ' received');
+      await _sbSaveReorderStatus([r]);
+      renderReorder();
+      updateSummary();
+    }, { confirmLabel: 'Close line', danger: true });
+}
+
+function reopenReorderLine(id) {
+  if (currentRole !== 'superuser') return;
+  var r = db.reorders.find(function(x) { return x.id === id; });
+  if (!r || !_isClosedShort(r)) return;
+  var item = db.items.find(function(i) { return i.id === r.itemId; });
+  showConfirm('Reopen Line', 'Reopen ' + (item ? item.name : 'this line') + (r.poNumber ? ' on ' + r.poNumber : '') + '? It goes back to "ordered" so the rest can still be received.', async function() {
+    var now = new Date().toISOString();
+    r.notes = (r.notes || '').replace(CLOSED_SHORT_RE, '').trim();
+    r.status = 'ordered';
+    r.receivedAt = null;
+    _syncReorderFromLogs(r, now);
+    logAudit('PO line reopened', (item ? item.name : r.itemId) + (r.poNumber ? ' (' + r.poNumber + ')' : ''));
+    await _sbSaveReorderStatus([r]);
+    renderReorder();
+    updateSummary();
+  }, { confirmLabel: 'Reopen' });
+}
+
+// Open PO lines for an item (for the manual-restock PO picker)
+function _openPoLinesForItem(itemId) {
+  return db.reorders.filter(function(r) {
+    return r.itemId === itemId && r.poNumber && r.status !== 'received';
+  });
 }
 
 function openReceiveModal(id) {
@@ -5315,7 +5436,7 @@ async function confirmReceive() {
   var logEntry = {
     id: uid(), itemId: r.itemId, type: 'restock', qty: qty, absQty: newQty, by: 'Reorder', date: now,
     notes: 'Reorder received from ' + (r.supplier || 'supplier') + (isComplete ? '' : ' (partial)') + (extraNotes ? ' — ' + extraNotes : ''),
-    ref: '', costAmount: (!isNaN(cost) && cost > 0) ? Math.round(qty * cost * 100) / 100 : null,
+    ref: r.poNumber || '', costAmount: (!isNaN(cost) && cost > 0) ? Math.round(qty * cost * 100) / 100 : null,
   };
   db.logs.push(logEntry);
   item.qty = newQty;
@@ -5381,6 +5502,38 @@ var PO_VAT_RATE = 0.12;
 var PO_LOGO_DATA_URL = 'data:image/png;base64,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';
 var PO_LOGO_ASPECT = 234 / 1200; // logo's natural height ÷ width — used to scale it in the PDF
 
+// ─── VAT-EXCLUSIVE SUPPLIER PRICES ─────────────────────────────────────────
+// Some suppliers quote prices before VAT. On those POs the unit price is
+// entered and printed as quoted (VAT-ex), and each line total is
+// unit price × 1.12 × qty. Everything SupplyBase stores (reorder cost, PO
+// subtotal/total, custom item cost, and therefore stock cost when received)
+// is the VAT-inclusive amount, so costs stay on the same basis as every
+// VAT-inclusive PO. The PO only remembers the flag (po.vatExclusive) so it
+// can print the VAT-ex unit price again later.
+function _vatFactor(isEx) { return isEx ? (1 + PO_VAT_RATE) : 1; }
+function _r4(x) { return Math.round((x || 0) * 10000) / 10000; }
+// Line totals are rounded to the centavo so printed lines add up exactly
+function _c2(x) { return Math.round((x || 0) * 100) / 100; }
+function _poIsVatEx(po) { return !!(po && (po.vatExclusive === true || po.vatExclusive === 'true')); }
+
+// purchase_orders needs a "vatExclusive" column to keep the flag. Probed once;
+// if missing, the flag is stripped from saves (the money is unaffected, only
+// the printed unit price would show VAT-inclusive after a reload).
+var _poVatColOK = null;
+async function _probePoVatCol() {
+  if (_poVatColOK !== null || !sb) return _poVatColOK;
+  try { var r = await sb.from('purchase_orders').select('vatExclusive').limit(1); _poVatColOK = !r.error; }
+  catch(e) { _poVatColOK = false; }
+  return _poVatColOK;
+}
+var PO_VAT_SQL = 'alter table purchase_orders add column if not exists "vatExclusive" boolean default false;';
+
+function _pogVatFactor() {
+  var el = document.getElementById('pog-vat-basis');
+  return _vatFactor(el && el.value === 'ex');
+}
+function onPogVatBasisChange() { renderPoCart(); updatePoGenerateTotals(); }
+
 // Cart of items being added to a brand-new reorder/PO — populated via the
 // item search box, cleared each time the modal is (re)opened.
 var poCart = [];
@@ -5406,6 +5559,7 @@ function openReorderCreateModal() {
   document.getElementById('pog-discount').value = '';
   document.getElementById('pog-checked-by').value = poSignatories.checkedBy || '';
   document.getElementById('pog-approved-by').value = poSignatories.approvedBy || '';
+  document.getElementById('pog-vat-basis').value = 'inc';
   togglePogCustomItem();
   populateSupplierDatalist('pog-supplier-list');
   renderPoCart();
@@ -5447,6 +5601,8 @@ function selectPogItem(id, name) {
     if (!qtyEl.value && item.reorderQty) qtyEl.value = item.reorderQty;
     if (!costEl.value) {
       var c = (typeof currentUnitCost === 'function' ? currentUnitCost(item) : 0) || item.cost || '';
+      // Stock costs are VAT-inclusive; a VAT-ex PO wants the pre-VAT price
+      if (c) c = Math.round(c / _pogVatFactor() * 100) / 100;
       costEl.value = c;
     }
   }
@@ -5548,11 +5704,12 @@ function renderPoCart() {
     wrap.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px">No items added yet — search above and click Add.</div>';
     return;
   }
+  var f = _pogVatFactor();
   wrap.innerHTML = poCart.map(function(c) {
-    var lineTotal = (c.qty||0) * (c.cost||0);
+    var lineTotal = _c2((c.qty||0) * (c.cost||0) * f);
     return '<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px">'
       + '<span style="flex:1">'+esc(c.name)+(c.isCustom ? ' <span style="color:var(--muted);font-size:10px">(custom)</span>' : '')+'</span>'
-      + '<span style="color:var(--muted)">'+fmtInt(c.qty)+' '+esc(c.unit)+' × '+fmtPHP(c.cost)+'</span>'
+      + '<span style="color:var(--muted)">'+fmtInt(c.qty)+' '+esc(c.unit)+' × '+fmtPHP(c.cost)+(f !== 1 ? ' + VAT' : '')+'</span>'
       + '<strong style="min-width:90px;text-align:right">'+fmtPHP(lineTotal)+'</strong>'
       + '<button type="button" class="btn btn-icon btn-sm" onclick="removeFromPoCart(\''+c.cartId+'\')" title="Remove">✕</button>'
       + '</div>';
@@ -5560,7 +5717,8 @@ function renderPoCart() {
 }
 
 function updatePoGenerateTotals() {
-  var subtotal = poCart.reduce(function(s, c){ return s + (c.qty||0) * (c.cost||0); }, 0);
+  var f = _pogVatFactor(); // VAT-ex supplier: line total = unit price × 1.12 × qty
+  var subtotal = _c2(poCart.reduce(function(s, c){ return s + _c2((c.qty||0) * (c.cost||0) * f); }, 0));
   var shipCost = parseFloat(document.getElementById('pog-ship-cost').value) || 0;
   var other    = parseFloat(document.getElementById('pog-other').value) || 0;
   var discount = parseFloat(document.getElementById('pog-discount').value) || 0;
@@ -5605,8 +5763,12 @@ async function saveReorderCart(generatePdf) {
   var discount   = parseFloat(document.getElementById('pog-discount').value) || 0;
   var checkedBy  = document.getElementById('pog-checked-by').value.trim();
   var approvedBy = document.getElementById('pog-approved-by').value.trim();
+  var vatEx = document.getElementById('pog-vat-basis').value === 'ex';
+  var vf = _vatFactor(vatEx); // stored costs are VAT-inclusive: price × 1.12 for VAT-ex
+  var vatColOK = (vatEx && generatePdf) ? await _probePoVatCol() : _poVatColOK;
 
   rememberSupplier(supplier, supplierAddress, supplierTin);
+  setSupplierVatPref(supplier, vatEx);
   var now = new Date().toISOString();
   var status = generatePdf ? 'ordered' : 'needed';
   var poNumber = generatePdf ? await reserveNextPoNumber() : null;
@@ -5617,7 +5779,7 @@ async function saveReorderCart(generatePdf) {
     var r = {
       id: uid(), itemId: c.itemId, supplier: supplier,
       supplierAddress: supplierAddress, supplierTin: supplierTin,
-      qty: c.qty, cost: c.cost, orderDate: now.slice(0,10), deliveryDate: delivery,
+      qty: c.qty, cost: _r4(c.cost * vf), orderDate: now.slice(0,10), deliveryDate: delivery,
       status: status, notes: '', createdAt: now, updatedAt: now,
     };
     if (status === 'ordered') { r.orderedAt = now; r.poNumber = poNumber; }
@@ -5629,10 +5791,12 @@ async function saveReorderCart(generatePdf) {
     // lineItems is built straight from the cart (not from newReorders) so
     // catalog and custom items appear on the PDF in the order they were
     // added, regardless of type.
+    // unitPrice is the price as quoted (VAT-ex for a VAT-ex supplier); the
+    // line total is always VAT-inclusive (unit price × 1.12 × qty for VAT-ex).
     var lineItems = poCart.map(function(c) {
-      return { description: c.name, qty: c.qty || 0, unit: c.unit || '', unitPrice: c.cost || 0, total: (c.qty||0) * (c.cost||0) };
+      return { description: c.name, qty: c.qty || 0, unit: c.unit || '', unitPrice: c.cost || 0, total: _c2((c.qty||0) * (c.cost||0) * vf) };
     });
-    var subtotal = lineItems.reduce(function(s, l){ return s + l.total; }, 0);
+    var subtotal = _c2(lineItems.reduce(function(s, l){ return s + l.total; }, 0));
     var totalPayable = subtotal + shipCost + other - discount;
     var poRecord = {
       id: uid(), poNumber: poNumber, date: now,
@@ -5644,11 +5808,17 @@ async function saveReorderCart(generatePdf) {
       reorderIds: newReorders.map(function(r){ return r.id; }),
       // Custom line items aren't reorder records, so they're stored here
       // directly — needed so PO History can rebuild this exact PDF later.
-      customItems: customCart.map(function(c){ return { description: c.name, unit: c.unit, qty: c.qty, cost: c.cost }; }),
+      customItems: customCart.map(function(c){ return { description: c.name, unit: c.unit, qty: c.qty, cost: _r4(c.cost * vf) }; }),
       createdBy: (currentUser && currentUser.username) || '',
       createdAt: now,
     };
+    if (vatEx) poRecord.vatExclusive = true; // stripped from the save if the column is missing
     db.purchaseOrders.push(poRecord);
+    if (vatEx && vatColOK === false) {
+      alert('PO saved with VAT-exclusive pricing. To keep showing the VAT-ex unit prices when this PO is downloaded again later, '
+        + 'the purchase_orders table needs one new column. Ask whoever manages Supabase to run this in the SQL Editor:\n\n' + PO_VAT_SQL
+        + '\n\nTotals and stock costs are already correct either way.');
+    }
     logAudit('Purchase Order generated', poNumber + ' — ' + supplier + ' (' + poCart.length + ' item' + (poCart.length===1?'':'s') + ')');
     buildPurchaseOrderPdf(poRecord, lineItems);
   } else {
@@ -5685,7 +5855,11 @@ function renderPoHistory() {
     var itemCount = (po.reorderIds || []).length + (po.customItems || []).length;
     var dateStr = po.date ? new Date(po.date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
     return '<tr>'
-      + '<td>' + esc(String(po.poNumber || '—')) + '</td>'
+      + '<td>' + esc(String(po.poNumber || '—'))
+        + ((parseInt(po.revision, 10) || 0) > 0
+          ? ' <span class="badge badge-info" title="' + esc((Array.isArray(po.revisions) ? po.revisions : []).map(function(v) { return 'Rev ' + v.rev + ': ' + (v.changes || []).join('; '); }).join('\n')) + '">Rev ' + parseInt(po.revision, 10) + '</span>'
+          : '')
+        + '</td>'
       + '<td>' + dateStr + '</td>'
       + '<td>' + esc(po.supplier || '—') + '</td>'
       + '<td>' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>'
@@ -5739,6 +5913,8 @@ function downloadPreviewedPo() {
 // plus its customItems (non-catalog). Shared by Download and Preview so both
 // always show the same thing. Returns null (after alerting) if none remain.
 function _poLineItems(po) {
+  // Stored costs are VAT-inclusive; a VAT-ex PO prints the pre-VAT unit price
+  var vf = _vatFactor(_poIsVatEx(po));
   var lineItems = (po.reorderIds || []).map(function(rid) {
     var r = db.reorders.find(function(x) { return x.id === rid; });
     if (!r) return null;
@@ -5747,14 +5923,14 @@ function _poLineItems(po) {
       description: item ? item.name : 'Deleted Item',
       qty: r.qty || 0,
       unit: item ? (item.unit || '') : '',
-      unitPrice: r.cost || 0,
-      total: (r.qty || 0) * (r.cost || 0),
+      unitPrice: (r.cost || 0) / vf,
+      total: _c2((r.qty || 0) * (r.cost || 0)),
     };
   }).filter(Boolean);
   // Custom (non-catalog) line items were never reorder records — they're
   // stored directly on the PO itself, so pull them back in from there.
   (po.customItems || []).forEach(function(c) {
-    lineItems.push({ description: c.description, qty: c.qty || 0, unit: c.unit || '', unitPrice: c.cost || 0, total: (c.qty||0) * (c.cost||0) });
+    lineItems.push({ description: c.description, qty: c.qty || 0, unit: c.unit || '', unitPrice: (c.cost || 0) / vf, total: _c2((c.qty||0) * (c.cost||0)) });
   });
   if (!lineItems.length) {
     alert('The item details for this PO could not be found — the linked reorder records may have since been deleted. The PO totals are still on record, but the line items can\'t be rebuilt into a PDF.');
@@ -5778,6 +5954,92 @@ function _poLineItems(po) {
 var poEditLines = [];
 var poEditPoId = null;
 var poEditRemovedReorderIds = [];
+var poEditOriginal = null;
+
+// ─── PO REVISIONS ──────────────────────────────────────────────────────────
+// Every Edit PO save that actually changes something bumps po.revision and
+// appends { rev, at, by, approvedBy, changes } to po.revisions, so the PDF can
+// say "Rev 2" and anyone can see what changed, who changed it, and who
+// approved it. These need two purchase_orders columns (revision, revisions);
+// until they exist, Supabase would reject the whole PO save, so the fields
+// are probed once and stripped from saves if missing (see _sbUpsertAll).
+var _poRevColsOK = null; // null = not checked yet
+var PO_REV_SQL = 'alter table purchase_orders add column if not exists "revision" integer default 0;\n'
+  + 'alter table purchase_orders add column if not exists "revisions" jsonb default \'[]\'::jsonb;';
+
+async function _probePoRevCols() {
+  if (_poRevColsOK !== null || !sb) return _poRevColsOK;
+  try {
+    var r = await sb.from('purchase_orders').select('revision, revisions').limit(1);
+    _poRevColsOK = !r.error;
+  } catch(e) { _poRevColsOK = false; }
+  return _poRevColsOK;
+}
+
+var PO_HEADER_LABELS = {
+  supplier: 'Supplier', supplierAddress: 'Supplier address', supplierTin: 'Supplier TIN',
+  vatBasis: 'Supplier prices',
+  shipMethod: 'Shipping method', shipTerms: 'Shipping terms', delivery: 'Delivery date / terms',
+  shipCost: 'Shipping cost', other: 'Other charges', discount: 'Discount',
+  checkedBy: 'Checked by', approvedBy: 'Approved by',
+};
+var PO_MONEY_FIELDS = { shipCost: 1, other: 1, discount: 1 };
+
+function _poHeaderSnapshot(po) {
+  var s = {};
+  Object.keys(PO_HEADER_LABELS).forEach(function(k) {
+    s[k] = PO_MONEY_FIELDS[k] ? (parseFloat(po[k]) || 0) : String(po[k] || '').trim();
+  });
+  s.vatBasis = _poIsVatEx(po) ? 'VAT-exclusive' : 'VAT-inclusive';
+  return s;
+}
+
+// Human-readable list of what differs between the PO as opened and as saved.
+function _poEditChanges(before, afterHeader, afterLines, removedReorderIds) {
+  var changes = [];
+  Object.keys(PO_HEADER_LABELS).forEach(function(k) {
+    var a = before.header[k], b = afterHeader[k];
+    if (a === b) return;
+    var fmtV = function(v) { return PO_MONEY_FIELDS[k] ? fmtPHP(v) : (v === '' ? '(blank)' : v); };
+    changes.push(PO_HEADER_LABELS[k] + ': ' + fmtV(a) + ' → ' + fmtV(b));
+  });
+  function lineDiff(o, n) {
+    if (o.qty !== n.qty) changes.push(n.name + ': qty ' + fmtInt(o.qty) + ' → ' + fmtInt(n.qty) + (n.unit ? ' ' + n.unit : ''));
+    if (o.cost !== n.cost) changes.push(n.name + ': unit cost ' + fmtPHP(o.cost) + ' → ' + fmtPHP(n.cost));
+  }
+  before.lines.forEach(function(o) {
+    var n = afterLines.find(function(l) {
+      return o.source === 'reorder' ? (l.source === 'reorder' && l.reorderId === o.reorderId)
+                                    : (l.source === 'custom' && l.origIdx === o.origIdx);
+    });
+    if (!n || (o.source === 'reorder' && removedReorderIds.indexOf(o.reorderId) !== -1)) {
+      changes.push('Removed ' + o.name + ' (' + fmtInt(o.qty) + (o.unit ? ' ' + o.unit : '') + ' @ ' + fmtPHP(o.cost) + ')');
+    } else {
+      lineDiff(o, n);
+    }
+  });
+  afterLines.forEach(function(l) {
+    if (l.source === 'new' || (l.source === 'custom' && l.origIdx === undefined)) {
+      changes.push('Added ' + l.name + ' (' + fmtInt(l.qty) + (l.unit ? ' ' + l.unit : '') + ' @ ' + fmtPHP(l.cost) + ')');
+    }
+  });
+  return changes;
+}
+
+function renderPoRevisionHistory(po) {
+  var el = document.getElementById('poe-rev-history');
+  if (!el) return;
+  var revs = Array.isArray(po.revisions) ? po.revisions : [];
+  if (!revs.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Revision history</div>'
+    + revs.slice().reverse().map(function(v) {
+      return '<div style="font-size:12px;padding:6px 0;border-top:1px solid var(--border)">'
+        + '<strong>Rev ' + v.rev + '</strong> · ' + new Date(v.at).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+        + ' · ' + esc(v.by || '—') + (v.approvedBy ? ' · approved by ' + esc(v.approvedBy) : '')
+        + '<div style="color:var(--muted);margin-top:2px">' + (v.changes || []).map(esc).join('<br>') + '</div></div>';
+    }).join('');
+}
 
 function openEditPoModal(id) {
   if (currentRole !== 'superuser') return;
@@ -5786,6 +6048,9 @@ function openEditPoModal(id) {
 
   poEditPoId = id;
   poEditRemovedReorderIds = [];
+  // Line costs are edited in the PO's own basis: for a VAT-ex PO that's the
+  // pre-VAT unit price (stored VAT-inclusive cost ÷ 1.12).
+  var openVf = _vatFactor(_poIsVatEx(po));
   poEditLines = (po.reorderIds || []).map(function(rid) {
     var r = db.reorders.find(function(x) { return x.id === rid; });
     if (!r) return null;
@@ -5793,17 +6058,33 @@ function openEditPoModal(id) {
     return {
       source: 'reorder', reorderId: r.id, itemId: r.itemId,
       name: item ? item.name : 'Deleted Item', unit: item ? (item.unit || '') : '',
-      qty: r.qty || 0, cost: r.cost || 0,
+      qty: r.qty || 0, cost: _r4((r.cost || 0) / openVf),
       locked: r.status === 'received',
       partial: r.status !== 'received' && /Partial delivery/.test(r.notes || ''),
     };
   }).filter(Boolean);
-  (po.customItems || []).forEach(function(c) {
+  (po.customItems || []).forEach(function(c, idx) {
     // A delivered non-catalog line is locked like a received catalog line,
     // and carries its delivery stamp through so saving doesn't erase it.
-    poEditLines.push({ source: 'custom', name: c.description, unit: c.unit || '', qty: c.qty || 0, cost: c.cost || 0,
+    poEditLines.push({ source: 'custom', origIdx: idx, name: c.description, unit: c.unit || '', qty: c.qty || 0, cost: _r4((c.cost || 0) / openVf),
       locked: !!c.receivedAt, partial: false, receivedAt: c.receivedAt || null, receivedBy: c.receivedBy || '' });
   });
+  // Snapshot of the PO as opened, so saving can list exactly what changed
+  // for the revision record (see _poEditChanges).
+  poEditOriginal = {
+    header: _poHeaderSnapshot(po),
+    lines: poEditLines.map(function(l) { return { source: l.source, reorderId: l.reorderId, origIdx: l.origIdx, name: l.name, unit: l.unit, qty: l.qty, cost: l.cost }; }),
+  };
+  var confirmEl = document.getElementById('poe-approval-confirm');
+  if (confirmEl) confirmEl.checked = false;
+  renderPoRevisionHistory(po);
+  // VAT basis: locked once anything on the PO has been received, since those
+  // deliveries were already costed into stock at the current basis.
+  var vatSel = document.getElementById('poe-vat-basis');
+  var anyLocked = poEditLines.some(function(l) { return l.locked; });
+  vatSel.value = _poIsVatEx(po) ? 'ex' : 'inc';
+  vatSel.disabled = anyLocked;
+  document.getElementById('poe-vat-locked-note').style.display = anyLocked ? '' : 'none';
 
   document.getElementById('poe-id').value = po.id;
   document.getElementById('poe-supplier').value = po.supplier || '';
@@ -5829,6 +6110,12 @@ function openEditPoModal(id) {
   openModal('po-edit-modal');
 }
 
+function _poeVatFactor() {
+  var el = document.getElementById('poe-vat-basis');
+  return _vatFactor(el && el.value === 'ex');
+}
+function onPoeVatBasisChange() { renderPoEditLines(); updatePoEditTotals(); }
+
 function renderPoEditLines() {
   var wrap = document.getElementById('poe-items');
   if (!poEditLines.length) {
@@ -5836,7 +6123,7 @@ function renderPoEditLines() {
     return;
   }
   wrap.innerHTML = poEditLines.map(function(l, idx) {
-    var lineTotal = (l.qty || 0) * (l.cost || 0);
+    var lineTotal = _c2((l.qty || 0) * (l.cost || 0) * _poeVatFactor());
     var qtyField = l.locked
       ? '<span style="width:60px;display:inline-block;text-align:right">' + fmtInt(l.qty) + '</span>'
       : '<input type="number" min="0" step="1" value="' + l.qty + '" style="width:60px" onchange="updatePoEditLine(' + idx + ',\'qty\',this.value)">';
@@ -5897,7 +6184,7 @@ function poeCatItemChanged() {
   var qtyEl = document.getElementById('poe-cat-qty');
   var costEl = document.getElementById('poe-cat-cost');
   if (!qtyEl.value && item.reorderQty) qtyEl.value = item.reorderQty;
-  if (!costEl.value) { var c = currentUnitCost(item) || item.cost; if (c) costEl.value = c; }
+  if (!costEl.value) { var c = currentUnitCost(item) || item.cost; if (c) costEl.value = Math.round(c / _poeVatFactor() * 100) / 100; }
 }
 
 function addCatalogLineToEdit() {
@@ -5939,7 +6226,8 @@ function addCustomLineToEdit() {
 }
 
 function updatePoEditTotals() {
-  var subtotal = poEditLines.reduce(function(s, l) { return s + (l.qty || 0) * (l.cost || 0); }, 0);
+  var f = _poeVatFactor();
+  var subtotal = _c2(poEditLines.reduce(function(s, l) { return s + _c2((l.qty || 0) * (l.cost || 0) * f); }, 0));
   var shipCost = parseFloat(document.getElementById('poe-ship-cost').value) || 0;
   var other    = parseFloat(document.getElementById('poe-other').value) || 0;
   var discount = parseFloat(document.getElementById('poe-discount').value) || 0;
@@ -5952,7 +6240,7 @@ function updatePoEditTotals() {
   document.getElementById('poe-total').textContent = fmtPHP(total);
 }
 
-function savePoEdit() {
+async function savePoEdit() {
   var po = (db.purchaseOrders || []).find(function(p) { return p.id === poEditPoId; });
   if (!po) { alert('Purchase Order record not found.'); return; }
   var supplier = document.getElementById('poe-supplier').value.trim();
@@ -5969,9 +6257,39 @@ function savePoEdit() {
   var discount   = parseFloat(document.getElementById('poe-discount').value) || 0;
   var checkedBy  = document.getElementById('poe-checked-by').value.trim();
   var approvedBy = document.getElementById('poe-approved-by').value.trim();
+  var vatEx = document.getElementById('poe-vat-basis').value === 'ex';
+  var vf = _vatFactor(vatEx); // line costs are entered in this basis; stored VAT-inclusive
+  var vatChanged = !poEditOriginal || poEditOriginal.header.vatBasis !== (vatEx ? 'VAT-exclusive' : 'VAT-inclusive');
+
+  // What does this save actually change? Nothing → just re-download the PDF
+  // without a new revision. Something → it's a revision, which needs a named
+  // approver and an explicit confirmation that they approved it.
+  var changes = poEditOriginal ? _poEditChanges(poEditOriginal, {
+    supplier: supplier, supplierAddress: supplierAddress, supplierTin: supplierTin,
+    vatBasis: vatEx ? 'VAT-exclusive' : 'VAT-inclusive',
+    shipMethod: String(shipMethod || '').trim(), shipTerms: shipTerms, delivery: delivery,
+    shipCost: shipCost, other: other, discount: discount, checkedBy: checkedBy, approvedBy: approvedBy,
+  }, poEditLines, poEditRemovedReorderIds) : [];
+  if (changes.length) {
+    if (!approvedBy) { alert('Enter who approved this revision in "Approved by".'); return; }
+    var confirmEl = document.getElementById('poe-approval-confirm');
+    if (confirmEl && !confirmEl.checked) {
+      alert('Tick the box confirming ' + approvedBy + ' approved these changes:\n\n• ' + changes.join('\n• '));
+      return;
+    }
+  }
+  var revColsOK = changes.length ? await _probePoRevCols() : _poRevColsOK;
+  var vatColOK = vatEx ? await _probePoVatCol() : _poVatColOK;
 
   rememberSupplier(supplier, supplierAddress, supplierTin);
+  setSupplierVatPref(supplier, vatEx);
   var now = new Date().toISOString();
+  // A line's stored cost is only rewritten if its price or the VAT basis
+  // actually changed — avoids rounding drift on untouched lines.
+  function origCostOf(match) {
+    var o = poEditOriginal && poEditOriginal.lines.find(match);
+    return o ? o.cost : null;
+  }
 
   // Drop reorders removed in this edit — the log/inventory history they
   // already produced (if any) stays untouched; only the "pending order"
@@ -5988,7 +6306,10 @@ function savePoEdit() {
       var r = db.reorders.find(function(x) { return x.id === l.reorderId; });
       if (r) {
         r.supplier = supplier; r.supplierAddress = supplierAddress; r.supplierTin = supplierTin;
-        if (!l.locked) { r.qty = l.qty; r.cost = l.cost; }
+        if (!l.locked) {
+          r.qty = l.qty;
+          if (vatChanged || origCostOf(function(o) { return o.source === 'reorder' && o.reorderId === l.reorderId; }) !== l.cost) r.cost = _r4(l.cost * vf);
+        }
         r.updatedAt = now;
         keptReorderIds.push(r.id);
       }
@@ -6000,20 +6321,23 @@ function savePoEdit() {
       var nr = {
         id: uid(), itemId: l.itemId, supplier: supplier,
         supplierAddress: supplierAddress, supplierTin: supplierTin,
-        qty: l.qty, cost: l.cost, orderDate: now.slice(0, 10), deliveryDate: delivery,
+        qty: l.qty, cost: _r4(l.cost * vf), orderDate: now.slice(0, 10), deliveryDate: delivery,
         status: 'ordered', notes: '', createdAt: now, updatedAt: now,
         orderedAt: now, poNumber: po.poNumber,
       };
       db.reorders.push(nr);
       keptReorderIds.push(nr.id);
     } else {
-      var ci = { description: l.name, unit: l.unit, qty: l.qty, cost: l.cost };
+      var oc = l.origIdx !== undefined ? origCostOf(function(o) { return o.source === 'custom' && o.origIdx === l.origIdx; }) : null;
+      var prevStored = (l.origIdx !== undefined && po.customItems && po.customItems[l.origIdx]) ? po.customItems[l.origIdx].cost : null;
+      var storedCost = (!vatChanged && oc !== null && oc === l.cost && prevStored !== null) ? prevStored : _r4(l.cost * vf);
+      var ci = { description: l.name, unit: l.unit, qty: l.qty, cost: storedCost };
       if (l.receivedAt) { ci.receivedAt = l.receivedAt; ci.receivedBy = l.receivedBy || ''; }
       customItems.push(ci);
     }
   });
 
-  var subtotal = poEditLines.reduce(function(s, l) { return s + (l.qty || 0) * (l.cost || 0); }, 0);
+  var subtotal = _c2(poEditLines.reduce(function(s, l) { return s + _c2((l.qty || 0) * (l.cost || 0) * vf); }, 0));
   var total = subtotal + shipCost + other - discount;
 
   po.supplier = supplier; po.supplierAddress = supplierAddress; po.supplierTin = supplierTin;
@@ -6023,13 +6347,31 @@ function savePoEdit() {
   po.subtotal = subtotal; po.total = total;
   po.reorderIds = keptReorderIds;
   po.customItems = customItems;
+  if (vatEx) po.vatExclusive = true;
+  else if (vatColOK === true || 'vatExclusive' in po) po.vatExclusive = false;
   // No updatedAt/updatedBy on the PO record: purchase_orders may not have
   // those columns, and one unknown column makes Supabase reject the whole
   // purchase_orders save. Who edited it and when is in the audit log.
   delete po.updatedAt;
   delete po.updatedBy;
 
-  logAudit('Purchase Order edited', po.poNumber + ' — ' + supplier);
+  if (changes.length) {
+    var rev = (parseInt(po.revision, 10) || 0) + 1;
+    if (revColsOK !== false) {
+      po.revision = rev;
+      po.revisions = (Array.isArray(po.revisions) ? po.revisions : []).concat([{
+        rev: rev, at: now, by: (currentUser && currentUser.username) || '', approvedBy: approvedBy, changes: changes,
+      }]);
+    }
+    logAudit('Purchase Order revised', po.poNumber + ' Rev ' + rev + ' (approved by ' + approvedBy + '): ' + changes.join('; '));
+    if (revColsOK === false) {
+      alert('Changes saved, but the revision number and history could not be stored yet: the purchase_orders table needs two new columns. '
+        + 'Ask whoever manages Supabase to run this in the SQL Editor, then future edits will be numbered:\n\n' + PO_REV_SQL
+        + '\n\nThis edit is still recorded in the Audit Log.');
+    }
+  } else {
+    logAudit('Purchase Order re-downloaded (no changes)', po.poNumber + ' — ' + supplier);
+  }
 
   save();
   closeModal('po-edit-modal');
@@ -6037,8 +6379,14 @@ function savePoEdit() {
   renderReorder();
   updateSummary();
 
+  if (vatEx && vatColOK === false) {
+    alert('Saved with VAT-exclusive pricing. To keep showing the VAT-ex unit prices when this PO is downloaded again later, '
+      + 'the purchase_orders table needs one new column. Ask whoever manages Supabase to run this in the SQL Editor:\n\n' + PO_VAT_SQL
+      + '\n\nTotals and stock costs are already correct either way.');
+  }
+
   var lineItems = poEditLines.map(function(l) {
-    return { description: l.name, qty: l.qty || 0, unit: l.unit || '', unitPrice: l.cost || 0, total: (l.qty || 0) * (l.cost || 0) };
+    return { description: l.name, qty: l.qty || 0, unit: l.unit || '', unitPrice: l.cost || 0, total: _c2((l.qty || 0) * (l.cost || 0) * vf) };
   });
   buildPurchaseOrderPdf(po, lineItems);
 }
@@ -6100,6 +6448,14 @@ function buildPurchaseOrderPdf(po, lineItems, opts) {
   doc.text('Date: ' + new Date(po.date).toLocaleDateString('en-PH', { year:'numeric', month:'2-digit', day:'2-digit' }), pageWidth - margin, y, { align: 'right' });
   y += 14;
   doc.text('PO Number: ' + po.poNumber, pageWidth - margin, y, { align: 'right' });
+  var revN = parseInt(po.revision, 10) || 0;
+  if (revN > 0) {
+    var lastRev = Array.isArray(po.revisions) && po.revisions.length ? po.revisions[po.revisions.length - 1] : null;
+    y += 14;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Revision ' + revN + (lastRev && lastRev.at ? ' (' + new Date(lastRev.at).toLocaleDateString('en-PH', { year:'numeric', month:'2-digit', day:'2-digit' }) + ')' : ''), pageWidth - margin, y, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+  }
 
   y = logoH ? (28 + logoH + 22) : 50;
   doc.setFont('helvetica', 'bold');
@@ -6144,7 +6500,9 @@ function buildPurchaseOrderPdf(po, lineItems, opts) {
   doc.autoTable({
     startY: y,
     theme: 'grid',
-    head: [['Description', 'Qty', 'Unit Price', 'Total']],
+    head: [_poIsVatEx(po)
+      ? ['Description', 'Qty', 'Unit Price (VAT-ex)', 'Total (VAT-inc)']
+      : ['Description', 'Qty', 'Unit Price', 'Total']],
     styles: { fontSize: 9, cellPadding: 5 },
     headStyles: { fillColor: [30, 41, 59] },
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
@@ -6207,7 +6565,8 @@ function buildPurchaseOrderPdf(po, lineItems, opts) {
 }
 
 function _poPdfFilename(po) {
-  return po.poNumber + '-' + (po.supplier||'supplier').replace(/[^a-z0-9]+/gi,'-') + '.pdf';
+  var revN = parseInt(po.revision, 10) || 0;
+  return po.poNumber + (revN ? '-Rev' + revN : '') + '-' + (po.supplier||'supplier').replace(/[^a-z0-9]+/gi,'-') + '.pdf';
 }
 
 // ─── VARIANCE ADJUSTMENT ─────────────────────────────────────────────────────────
@@ -6626,6 +6985,7 @@ function selectLogItem(id, name) {
   document.getElementById('lf-item').value = id;
   document.getElementById('lf-item-search').value = name;
   closeItemDropdown();
+  refreshLogPoPicker();
 }
 
 function closeItemDropdown() {
@@ -7602,302 +7962,6 @@ function updateRequestBadge() {
   if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none'; }
   var bnBadge = document.getElementById('bn-req-badge');
   if (bnBadge) { bnBadge.textContent = count; bnBadge.style.display = count > 0 ? 'inline' : 'none'; }
-}
-
-// ─── MESSAGES ────────────────────────────────────────────────────────────────────
-var db_msgs = [];
-var currentViewMsgId = null;
-var msgFilter = 'all';
-var MSG_TABLE_OK = null; // null=unknown, true=exists, false=missing
-
-const MSG_LS_KEY = 'supplybase_messages';
-
-function getMsgsLocal()  { try { return JSON.parse(localStorage.getItem(MSG_LS_KEY)||'[]'); } catch(e){ return []; } }
-function saveMsgsLocal() { localStorage.setItem(MSG_LS_KEY, JSON.stringify(db_msgs)); }
-
-async function loadMessages() {
-  if (!sb) { db_msgs = getMsgsLocal(); updateMsgBadge(); return; }
-  try {
-    var r = await sb.from('messages').select('*').order('createdAt', { ascending: false });
-    if (r.error) { db_msgs = getMsgsLocal(); MSG_TABLE_OK = false; }
-    else         { db_msgs = r.data || [];   MSG_TABLE_OK = true;  }
-  } catch(e) { db_msgs = getMsgsLocal(); MSG_TABLE_OK = false; }
-  updateMsgBadge();
-}
-
-function updateMsgBadge() {
-  var count = 0;
-  if (currentUser) {
-    var me = currentUser.username.toLowerCase();
-    var isAdmin = currentRole === 'superuser';
-    // Unread messages in my inbox (I'm the recipient and haven't read them)
-    count = db_msgs.filter(m => {
-      var toMe = m.toUser.toLowerCase() === me || (isAdmin && m.toUser === 'admin');
-      return toMe && !m.readAt;
-    }).length;
-    // Replies to my sent messages that I haven't seen
-    count += db_msgs.filter(m => m.fromUser.toLowerCase() === me && m.reply && !m.replyReadAt).length;
-  }
-  var badge = document.getElementById('msg-nav-badge');
-  if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'inline' : 'none'; }
-  var bnBadge = document.getElementById('bn-msg-badge');
-  if (bnBadge) { bnBadge.textContent = count; bnBadge.style.display = count > 0 ? 'inline' : 'none'; }
-}
-
-function setMsgFilter(f) {
-  msgFilter = f;
-  document.querySelectorAll('[data-mf]').forEach(b => b.classList.toggle('active', b.dataset.mf === f));
-  renderMessages();
-}
-
-function openComposeMsg() {
-  var toSel = document.getElementById('cm-to');
-  var adminUname = getAdminUsername();
-  var me = currentUser.username.toLowerCase();
-  // All accounts except current user
-  var others = db.accounts.filter(a => a.username.toLowerCase() !== me);
-  var opts = others.map(a => `<option value="${esc(a.username)}">${esc(a.username)}</option>`).join('');
-  // Add superuser as option if not already in accounts list and current user is not superuser
-  if (currentRole !== 'superuser' && !others.find(a => a.username.toLowerCase() === adminUname.toLowerCase())) {
-    opts = `<option value="${esc(adminUname)}">${esc(adminUname)} (Admin)</option>` + opts;
-  }
-  toSel.innerHTML = opts || `<option value="${esc(adminUname)}">${esc(adminUname)}</option>`;
-  document.getElementById('cm-subject').value = '';
-  document.getElementById('cm-body').value    = '';
-  openModal('compose-msg-modal');
-}
-
-async function sendMessage() {
-  var to      = document.getElementById('cm-to').value.trim();
-  var subject = document.getElementById('cm-subject').value.trim() || '(no subject)';
-  var body    = document.getElementById('cm-body').value.trim();
-  if (!body) { alert('Message body cannot be empty.'); return; }
-
-  var msg = {
-    id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-    fromUser: currentUser.username,
-    toUser:   to || 'admin',
-    subject, body,
-    createdAt:   new Date().toISOString(),
-    readAt:      null,
-    reply:       null,
-    repliedAt:   null,
-    repliedBy:   null,
-    replyReadAt: null
-  };
-
-  db_msgs.unshift(msg);
-  if (sb && MSG_TABLE_OK !== false) {
-    try { await sb.from('messages').insert([msg]); MSG_TABLE_OK = true; }
-    catch(e) { saveMsgsLocal(); MSG_TABLE_OK = false; }
-  } else {
-    saveMsgsLocal();
-  }
-
-  closeModal('compose-msg-modal');
-  updateMsgBadge();
-  switchTab('messages');
-  renderMessages();
-}
-
-async function viewMessage(id) {
-  var msg = db_msgs.find(m => m.id === id);
-  if (!msg) return;
-  currentViewMsgId = id;
-
-  var me = currentUser.username.toLowerCase();
-  var isAdmin = currentRole === 'superuser';
-  var iAmRecipient = msg.toUser.toLowerCase() === me || (isAdmin && msg.toUser === 'admin');
-  var iAmSender    = msg.fromUser.toLowerCase() === me;
-
-  // Mark as read when recipient opens it
-  if (iAmRecipient && !msg.readAt) {
-    msg.readAt = new Date().toISOString();
-    if (sb && MSG_TABLE_OK !== false) {
-      try { await sb.from('messages').update({ readAt: msg.readAt }).eq('id', id); }
-      catch(e) { saveMsgsLocal(); }
-    } else { saveMsgsLocal(); }
-    updateMsgBadge();
-    renderMessages();
-  }
-  // Mark reply as read when sender opens it
-  if (iAmSender && msg.reply && !msg.replyReadAt) {
-    msg.replyReadAt = new Date().toISOString();
-    if (sb && MSG_TABLE_OK !== false) {
-      try { await sb.from('messages').update({ replyReadAt: msg.replyReadAt }).eq('id', id); }
-      catch(e) { saveMsgsLocal(); }
-    } else { saveMsgsLocal(); }
-    updateMsgBadge();
-    renderMessages();
-  }
-
-  function fmtDT(d) {
-    return d ? new Date(d).toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', hour12:true }) : '';
-  }
-
-  var html = `<div style="margin-bottom:4px">
-    <h2 style="margin-bottom:12px">${esc(msg.subject)}</h2>
-    <div class="msg-thread-bubble msg-thread-in" style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="font-size:12px;font-weight:600">${esc(msg.fromUser)}</span>
-        <span style="font-size:11px;color:var(--muted)">${fmtDT(msg.createdAt)}</span>
-      </div>
-      <div style="font-size:13px;line-height:1.65;white-space:pre-wrap">${esc(msg.body)}</div>
-    </div>
-    ${msg.reply ? `<div class="msg-thread-bubble msg-thread-out">
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="font-size:12px;font-weight:600;color:var(--accent)">↩ ${esc(msg.repliedBy)}</span>
-        <span style="font-size:11px;color:var(--muted)">${fmtDT(msg.repliedAt)}</span>
-      </div>
-      <div style="font-size:13px;line-height:1.65;white-space:pre-wrap">${esc(msg.reply)}</div>
-    </div>` : ''}
-  </div>`;
-
-  document.getElementById('view-msg-content').innerHTML = html;
-  document.getElementById('reply-body').value = '';
-
-  var canReply = iAmRecipient && !msg.reply;
-  var canDelete = isAdmin || iAmSender;
-  document.getElementById('view-msg-reply-form').style.display = canReply ? 'block' : 'none';
-  document.getElementById('btn-send-reply').style.display = canReply ? '' : 'none';
-  document.getElementById('btn-delete-msg').style.display = canDelete ? '' : 'none';
-
-  openModal('view-msg-modal');
-}
-
-async function sendReply() {
-  var text = document.getElementById('reply-body').value.trim();
-  if (!text) { alert('Reply cannot be empty.'); return; }
-  var msg = db_msgs.find(m => m.id === currentViewMsgId);
-  if (!msg) return;
-
-  msg.reply       = text;
-  msg.repliedAt   = new Date().toISOString();
-  msg.repliedBy   = currentUser.username;
-  msg.replyReadAt = null;
-
-  if (sb && MSG_TABLE_OK !== false) {
-    try { await sb.from('messages').update({ reply: msg.reply, repliedAt: msg.repliedAt, repliedBy: msg.repliedBy, replyReadAt: null }).eq('id', currentViewMsgId); }
-    catch(e) { saveMsgsLocal(); }
-  } else { saveMsgsLocal(); }
-
-  closeModal('view-msg-modal');
-  renderMessages();
-}
-
-async function deleteCurrentMsg() {
-  var msgId = currentViewMsgId;
-  showConfirm('Delete Message', 'Delete this message permanently?', async function() {
-    db_msgs = db_msgs.filter(m => m.id !== msgId);
-    if (sb && MSG_TABLE_OK !== false) {
-      try { await sb.from('messages').delete().eq('id', msgId); }
-      catch(e) { saveMsgsLocal(); }
-    } else { saveMsgsLocal(); }
-    closeModal('view-msg-modal');
-    updateMsgBadge();
-    renderMessages();
-  }, { danger: true, confirmLabel: 'Delete' });
-}
-
-function renderMessages() {
-  var el = document.getElementById('msg-list-wrap');
-  if (!el) return;
-  updateMsgBadge();
-
-  var me = currentUser?.username?.toLowerCase();
-  var isAdmin = currentRole === 'superuser';
-  document.getElementById('msg-filter-row').style.display = 'flex';
-  document.getElementById('msg-view-sub').textContent = 'Inbox · Sent';
-
-  // Inbox: messages addressed to me
-  var inbox = db_msgs.filter(m => m.toUser.toLowerCase() === me || (isAdmin && m.toUser === 'admin'));
-  // Sent: messages I sent (excluding ones also in my inbox)
-  var sent  = db_msgs.filter(m => m.fromUser.toLowerCase() === me && !(m.toUser.toLowerCase() === me));
-
-  // Apply inbox filter
-  var filteredInbox = inbox.slice();
-  if (msgFilter === 'unread')  filteredInbox = filteredInbox.filter(m => !m.readAt);
-  if (msgFilter === 'replied') filteredInbox = filteredInbox.filter(m => m.reply);
-
-  var out = '';
-
-  // Setup warning (admin only)
-  if (isAdmin && MSG_TABLE_OK === false) {
-    out += `<div class="msg-setup-box">
-      <div style="font-weight:600;color:var(--warn);margin-bottom:6px">⚠ Messages table not found in Supabase</div>
-      <div style="font-size:13px;color:var(--muted);line-height:1.6">Create the table in your Supabase SQL Editor. Messages are temporarily stored in your browser until then.</div>
-      <pre>create table messages (
-  id text primary key,
-  "fromUser" text not null,
-  "toUser"   text not null default 'admin',
-  subject    text,
-  body       text not null,
-  "createdAt"   timestamptz default now(),
-  "readAt"      timestamptz,
-  reply         text,
-  "repliedAt"   timestamptz,
-  "repliedBy"   text,
-  "replyReadAt" timestamptz
-);</pre>
-    </div>`;
-  }
-
-  function inboxBadge(msg) {
-    if (!msg.readAt) return '<span class="msg-badge msg-badge-new">● New</span>';
-    if (msg.reply)   return '<span class="msg-badge msg-badge-replied">↩ Replied</span>';
-    return '<span class="msg-badge msg-badge-read">Read</span>';
-  }
-  function sentBadge(msg) {
-    if (msg.reply && !msg.replyReadAt) return '<span class="msg-badge msg-badge-replied">↩ New reply</span>';
-    if (msg.reply)   return '<span class="msg-badge msg-badge-read">✓ Replied</span>';
-    if (msg.readAt)  return '<span class="msg-badge msg-badge-read">Seen</span>';
-    return '<span class="msg-badge msg-badge-pending">Pending</span>';
-  }
-  function shortDate(d) {
-    return d ? new Date(d).toLocaleDateString('en-PH', { month:'short', day:'numeric' }) : '';
-  }
-
-  // ── INBOX ──
-  out += `<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">📥 Inbox</div>`;
-  if (filteredInbox.length === 0) {
-    out += '<div class="dash-empty" style="margin-bottom:20px">No messages.</div>';
-  } else {
-    out += '<div class="msg-list" style="margin-bottom:20px">';
-    filteredInbox.forEach(function(msg) {
-      var cls = !msg.readAt ? 'msg-unread' : '';
-      out += `<div class="msg-card ${cls}" onclick="viewMessage('${msg.id}')">
-        <div class="msg-card-header">
-          <span class="msg-card-from">From: ${esc(msg.fromUser)}</span>
-          <div style="display:flex;align-items:center;gap:8px">${inboxBadge(msg)}<span class="msg-card-date">${shortDate(msg.createdAt)}</span></div>
-        </div>
-        <div class="msg-card-subject">${esc(msg.subject)}</div>
-        <div class="msg-card-preview">${esc(msg.body.slice(0,90))}${msg.body.length>90?'…':''}</div>
-      </div>`;
-    });
-    out += '</div>';
-  }
-
-  // ── SENT ──
-  out += `<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">📤 Sent</div>`;
-  if (sent.length === 0) {
-    out += '<div class="dash-empty">No sent messages.</div>';
-  } else {
-    out += '<div class="msg-list">';
-    sent.forEach(function(msg) {
-      var cls = (msg.reply && !msg.replyReadAt) ? 'msg-new-reply' : '';
-      out += `<div class="msg-card ${cls}" onclick="viewMessage('${msg.id}')">
-        <div class="msg-card-header">
-          <span class="msg-card-from">To: ${esc(msg.toUser)}</span>
-          <div style="display:flex;align-items:center;gap:8px">${sentBadge(msg)}<span class="msg-card-date">${shortDate(msg.createdAt)}</span></div>
-        </div>
-        <div class="msg-card-subject">${esc(msg.subject)}</div>
-        <div class="msg-card-preview">${esc(msg.body.slice(0,90))}${msg.body.length>90?'…':''}</div>
-      </div>`;
-    });
-    out += '</div>';
-  }
-
-  el.innerHTML = out;
 }
 
 // ─── SUPPLY REQUEST FUNCTIONS ────────────────────────────────────────────────────
@@ -9040,9 +9104,9 @@ alter publication supabase_realtime add table settings;</pre>
 
 // ─── TAB ACCESS BY ROLE (superuser-controlled) ───────────────────────────────────
 var TABS_KEY  = 'tabsByRole';
-var ALL_TABS  = ['inventory','usage','reorder','report','dashboard','messages','requests','audit','ai'];
+var ALL_TABS  = ['inventory','usage','reorder','report','dashboard','requests','audit','ai'];
 var TAB_LABELS = { inventory:'Inventory', usage:'Usage Log', reorder:'Reorder', report:'Cost Report',
-                   dashboard:'Dashboard', messages:'Messages', requests:'Requests', audit:'Audit Log', ai:'Shelfie' };
+                   dashboard:'Dashboard', requests:'Requests', audit:'Audit Log', ai:'Shelfie' };
 // Hidden tabs per role. Superuser is never restricted (prevents lock-out).
 // Shelfie is hidden by default for roles that have nothing useful — or
 // safe — for it to do: viewer and brand can't log, reorder, or submit
@@ -9052,7 +9116,7 @@ var tabsByRole = {
   user:      ['audit'],
   viewer:    ['audit','ai'],
   requestor: ['audit'],
-  brand:     ['usage','reorder','report','dashboard','messages','requests','audit','ai']
+  brand:     ['usage','reorder','report','dashboard','requests','audit','ai']
 };
 var _tabEditRole = 'user'; // which role the superuser is configuring
 var TAB_ROLES = ['user','viewer','requestor','brand'];
@@ -9875,7 +9939,6 @@ function applyRoleUI() {
   costHeaders.forEach(function(el) { el.style.display = isBrand ? 'none' : ''; });
 
   if (!isBrand) {
-    updateMsgBadge();
     updateRequestBadge();
   }
 }
@@ -13623,7 +13686,7 @@ async function aiReceiveReorder(input) {
   var logEntry = {
     id: uid(), itemId: r.itemId, type: 'restock', qty: qty, absQty: newQty, by: 'Reorder (Shelfie)', date: now,
     notes: 'Reorder received from ' + (r.supplier || 'supplier') + (isComplete ? '' : ' (partial)') + (extraNotes ? ' — ' + extraNotes : '') + ' — via Shelfie',
-    ref: '', costAmount: (!isNaN(cost) && cost > 0) ? Math.round(qty * cost * 100) / 100 : null,
+    ref: r.poNumber || '', costAmount: (!isNaN(cost) && cost > 0) ? Math.round(qty * cost * 100) / 100 : null,
   };
   db.logs.push(logEntry);
   item.qty = newQty;
@@ -14291,20 +14354,16 @@ async function aiApplyLogEntry(input) {
   db.logs.push(logEntry);
   syncItemCost(item);
 
+  // A plain restock from Shelfie names no PO, so (since PO-linked receiving)
+  // it only moves "Needed" lines that have no PO yet; PO deliveries go
+  // through mark_reorder_received, which links them. Same shared rule as the
+  // manual Log path, and the status changes are saved this time.
+  var touchedShelfie = [];
   if (type === 'restock') {
     db.reorders.forEach(function(r) {
       if (r.itemId === item.id && r.status !== 'received') {
-        var since = r.createdAt || '1970-01-01';
-        var totalRestocked = db.logs.filter(function(l){ return l.itemId===item.id && l.type==='restock' && l.date>=since; }).reduce(function(s,l){ return s+(l.qty||0); }, 0);
-        if (totalRestocked >= r.qty) {
-          r.status = 'received';
-          if (!r.receivedAt) r.receivedAt = logDate;
-          r.notes = (r.notes||'').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
-        } else {
-          var partialNote = '⚠️ Partial delivery: ' + fmtInt(totalRestocked) + ' of ' + fmtInt(r.qty) + ' received';
-          var existing = (r.notes||'').replace(/^⚠️ Partial delivery:.*?\n?/, '').trim();
-          r.notes = partialNote + (existing ? '\n' + existing : '');
-        }
+        _syncReorderFromLogs(r, logDate);
+        touchedShelfie.push(r);
       }
     });
   }
@@ -14312,7 +14371,7 @@ async function aiApplyLogEntry(input) {
   logAudit('Usage logged (Shelfie)', type + ' — ' + item.name + ' x' + qty);
   updateSummary();
   if (sb) {
-    try { await sbUpdateItem(item, { "maxRef": item.maxRef }); await sbInsertLogs([logEntry]); }
+    try { await sbUpdateItem(item, { "maxRef": item.maxRef }); await sbInsertLogs([logEntry]); await _sbSaveReorderStatus(touchedShelfie); }
     catch(e) { save(); }
   } else { save(); }
   renderLogs();
@@ -14477,11 +14536,6 @@ async function aiApplyLogEntry(input) {
     <span class="bn-icon">🛒</span>
     <span>Requests</span>
     <span id="bn-req-badge" class="bn-badge" style="display:none">0</span>
-  </button>
-  <button class="bn-item" id="bn-messages" onclick="switchTab('messages')">
-    <span class="bn-icon">📬</span>
-    <span>Messages</span>
-    <span id="bn-msg-badge" class="bn-badge" style="display:none">0</span>
   </button>
   <button class="bn-item" id="bn-more" onclick="openMobileMoreMenu()">
     <span class="bn-icon">⋯</span>
