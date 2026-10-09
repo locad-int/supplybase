@@ -2138,6 +2138,18 @@
   </div>
 </div>
 
+<!-- PO DETAILS MODAL (staggered deliveries) -->
+<div class="modal-bg" id="po-detail-modal">
+  <div class="modal" style="max-width:860px">
+    <div id="pod-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="pod-preview-btn">👁 Preview PDF</button>
+      <button class="btn btn-secondary" id="pod-edit-btn" style="display:none">✏️ Edit PO</button>
+      <button class="btn btn-primary" onclick="closeModal('po-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- RECEIVE DELIVERY MODAL -->
 <div class="modal-bg" id="receive-modal">
   <div class="modal" style="max-width:440px">
@@ -5134,6 +5146,7 @@ function renderReorder() {
     divider.innerHTML = '<td colspan="9" style="height:0;padding:0;border-bottom:2px solid var(--border)"></td>';
     tbody.appendChild(divider);
   });
+  _refreshPoDetailIfOpen();
 }
 
 // Renders a single collapsed "card" row summarizing every item in one PO,
@@ -5165,7 +5178,7 @@ function renderReorderGroupRow(tbody, group) {
     <td style="color:var(--muted);font-size:11px">—</td>
     <td><span class="badge badge-${statusColor}">${esc(statusLabel)}</span></td>
     <td style="color:var(--muted);font-size:11px">—</td>
-    <td>${po ? '<button class="btn btn-icon btn-sm" title="Preview PO" onclick="event.stopPropagation();previewPo(\'' + po.id + '\')">👁</button><button class="btn btn-icon btn-sm" title="Download PO PDF" onclick="event.stopPropagation();redownloadPo(\'' + po.id + '\')">⬇</button>' : ''}${(po && currentRole === 'superuser') ? '<button class="btn btn-icon btn-sm" title="Edit PO" onclick="event.stopPropagation();openEditPoModal(\'' + po.id + '\')">✏️</button>' : ''}${currentRole === 'superuser' ? '<button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="event.stopPropagation();deletePoByNumber(\'' + esc(String(group.poNumber)) + '\')">🗑</button>' : ''}</td>`;
+    <td><button class="btn btn-icon btn-sm" title="PO details: deliveries received so far" onclick="event.stopPropagation();openPoDetail('${esc(String(group.poNumber))}')">📋</button>${po ? '<button class="btn btn-icon btn-sm" title="Preview PO" onclick="event.stopPropagation();previewPo(\'' + po.id + '\')">👁</button><button class="btn btn-icon btn-sm" title="Download PO PDF" onclick="event.stopPropagation();redownloadPo(\'' + po.id + '\')">⬇</button>' : ''}${(po && currentRole === 'superuser') ? '<button class="btn btn-icon btn-sm" title="Edit PO" onclick="event.stopPropagation();openEditPoModal(\'' + po.id + '\')">✏️</button>' : ''}${currentRole === 'superuser' ? '<button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="event.stopPropagation();deletePoByNumber(\'' + esc(String(group.poNumber)) + '\')">🗑</button>' : ''}</td>`;
   tbody.appendChild(headerTr);
 
   items.forEach(function(r) {
@@ -5373,6 +5386,151 @@ function reopenReorderLine(id) {
     renderReorder();
     updateSummary();
   }, { confirmLabel: 'Reopen' });
+}
+
+// ─── PO DETAILS (staggered deliveries) ─────────────────────────────────────
+// One view of a whole PO: every line's ordered / received / remaining with a
+// progress bar, overall progress by value, and a dated list of every
+// delivery that counted toward it (from the same PO-linked restock entries
+// that drive "received so far", so the numbers always match the Reorder tab).
+var _poDetailNumber = null;
+
+function openPoDetail(poNumber) {
+  _poDetailNumber = String(poNumber);
+  renderPoDetail();
+  openModal('po-detail-modal');
+}
+
+function _poDetailData(poNumber) {
+  var po = (db.purchaseOrders || []).find(function(p) { return String(p.poNumber) === String(poNumber); }) || null;
+  var lines = db.reorders.filter(function(r) { return String(r.poNumber) === String(poNumber); }).map(function(r) {
+    var item = db.items.find(function(i) { return i.id === r.itemId; });
+    var received = _reorderReceivedSoFar(r);
+    var closed = _isClosedShort(r);
+    var full = r.status === 'received' && !closed;
+    var counted = full ? Math.max(received, r.qty || 0) : received; // a line marked received counts as complete
+    return {
+      kind: 'catalog', r: r, name: item ? item.name : 'Deleted Item', unit: item ? (item.unit || '') : '',
+      ordered: r.qty || 0, received: received, remaining: (full || closed) ? 0 : Math.max(0, (r.qty || 0) - received),
+      pct: (r.qty ? Math.min(100, Math.round(counted / r.qty * 100)) : 0), cost: r.cost || 0,
+      receivedValue: Math.min(counted, r.qty || 0) * (r.cost || 0),
+      status: closed ? 'closed short' : (full ? 'received' : (received > 0 ? 'partial' : (r.status || 'ordered'))),
+    };
+  });
+  (po && po.customItems || []).forEach(function(c, idx) {
+    var done = !!c.receivedAt;
+    lines.push({
+      kind: 'custom', poId: po.id, idx: idx, name: c.description, unit: c.unit || '',
+      ordered: c.qty || 0, received: done ? (c.qty || 0) : 0, remaining: done ? 0 : (c.qty || 0), pct: done ? 100 : 0,
+      cost: c.cost || 0, receivedValue: done ? (c.qty || 0) * (c.cost || 0) : 0, status: done ? 'received' : 'ordered',
+      receivedAt: c.receivedAt || null, receivedBy: c.receivedBy || '',
+    });
+  });
+  // Deliveries: every restock that counts toward one of this PO's lines,
+  // plus non-catalog lines marked delivered.
+  var deliveries = [];
+  lines.forEach(function(L) {
+    if (L.kind === 'catalog') {
+      db.logs.forEach(function(l) {
+        if (!_logCountsTowardReorder(l, L.r)) return;
+        var dr = String(l.ref || '').replace(new RegExp(String(poNumber).replace(/[-]/g, '\\-') + '\\s*·?\\s*', 'i'), '').trim();
+        deliveries.push({ date: l.date, name: L.name, qty: l.qty || 0, unit: L.unit, by: l.by || '', dr: dr, notes: l.notes || '', linked: _logRefsPo(l, poNumber) });
+      });
+    } else if (L.receivedAt) {
+      deliveries.push({ date: L.receivedAt, name: L.name, qty: L.ordered, unit: L.unit, by: L.receivedBy, dr: '', notes: 'Non-catalog item marked delivered', linked: true });
+    }
+  });
+  deliveries.sort(function(a, b) { return String(b.date).localeCompare(String(a.date)); });
+  var orderedValue = lines.reduce(function(s, L) { return s + L.ordered * L.cost; }, 0);
+  var receivedValue = lines.reduce(function(s, L) { return s + L.receivedValue; }, 0);
+  return { po: po, lines: lines, deliveries: deliveries, orderedValue: orderedValue, receivedValue: receivedValue,
+    linesDone: lines.filter(function(L) { return L.status === 'received' || L.status === 'closed short'; }).length };
+}
+
+function _pctBar(pct, color) {
+  return '<div style="height:6px;background:var(--surface2);border-radius:99px;overflow:hidden;min-width:70px"><div style="height:100%;width:' + pct + '%;background:' + color + '"></div></div>';
+}
+
+function renderPoDetail() {
+  var poNumber = _poDetailNumber;
+  var body = document.getElementById('pod-body');
+  if (!body || !poNumber) return;
+  var d = _poDetailData(poNumber);
+  var po = d.po;
+  var supplier = po ? po.supplier : ((d.lines[0] && d.lines[0].r && d.lines[0].r.supplier) || '—');
+  var overallPct = d.orderedValue > 0 ? Math.min(100, Math.round(d.receivedValue / d.orderedValue * 100)) : 0;
+  var rev = po ? (parseInt(po.revision, 10) || 0) : 0;
+  var fmtD = function(iso, withTime) {
+    return iso ? new Date(iso).toLocaleString('en-PH', withTime
+      ? { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }
+      : { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+  };
+  var statusBadge = { 'received': 'badge-ok', 'partial': 'badge-warn', 'closed short': 'badge-warn', 'ordered': 'badge-warn', 'needed': 'badge-danger' };
+  var canRecv = can('mark_received');
+
+  var html = '<h2 style="margin-bottom:4px">📦 ' + esc(poNumber) + (rev ? ' <span class="badge badge-info" style="font-size:11px;vertical-align:middle">Rev ' + rev + '</span>' : '') + '</h2>'
+    + '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">' + esc(supplier)
+    + (po ? ' · Ordered ' + fmtD(po.date) : '')
+    + (po && po.delivery ? ' · Delivery: ' + esc(po.delivery) : '')
+    + (po && _poIsVatEx(po) ? ' · Supplier prices VAT-exclusive' : '') + '</div>';
+
+  // Overall progress
+  html += '<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:16px">'
+    + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><strong>' + overallPct + '% received</strong>'
+    + '<span style="color:var(--muted)">' + fmtPHP(d.receivedValue) + ' of ' + fmtPHP(d.orderedValue) + ' · ' + d.linesDone + ' of ' + d.lines.length + ' line' + (d.lines.length === 1 ? '' : 's') + ' complete · '
+    + d.deliveries.length + ' deliver' + (d.deliveries.length === 1 ? 'y' : 'ies') + '</span></div>'
+    + _pctBar(overallPct, overallPct >= 100 ? 'var(--ok)' : 'var(--accent)') + '</div>';
+
+  // Lines
+  html += '<div class="table-wrap" style="margin-bottom:18px"><table><thead><tr><th>Item</th><th style="text-align:right">Ordered</th><th style="text-align:right">Received</th><th style="text-align:right">Remaining</th><th>Progress</th><th>Status</th><th></th></tr></thead><tbody>'
+    + d.lines.map(function(L) {
+      var act = '';
+      if (L.kind === 'catalog' && canRecv && L.r.status !== 'received') act = '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Receive delivery" onclick="openReceiveModal(\'' + L.r.id + '\')">📥</button>';
+      if (L.kind === 'custom' && canRecv && L.status !== 'received') act = '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Mark delivered" onclick="markCustomItemReceived(\'' + L.poId + '\',' + L.idx + ')">📥</button>';
+      return '<tr>'
+        + '<td><strong>' + esc(L.name) + '</strong>' + (L.kind === 'custom' ? ' <span style="font-size:10px;color:var(--muted)">(non-catalog)</span>' : '') + '</td>'
+        + '<td style="text-align:right">' + fmtInt(L.ordered) + ' ' + esc(L.unit) + '</td>'
+        + '<td style="text-align:right">' + fmtInt(L.received) + '</td>'
+        + '<td style="text-align:right">' + (L.status === 'closed short' ? '<span style="color:var(--muted)">closed</span>' : fmtInt(L.remaining)) + '</td>'
+        + '<td style="min-width:110px">' + _pctBar(L.pct, L.pct >= 100 ? 'var(--ok)' : 'var(--accent)') + '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + L.pct + '%</div></td>'
+        + '<td><span class="badge ' + (statusBadge[L.status] || 'badge-warn') + '">' + esc(L.status) + '</span></td>'
+        + '<td>' + act + '</td></tr>';
+    }).join('')
+    + '</tbody></table></div>';
+
+  // Delivery history
+  html += '<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Deliveries</div>';
+  if (!d.deliveries.length) {
+    html += '<div style="font-size:13px;color:var(--muted);padding:10px 0">Nothing received yet.</div>';
+  } else {
+    html += '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Item</th><th style="text-align:right">Qty</th><th>DR / Ref</th><th>By</th><th>Notes</th></tr></thead><tbody>'
+      + d.deliveries.map(function(x) {
+        return '<tr><td style="white-space:nowrap">' + fmtD(x.date, true) + '</td>'
+          + '<td>' + esc(x.name) + '</td>'
+          + '<td style="text-align:right">+' + fmtInt(x.qty) + ' ' + esc(x.unit) + '</td>'
+          + '<td>' + (x.dr ? esc(x.dr) : '<span style="color:var(--muted)">—</span>') + '</td>'
+          + '<td>' + esc(x.by || '—') + '</td>'
+          + '<td style="max-width:220px;font-size:12px;color:var(--muted)">' + esc(x.notes) + (x.linked ? '' : ' <span title="Logged before PO-linked receiving; counted the old way">(unlinked)</span>') + '</td></tr>';
+      }).join('')
+      + '</tbody></table></div>';
+  }
+  body.innerHTML = html;
+
+  var prevBtn = document.getElementById('pod-preview-btn');
+  if (prevBtn) { prevBtn.style.display = po ? '' : 'none'; prevBtn.onclick = po ? function() { previewPo(po.id); } : null; }
+  var editBtn = document.getElementById('pod-edit-btn');
+  if (editBtn) {
+    var canEdit = po && currentRole === 'superuser';
+    editBtn.style.display = canEdit ? '' : 'none';
+    editBtn.onclick = canEdit ? function() { closeModal('po-detail-modal'); openEditPoModal(po.id); } : null;
+  }
+}
+
+// Keep the details view current while it's open (after a delivery is
+// received, a line is closed/reopened, etc.)
+function _refreshPoDetailIfOpen() {
+  var m = document.getElementById('po-detail-modal');
+  if (m && m.classList.contains('open')) renderPoDetail();
 }
 
 // Open PO lines for an item (for the manual-restock PO picker)
@@ -5864,7 +6022,8 @@ function renderPoHistory() {
       + '<td>' + esc(po.supplier || '—') + '</td>'
       + '<td>' + itemCount + ' item' + (itemCount === 1 ? '' : 's') + '</td>'
       + '<td>' + fmtPHP(po.total || 0) + '</td>'
-      + '<td><button class="btn btn-secondary btn-sm" onclick="previewPo(\'' + po.id + '\')">👁 Preview</button>'
+      + '<td><button class="btn btn-secondary btn-sm" onclick="openPoDetail(\'' + esc(String(po.poNumber)) + '\')">📋 Details</button>'
+      + ' <button class="btn btn-secondary btn-sm" onclick="previewPo(\'' + po.id + '\')">👁 Preview</button>'
       + ' <button class="btn btn-secondary btn-sm" onclick="redownloadPo(\'' + po.id + '\')">⬇ Download PDF</button>'
       + (currentRole === 'superuser' ? ' <button class="btn btn-icon btn-sm" title="Edit PO" onclick="openEditPoModal(\'' + po.id + '\')">✏️</button>' : '')
       + (currentRole === 'superuser' ? ' <button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="deletePoByNumber(\'' + esc(String(po.poNumber)) + '\')">🗑</button>' : '')
