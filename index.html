@@ -8449,11 +8449,11 @@ function openBatchConfirmModal(batchId) {
       <div style="flex:1">
         <div style="font-weight:600;font-size:13px">${esc(r.itemName)}</div>
         <div style="font-size:12px;color:var(--muted)">Requested: <strong>${fmtInt(r.qty)} ${esc(r.unit||'')}</strong>
-        ${item ? ` · Stock: <strong style="color:${stColor}">${fmtInt(item.qty)}</strong>${!enough ? ' <span style="color:#b45309">(insufficient)</span>' : ''}` : ''}</div>
+        ${item ? ` · Stock: <strong style="color:${stColor}">${fmtInt(item.qty)}</strong>${!enough ? ' <span style="color:#b45309;font-weight:600">(only ' + fmtInt(item.qty) + ' available, issue qty set to that)</span>' : ''}` : ''}</div>
       </div>
       <div style="font-size:12px;min-width:90px;text-align:right">
         <label style="font-size:11px;color:var(--muted)">Issue qty</label><br>
-        <input type="number" id="batch-crm-qty-${r.id}" value="${r.qty}" min="1" style="width:80px;padding:4px 6px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;text-align:right">
+        <input type="number" id="batch-crm-qty-${r.id}" value="${(item && !enough) ? Math.max(0, item.qty) : r.qty}" min="1" style="width:80px;padding:4px 6px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;text-align:right">
       </div>
     </div>`;
   }).join('');
@@ -8465,6 +8465,15 @@ function openBatchConfirmModal(batchId) {
   document.getElementById('crm-btn-confirm').onclick = function(){ confirmBatchIssuance(); };
   document.getElementById('crm-btn-reject').onclick  = function(){ rejectBatchRequest(); };
   openModal('confirm-request-modal');
+}
+
+// How much of a request can actually be issued: never more than is on hand.
+// Every approval path (single, batch, mass, Shelfie) caps with this, so usage
+// never records stock that didn't exist (stock used to bottom out at 0 while
+// the usage log still said the full requested amount).
+function _issuableQty(item, wanted) {
+  var onHand = Math.max(0, parseFloat(item && item.qty) || 0);
+  return Math.min(Math.max(0, wanted || 0), onHand);
 }
 
 var _batchConfirmInFlight = false;
@@ -8482,6 +8491,7 @@ async function confirmBatchIssuance() {
   var batchReqs = db_reqs.filter(function(r){ return r.batchId === _batchConfirmId && r.status === 'pending'; });
   if (!batchReqs.length) { closeModal('confirm-request-modal'); return; }
   var now = new Date().toISOString();
+  var batchShort = [], batchSkipped = [];
   for (var i = 0; i < batchReqs.length; i++) {
     var req = batchReqs[i];
     // Re-verify this specific request is still pending, straight from Supabase,
@@ -8510,12 +8520,18 @@ async function confirmBatchIssuance() {
           if (freshBI.data && !freshBI.error && freshBI.data.qty !== undefined) item.qty = freshBI.data.qty;
         } catch(e) {}
       }
+      // Never issue more than is on hand. Out of stock → this line stays
+      // pending (reported below) instead of logging usage that didn't happen.
+      var cappedB = _issuableQty(item, issueQty);
+      if (cappedB <= 0) { batchSkipped.push(req.itemName); continue; }
+      if (cappedB < issueQty) batchShort.push(req.itemName + ': ' + fmtInt(cappedB) + ' (only that much on hand)');
+      issueQty = cappedB;
       var newQty = Math.max(0, item.qty - issueQty);
       getLayers(item);
       var _bDetail = describeConsumption(item, issueQty);
       var _bCost   = consumeLayers(item, issueQty);
       var logEntry = { id: uid(), itemId: req.itemId, type: 'use', qty: issueQty, absQty: newQty, by: currentUser.username,
-        date: req.createdAt || now, ref: '', notes: 'Batch request — ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
+        date: req.createdAt || now, ref: '', notes: 'Batch request — ' + req.requestedBy + (issueQty < req.qty ? ' (short: ' + fmtInt(issueQty) + ' of ' + fmtInt(req.qty) + ' requested)' : '') + (req.notes ? ' — ' + req.notes : ''),
         costAmount: _bCost, costDetail: _bDetail };
       db.logs.push(logEntry);
       item.qty = newQty;
@@ -8536,7 +8552,12 @@ async function confirmBatchIssuance() {
   // sbUpdateItem, which is targeted. A bulk save() would upsert every item from
   // this session's local memory and could clobber concurrent changes elsewhere.
   if (!sb) save(); else updateSummary();
-  logAudit('Batch confirmed', 'Batch ' + _batchConfirmId + ' (' + batchReqs.length + ' items) by ' + currentUser.username);
+  logAudit('Batch confirmed', 'Batch ' + _batchConfirmId + ' (' + batchReqs.length + ' items) by ' + currentUser.username
+    + (batchShort.length ? ' — short: ' + batchShort.join('; ') : '') + (batchSkipped.length ? ' — left pending (out of stock): ' + batchSkipped.join(', ') : ''));
+  if (batchShort.length || batchSkipped.length) {
+    alert((batchShort.length ? 'Issued less than entered (not enough stock):\n• ' + batchShort.join('\n• ') + '\n\n' : '')
+      + (batchSkipped.length ? 'Left pending (out of stock):\n• ' + batchSkipped.join('\n• ') : ''));
+  }
   _batchConfirmId = null;
   document.getElementById('crm-issue-qty').style.display = '';
   document.getElementById('crm-btn-confirm').onclick = function(){ confirmIssuance(); };
@@ -8663,6 +8684,7 @@ function openConfirmModal(reqId) {
   var stBg    = st === 'danger' ? 'rgba(239,68,68,.08)' : st === 'warn' ? 'rgba(245,158,11,.08)' : 'rgba(22,163,74,.08)';
   var curQty  = item ? fmtInt(item.qty) + ' ' + (item.unit || '') : '—';
   var enough  = item && item.qty >= req.qty;
+  if (item && !enough && item.qty > 0) { stLabel = '⚠️ Not enough for this request'; stColor = '#b45309'; stBg = 'rgba(245,158,11,.08)'; }
 
   document.getElementById('crm-content').innerHTML = `
     <div style="background:var(--surface2);border-radius:8px;padding:14px 16px;margin-bottom:12px">
@@ -8677,7 +8699,8 @@ function openConfirmModal(reqId) {
     </div>
     <p style="font-size:13px;color:var(--text);line-height:1.6">Confirming will log a usage entry deducted from <strong>${esc(req.itemName)}</strong>, performed by <em>${esc(currentUser.username)}</em>.</p>`;
 
-  document.getElementById('crm-issue-qty').value = req.qty;
+  // Never default to issuing more than is on hand
+  document.getElementById('crm-issue-qty').value = (item && !enough) ? Math.max(0, item.qty) : req.qty;
   document.getElementById('crm-btn-confirm').style.display = '';
   document.getElementById('crm-btn-reject').style.display  = '';
   openModal('confirm-request-modal');
@@ -8714,6 +8737,7 @@ async function confirmIssuance() {
   var issueQty = Math.max(1, parseInt(document.getElementById('crm-issue-qty').value) || req.qty);
 
   var item = db.items.find(i => i.id === req.itemId);
+  var shortNote = '';
   if (item) {
     // Always fetch the latest qty first — prevents this issuance from being
     // computed against a stale local qty and overwriting concurrent changes.
@@ -8723,6 +8747,18 @@ async function confirmIssuance() {
         if (freshCI.data && !freshCI.error && freshCI.data.qty !== undefined) item.qty = freshCI.data.qty;
       } catch(e) {}
     }
+    // Can't issue what isn't there — otherwise usage records rolls that
+    // never existed while stock just bottoms out at 0.
+    var capped = _issuableQty(item, issueQty);
+    if (capped <= 0) {
+      alert(req.itemName + ' is out of stock (0 on hand), so nothing can be issued. Reject the request, or receive stock first.');
+      return;
+    }
+    if (capped < issueQty) {
+      if (!confirm('Only ' + fmtInt(item.qty) + ' ' + (item.unit || '') + ' of ' + req.itemName + ' is on hand.\n\nIssue ' + fmtInt(capped) + ' instead of ' + fmtInt(issueQty) + '?')) return;
+      issueQty = capped;
+    }
+    if (issueQty < req.qty) shortNote = ' (short: ' + fmtInt(issueQty) + ' of ' + fmtInt(req.qty) + ' requested)';
     var newQty = Math.max(0, item.qty - issueQty);
     // FIFO: draw from the oldest batch before qty changes
     getLayers(item);
@@ -8734,7 +8770,7 @@ async function confirmIssuance() {
     var logEntry = {
       id: uid(), itemId: req.itemId, type: 'use', qty: issueQty, absQty: newQty,
       by: currentUser.username, date: new Date().toISOString(), ref: req.reqNumber || '',
-      notes: 'Confirmed — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
+      notes: 'Confirmed — Req by ' + req.requestedBy + shortNote + (req.notes ? ' — ' + req.notes : ''),
       costAmount: _cost, costDetail: _detail
     };
     db.logs.push(logEntry);
@@ -8854,10 +8890,12 @@ async function massConfirmRequests() {
     'Confirm ' + ids.length + ' request' + (ids.length !== 1 ? 's' : '') + '?\n\nItems will be deducted from inventory and usage logged.',
     async function() {
       var now = new Date().toISOString();
+      var massShort = [], massSkipped = [];
       for (var i = 0; i < ids.length; i++) {
         var req = db_reqs.find(function(x) { return x.id === ids[i]; });
         if (!req || req.status !== 'pending') continue;
 
+        var issued = req.qty;
         var item = db.items.find(function(it) { return it.id === req.itemId; });
         if (item) {
           // Fresh qty first — this loop confirms multiple requests in sequence,
@@ -8868,20 +8906,24 @@ async function massConfirmRequests() {
               if (freshMC.data && !freshMC.error && freshMC.data.qty !== undefined) item.qty = freshMC.data.qty;
             } catch(e) {}
           }
-          var newQty = Math.max(0, item.qty - req.qty);
+          // Never issue more than is on hand; nothing on hand → leave pending
+          issued = _issuableQty(item, req.qty);
+          if (issued <= 0) { massSkipped.push(req.itemName); continue; }
+          if (issued < req.qty) massShort.push(req.itemName + ': ' + fmtInt(issued) + ' of ' + fmtInt(req.qty));
+          var newQty = Math.max(0, item.qty - issued);
           // FIFO: draw from the oldest batch before qty changes (previously
           // skipped here, which let costLayers drift out of sync with qty)
           getLayers(item);
-          var _mDetail = describeConsumption(item, req.qty);
-          var _mCost   = consumeLayers(item, req.qty);
+          var _mDetail = describeConsumption(item, issued);
+          var _mCost   = consumeLayers(item, issued);
           item.qty = newQty;
           item.updatedAt = now;
           syncItemCost(item);
           var logEntry = {
             id: uid(), itemId: req.itemId, type: 'use',
-            qty: req.qty, absQty: newQty,
+            qty: issued, absQty: newQty,
             by: currentUser.username, date: now, ref: req.reqNumber || '',
-            notes: 'Confirmed — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
+            notes: 'Confirmed — Req by ' + req.requestedBy + (issued < req.qty ? ' (short: ' + fmtInt(issued) + ' of ' + fmtInt(req.qty) + ' requested)' : '') + (req.notes ? ' — ' + req.notes : ''),
             costAmount: _mCost, costDetail: _mDetail
           };
           db.logs.push(logEntry);
@@ -8893,13 +8935,17 @@ async function massConfirmRequests() {
         req.status = 'confirmed';
         req.confirmedBy = currentUser.username;
         req.confirmedAt = now;
-        req.issuedQty = req.qty;
+        req.issuedQty = issued;
         req.seenByRequestor = false;
 
         if (sb && REQ_TABLE_OK !== false) {
-          try { await sb.from('supply_requests').update({ status: 'confirmed', confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, issuedQty: req.qty, seenByRequestor: false }).eq('id', req.id); } catch(e) {}
+          try { await sb.from('supply_requests').update({ status: 'confirmed', confirmedBy: req.confirmedBy, confirmedAt: req.confirmedAt, issuedQty: issued, seenByRequestor: false }).eq('id', req.id); } catch(e) {}
         }
-        logAudit('Issuance confirmed (mass)', req.itemName + ' ×' + req.qty + ' (req by ' + req.requestedBy + ')');
+        logAudit('Issuance confirmed (mass)', req.itemName + ' ×' + issued + (issued < req.qty ? ' of ' + req.qty + ' requested' : '') + ' (req by ' + req.requestedBy + ')');
+      }
+      if (massShort.length || massSkipped.length) {
+        alert((massShort.length ? 'Issued less than requested (not enough stock):\n• ' + massShort.join('\n• ') + '\n\n' : '')
+          + (massSkipped.length ? 'Left pending (out of stock):\n• ' + massSkipped.join('\n• ') : ''));
       }
       // No bulk save() — items were already persisted individually above via
       // sbUpdateItem. A bulk save() would upsert every item from this
@@ -9117,7 +9163,11 @@ alter publication supabase_realtime add table settings;</pre>
     var csBg    = cs === 'danger' ? 'rgba(239,68,68,.08)' : cs === 'warn' ? 'rgba(245,158,11,.08)' : 'rgba(22,163,74,.08)';
     var csLabel = cs === 'danger' ? '⛔ Out' : cs === 'warn' ? '⚠️ Low' : '✅ OK';
     var enough  = cardItem.qty >= reqQty;
-    return `<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px;background:${csBg};color:${csColor}">${csLabel}${!enough ? ' (insuf.)' : ''}</span>`;
+    // Not enough for THIS request outranks the general stock level — "OK"
+    // next to "(insuf.)" read as a contradiction.
+    if (!enough && cardItem.qty > 0) { csLabel = '⚠️ Short: ' + fmtInt(cardItem.qty) + ' of ' + fmtInt(reqQty); csColor = '#b45309'; csBg = 'rgba(245,158,11,.08)'; }
+    else if (!enough) { csLabel = '⛔ Out'; csColor = '#dc2626'; csBg = 'rgba(239,68,68,.08)'; }
+    return `<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px;background:${csBg};color:${csColor}">${csLabel}</span>`;
   }
 
   out += '<div class="req-list">';
@@ -9144,6 +9194,7 @@ alter publication supabase_realtime add table settings;</pre>
         var csColor = cs === 'danger' ? '#dc2626' : cs === 'warn' ? '#b45309' : '#16a34a';
         var csBg    = cs === 'danger' ? 'rgba(239,68,68,.08)' : cs === 'warn' ? 'rgba(245,158,11,.08)' : 'rgba(22,163,74,.08)';
         var enough  = cardItem.qty >= req.qty;
+        if (!enough && cardItem.qty > 0) { csLabel = '⚠️ Not enough for this request'; csColor = '#b45309'; csBg = 'rgba(245,158,11,.08)'; }
         stockRow = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
           <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;background:${csBg};color:${csColor}">${csLabel}</span>
           <span style="font-size:11px;color:var(--muted)">Stock: <strong style="color:${csColor}">${fmtInt(cardItem.qty)} ${esc(cardItem.unit||'')}</strong>${!enough ? ' <span style="color:#b45309">(insufficient)</span>' : ''}</span>
@@ -13984,6 +14035,9 @@ async function aiApproveSupplyRequest(input) {
         if (freshAi.data && !freshAi.error && freshAi.data.qty !== undefined) item.qty = freshAi.data.qty;
       } catch (e) {}
     }
+    // Never issue more than is on hand
+    issueQty = _issuableQty(item, issueQty);
+    if (issueQty <= 0) return { ok: false, message: req.itemName + ' is out of stock (0 on hand), so nothing was issued. The request is still pending.' };
     var newQty = Math.max(0, item.qty - issueQty);
     getLayers(item);
     var _detail = describeConsumption(item, issueQty);
@@ -13994,7 +14048,7 @@ async function aiApproveSupplyRequest(input) {
     var logEntry = {
       id: uid(), itemId: req.itemId, type: 'use', qty: issueQty, absQty: newQty,
       by: currentUser.username, date: new Date().toISOString(), ref: req.reqNumber || '',
-      notes: 'Confirmed via Shelfie — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
+      notes: 'Confirmed via Shelfie — Req by ' + req.requestedBy + (issueQty < req.qty ? ' (short: ' + fmtInt(issueQty) + ' of ' + fmtInt(req.qty) + ' requested)' : '') + (req.notes ? ' — ' + req.notes : ''),
       costAmount: _cost, costDetail: _detail
     };
     db.logs.push(logEntry);
@@ -14075,6 +14129,9 @@ async function aiMassApproveRequests(input) {
           if (freshMA.data && !freshMA.error && freshMA.data.qty !== undefined) item.qty = freshMA.data.qty;
         } catch (e) {}
       }
+      // Never issue more than is on hand; out of stock → stays pending
+      issueQty = _issuableQty(item, issueQty);
+      if (issueQty <= 0) { skipped.push(req.itemName + ' (out of stock, left pending)'); continue; }
       var newQty = Math.max(0, item.qty - issueQty);
       getLayers(item);
       var _mDetail = describeConsumption(item, issueQty);
@@ -14085,7 +14142,7 @@ async function aiMassApproveRequests(input) {
       var logEntry = {
         id: uid(), itemId: req.itemId, type: 'use', qty: issueQty, absQty: newQty,
         by: currentUser.username, date: new Date().toISOString(), ref: req.reqNumber || '',
-        notes: 'Confirmed via Shelfie (mass) — Req by ' + req.requestedBy + (req.notes ? ' — ' + req.notes : ''),
+        notes: 'Confirmed via Shelfie (mass) — Req by ' + req.requestedBy + (issueQty < req.qty ? ' (short: ' + fmtInt(issueQty) + ' of ' + fmtInt(req.qty) + ' requested)' : '') + (req.notes ? ' — ' + req.notes : ''),
         costAmount: _mCost, costDetail: _mDetail
       };
       db.logs.push(logEntry);
@@ -14102,7 +14159,7 @@ async function aiMassApproveRequests(input) {
       catch (e) {}
     }
     logAudit('Issuance confirmed (Shelfie mass)', req.itemName + ' x' + issueQty + ' (req by ' + req.requestedBy + ')');
-    approved.push(req.itemName + ' x' + fmtInt(issueQty));
+    approved.push(req.itemName + ' x' + fmtInt(issueQty) + (issueQty < req.qty ? ' (short, ' + fmtInt(req.qty) + ' requested)' : ''));
   }
   saveReqsLocal();
   if (!sb) save(); else updateSummary();
