@@ -7353,14 +7353,41 @@ function renderReport() {
         totalQty: 0,
         totalCost: 0,
         entries: 0,
+        rates: {}, // unit cost actually booked → qty at that cost
       };
     }
     map[key].totalQty += l.qty;
     // Use each log's own historically-accurate FIFO cost (logCostOf prefers the
     // captured costAmount) instead of today's item.cost — otherwise a cost
     // change re-prices every past transaction, silently distorting the report.
-    map[key].totalCost += logCostOf(l, db.items.find(i => i.id === l.itemId));
+    const lc = logCostOf(l, db.items.find(i => i.id === l.itemId));
+    map[key].totalCost += lc;
+    if (l.qty) {
+      // Prefer the entry's own batch split ("27 @ ₱59.80 + 117 @ ₱57.50") so a
+      // usage that spans two batches isn't shown as a blended price that never
+      // existed (e.g. ₱57.93). Falls back to cost ÷ qty when there's no split.
+      const parts = [];
+      String(l.costDetail || '').replace(/([\d,.]+)\s*@\s*₱\s*([\d,.]+)/g, (m, q, c) => {
+        parts.push([parseFloat(q.replace(/,/g, '')), parseFloat(c.replace(/,/g, ''))]);
+      });
+      const partsQty = parts.reduce((s, p) => s + p[0], 0);
+      if (parts.length && Math.abs(partsQty - l.qty) < 0.001) {
+        parts.forEach(p => { const k = p[1].toFixed(2); map[key].rates[k] = (map[key].rates[k] || 0) + p[0]; });
+      } else {
+        const rate = (Math.round(lc / l.qty * 100) / 100).toFixed(2);
+        map[key].rates[rate] = (map[key].rates[rate] || 0) + l.qty;
+      }
+    }
     map[key].entries++;
+  });
+
+  // Cost / Unit shows what was actually booked in this period (Total ÷ Qty),
+  // not today's cost — the old column showed the current batch price, so
+  // Qty × Cost/Unit didn't add up whenever earlier batches cost more or less.
+  Object.values(map).forEach(r => {
+    r.currentCost = r.costPerUnit;
+    if (r.totalQty) r.costPerUnit = r.totalCost / r.totalQty;
+    r.rateKeys = Object.keys(r.rates);
   });
 
   let rows = Object.values(map);
@@ -7408,7 +7435,7 @@ function renderReport() {
       <td>${r.category ? '<span class="badge badge-info">'+esc(r.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
       <td>${typeBadge}</td>
       <td>${esc(r.unit||'—')}</td>
-      <td>${r.costPerUnit ? fmtPHP(r.costPerUnit) : '<span style="color:var(--warn)">not set</span>'}</td>
+      <td title="${r.rateKeys.length > 1 ? esc('Booked at: ' + r.rateKeys.map(k => fmtInt(r.rates[k]) + ' @ ₱' + k).join(', ') + ' · Current cost ₱' + (r.currentCost || 0)) : ''}">${r.costPerUnit ? fmtPHP(Math.round(r.costPerUnit * 100) / 100) + (r.rateKeys.length > 1 ? ' <span style="font-size:10px;color:var(--muted)">avg</span>' : '') : '<span style="color:var(--warn)">not set</span>'}${r.rateKeys.length > 1 ? '<div style="font-size:10px;color:var(--muted)">' + esc(r.rateKeys.map(k => fmtInt(r.rates[k]) + ' @ ₱' + k).join(' + ')) + '</div>' : ''}</td>
       <td style="font-weight:600">${fmt(r.totalQty)}</td>
       <td style="font-weight:700;color:${costColor}">${r.costPerUnit ? fmtPHP(r.totalCost) : '—'}</td>
       <td>${r.entries}</td>
