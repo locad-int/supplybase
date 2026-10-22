@@ -1900,7 +1900,10 @@
     <div class="form-grid">
       <div class="form-group full">
         <label>Supplier *</label>
-        <input type="text" id="pog-supplier" placeholder="Supplier name" list="pog-supplier-list" onblur="applySupplierDirectoryFor('pog')" autocomplete="off">
+        <div style="display:flex;gap:6px">
+          <input type="text" id="pog-supplier" placeholder="Supplier name" list="pog-supplier-list" onblur="applySupplierDirectoryFor('pog')" autocomplete="off" style="flex:1">
+          <button type="button" class="btn btn-secondary" onclick="openSupplierDirectory('pog')" title="Browse all suppliers" style="white-space:nowrap">📖 Browse</button>
+        </div>
         <datalist id="pog-supplier-list"></datalist>
       </div>
       <div class="form-group">
@@ -2036,7 +2039,10 @@
     <div class="form-grid">
       <div class="form-group full">
         <label>Supplier *</label>
-        <input type="text" id="poe-supplier" placeholder="Supplier name" list="poe-supplier-list" onblur="applySupplierDirectoryFor('poe')" autocomplete="off">
+        <div style="display:flex;gap:6px">
+          <input type="text" id="poe-supplier" placeholder="Supplier name" list="poe-supplier-list" onblur="applySupplierDirectoryFor('poe')" autocomplete="off" style="flex:1">
+          <button type="button" class="btn btn-secondary" onclick="openSupplierDirectory('poe')" title="Browse all suppliers" style="white-space:nowrap">📖 Browse</button>
+        </div>
         <datalist id="poe-supplier-list"></datalist>
       </div>
       <div class="form-group">
@@ -2966,16 +2972,36 @@ function setSupplierVatPref(name, isEx) {
 // supplier details they were issued with.
 var _sdList = [];        // current filtered/sorted rows, so buttons pass an index (names can contain quotes)
 var _sdEditKey = null;   // directory key being edited, or null when adding
+var _sdPickPrefix = null; // set when opened from a PO form's 📖 Browse — rows get a "Use" button
 
 function _sdCanEdit() { return currentRole === 'superuser'; }
 
-function openSupplierDirectory() {
+// pickPrefix ('pog' / 'poe'): opened from Create Reorder / Edit PO to choose
+// a supplier, which fills the form's name, address, TIN and VAT setting.
+function openSupplierDirectory(pickPrefix) {
   if (currentRole !== 'superuser' && currentRole !== 'user') return;
+  _sdPickPrefix = (typeof pickPrefix === 'string') ? pickPrefix : null;
   document.getElementById('sd-search').value = '';
-  document.getElementById('sd-add-btn').style.display = _sdCanEdit() ? '' : 'none';
+  document.getElementById('sd-add-btn').style.display = (_sdCanEdit() && !_sdPickPrefix) ? '' : 'none';
   sdCloseForm();
   renderSupplierDirectory();
   openModal('supplier-dir-modal');
+}
+
+function sdPick(idx) {
+  var s = _sdList[idx];
+  var p = _sdPickPrefix;
+  if (!s || !p) return;
+  document.getElementById(p + '-supplier').value = s.name || '';
+  document.getElementById(p + '-supplier-address').value = s.address || '';
+  document.getElementById(p + '-supplier-tin').value = s.tin || '';
+  var vatEl = document.getElementById(p + '-vat-basis');
+  if (vatEl && !vatEl.disabled && typeof s.vatExclusive === 'boolean') {
+    vatEl.value = s.vatExclusive ? 'ex' : 'inc';
+    vatEl.dispatchEvent(new Event('change'));
+  }
+  _sdPickPrefix = null;
+  closeModal('supplier-dir-modal');
 }
 
 function _sdPoCount(key) {
@@ -2999,10 +3025,12 @@ function renderSupplierDirectory() {
       + '<td style="white-space:nowrap">' + (s.tin ? esc(s.tin) : '<span style="color:var(--muted)">—</span>') + '</td>'
       + '<td>' + vat + '</td>'
       + '<td style="text-align:right">' + n + '</td>'
-      + '<td style="white-space:nowrap">' + (edit
-          ? '<button class="btn btn-icon btn-sm" title="Edit" onclick="sdOpenForm(' + i + ')">✏️</button>'
-            + '<button class="btn btn-icon btn-sm btn-danger" title="Delete" onclick="sdDelete(' + i + ')">🗑</button>'
-          : '') + '</td></tr>';
+      + '<td style="white-space:nowrap">' + (_sdPickPrefix
+          ? '<button class="btn btn-primary btn-sm" onclick="sdPick(' + i + ')">Use</button>'
+          : (edit
+            ? '<button class="btn btn-icon btn-sm" title="Edit" onclick="sdOpenForm(' + i + ')">✏️</button>'
+              + '<button class="btn btn-icon btn-sm btn-danger" title="Delete" onclick="sdDelete(' + i + ')">🗑</button>'
+            : '')) + '</td></tr>';
   }).join('') : '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:16px">No suppliers' + (q ? ' match "' + esc(q) + '"' : ' saved yet') + '.</td></tr>';
   document.getElementById('sd-count').textContent = _sdList.length + ' of ' + all.length + ' supplier' + (all.length === 1 ? '' : 's');
 }
