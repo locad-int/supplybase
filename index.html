@@ -706,9 +706,12 @@
 
   <!-- STOCKTAKE LOCK BANNER -->
   <div id="stocktake-banner">
-    🔒 Stocktake in Progress — All transactions are locked
+    🔒 Stocktake in Progress — issuing, receiving and usage are paused; only count entries are allowed
     <button id="stocktake-unlock-btn" onclick="toggleStocktakeLock()" style="display:none">Unlock</button>
   </div>
+
+  <!-- STOCKTAKE / WEEKLY CUTOFF REMINDERS (users + superusers) -->
+  <div id="ops-reminder-banner" style="display:none;background:#fef3c7;color:#92400e;border-bottom:1px solid #fcd34d;padding:4px 20px;font-size:13px"></div>
 
   <!-- TEST MODE BANNER -->
   <div id="testmode-banner">
@@ -740,7 +743,7 @@
       <div class="label">Reorders Pending</div>
       <div class="value" id="s-reorder">0</div>
     </div>
-    <div class="card" id="card-expenses" onclick="switchTab('report')" style="cursor:pointer" title="Go to Cost Report">
+    <div class="card" id="card-expenses" onclick="switchTab('report');setRptPreset('this')" style="cursor:pointer" title="Go to Cost Report">
       <div class="label">📅 This Week's Expenses</div>
       <div class="value" id="s-value" style="font-size:1.2rem">₱0</div>
     </div>
@@ -888,9 +891,11 @@
   <div class="tab-panel" id="tab-report">
     <div class="filters" style="margin-bottom:16px;flex-wrap:wrap">
       <label style="color:var(--muted);font-size:12px;font-weight:500;align-self:center;white-space:nowrap">From</label>
-      <input type="date" id="rpt-from" style="width:150px;flex:0 0 auto" onchange="renderReport();renderVariance()">
+      <input type="date" id="rpt-from" style="width:150px;flex:0 0 auto" onchange="_rptRange=null;renderReport();renderVariance()">
       <label style="color:var(--muted);font-size:12px;font-weight:500;align-self:center;white-space:nowrap">To</label>
-      <input type="date" id="rpt-to" style="width:150px;flex:0 0 auto" onchange="renderReport();renderVariance()">
+      <input type="date" id="rpt-to" style="width:150px;flex:0 0 auto" onchange="_rptRange=null;renderReport();renderVariance()">
+      <button class="btn btn-secondary btn-sm" onclick="setRptPreset('this')" title="Count to count: from the last stocktake cutoff">This Week</button>
+      <button class="btn btn-secondary btn-sm" onclick="setRptPreset('last')">Last Week</button>
       <select id="rpt-type" style="flex:0 0 auto;width:auto" onchange="renderReport()">
         <option value="all">All Transactions</option>
         <option value="use,damage">Consumption (Use + Damage)</option>
@@ -907,10 +912,20 @@
       <button class="btn btn-secondary" onclick="exportCostReportCSV()" style="font-size:12px">⬇ Export Cost CSV</button>
     </div>
 
+    <div id="rpt-range-label" style="display:none;font-size:12px;color:var(--muted);margin:-6px 0 12px"></div>
     <div class="summary" style="margin-bottom:18px" id="rpt-summary">
+      <div class="card" title="Usage + damage + shortages − excess (count variance) for this period">
+        <div class="label">Total Cost (incl. Variance)</div>
+        <div class="value" id="rpt-total-with-var" style="color:var(--danger)">₱0.00</div>
+        <div id="rpt-total-breakdown" style="font-size:11px;color:var(--muted);margin-top:2px"></div>
+      </div>
       <div class="card">
         <div class="label">Total Cost Consumed</div>
         <div class="value" id="rpt-total-cost" style="color:var(--danger)">₱0.00</div>
+      </div>
+      <div class="card" title="Count shortages minus excess found (booked adjustments)">
+        <div class="label">Net Variance</div>
+        <div class="value" id="rpt-net-variance">₱0.00</div>
       </div>
       <div class="card">
         <div class="label">Total Cost Restocked</div>
@@ -3254,7 +3269,16 @@ async function loadGlobalSettings() {
     }
     if (settingsMap['stocktakeLock'] !== undefined) {
       stocktakeLock = settingsMap['stocktakeLock'] === 'true';
+      // When the lock went on — the operational week's cutoff (see OPERATIONAL WEEK)
+      stocktakeLockAt = (stocktakeLock && settingsMap[STOCKTAKE_LOCK_AT_KEY]) ? settingsMap[STOCKTAKE_LOCK_AT_KEY] : null;
+      stocktakeLockBy = (stocktakeLock && settingsMap[STOCKTAKE_LOCK_BY_KEY]) ? settingsMap[STOCKTAKE_LOCK_BY_KEY] : '';
       applyStocktakeLock();
+    }
+    if (settingsMap[OPWEEK_CUTOFFS_KEY] !== undefined) {
+      try {
+        var cutParsed = JSON.parse(settingsMap[OPWEEK_CUTOFFS_KEY]);
+        if (Array.isArray(cutParsed)) opWeekCutoffs = cutParsed;
+      } catch(e) {}
     }
     if (settingsMap['testModeItemIds'] !== undefined) {
       try {
@@ -4067,18 +4091,19 @@ function updateSummary() {
   document.getElementById('s-low').textContent = fmtInt(low);
   document.getElementById('s-ok').textContent = fmtInt(ok);
   document.getElementById('s-reorder').textContent = fmtInt(reorders);
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=Sun
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - dayOfWeek); // Sunday
-  weekStart.setHours(0, 0, 0, 0);
-  const weekExpenses = db.logs
-    .filter(l => (l.type === 'use' || l.type === 'damage') && new Date(l.date) >= weekStart)
-    .reduce((sum, l) => {
-      const item = db.items.find(i => i.id === l.itemId);
-      return sum + logCostOf(l, item);
-    }, 0);
-  document.getElementById('s-value').textContent = fmtPHP(weekExpenses);
+  // This operational week's cost (count to count): usage + damage + net
+  // count variance. Previously Sunday-to-now, usage and damage only.
+  const wk = opWeekRange(new Date());
+  const wc = weeklyCostFor(wk.start, wk.end);
+  const r2 = n => Math.round(n * 100) / 100;
+  document.getElementById('s-value').textContent = fmtPHP(r2(wc.total));
+  const expCard = document.getElementById('card-expenses');
+  if (expCard) {
+    const lbl = expCard.querySelector('.label');
+    if (lbl) lbl.textContent = "📅 This Week's Cost";
+    expCard.title = 'Week ' + opWeekLabel(wk) + '\nUsage ' + fmtPHP(r2(wc.usage)) + ' + Damage ' + fmtPHP(r2(wc.damage))
+      + ' + Shortage ' + fmtPHP(r2(wc.shortage)) + ' − Excess ' + fmtPHP(r2(wc.excess)) + '\nClick for the Cost Report';
+  }
 
 }
 
@@ -4290,6 +4315,8 @@ async function saveItem() {
         if (freshEI.data && !freshEI.error && freshEI.data.qty !== undefined) old.qty = freshEI.data.qty;
       } catch(e) {}
     }
+    // Changing the quantity is a count entry (allowed during a stocktake only for managers)
+    if (old.qty !== qty && checkStocktakeLock('count')) return;
     const prevQty = old.qty, prevCost = old.cost;
     db.items[idx] = { ...old, ...data };
     const it = db.items[idx];
@@ -4308,7 +4335,7 @@ async function saveItem() {
       else            { cAmt = addFoundStock(it, d); }
       newLogEntry = { id: uid(), itemId: editItemId, type: 'adjust', qty: d, absQty: qty, variance: d,
         varianceReason: 'Item edited', by: (currentUser && currentUser.username) || 'Edit',
-        date: new Date().toISOString(), notes: 'Item edited', ref: '', costAmount: cAmt, costDetail: cDet };
+        date: _countEntryDate(new Date().toISOString()), notes: 'Item edited' + _countEntryNote(), ref: '', costAmount: cAmt, costDetail: cDet };
       db.logs.push(newLogEntry);
       if (qty > prevQty) updateMaxRef(it, qty);
     }
@@ -5042,6 +5069,46 @@ function openLogForItem(itemId) {
   switchTab('usage');
 }
 
+// ─── DATA-ENTRY SAFETY NET ─────────────────────────────────────────────────
+// Asks before saving a quantity far above anything logged for this item
+// before (a mistyped extra zero is the usual cause). Returns true to proceed.
+var UNUSUAL_QTY_FACTOR = 3;
+function _confirmUnusualQty(item, type, qty) {
+  var kind = type === 'restock' ? 'restock' : 'use';
+  var prev = db.logs.filter(function(l) {
+    if (l.itemId !== item.id) return false;
+    if (kind === 'restock') return l.type === 'restock' && l.by !== 'Initial' && !/opening stock|Item created/i.test(l.notes || '');
+    return l.type === 'use' || l.type === 'damage';
+  });
+  if (prev.length < 3) return true; // not enough history to judge
+  var biggest = prev.reduce(function(m, l) { return Math.max(m, l.qty || 0); }, 0);
+  if (!biggest || qty <= biggest * UNUSUAL_QTY_FACTOR) return true;
+  return confirm('Please double-check the quantity.\n\n' + fmtInt(qty) + ' ' + (item.unit || '') + ' is '
+    + (Math.round(qty / biggest * 10) / 10) + '× the largest ' + (kind === 'restock' ? 'delivery' : 'usage') + ' ever logged for ' + item.name
+    + ' (' + fmtInt(biggest) + ').\n\nSave ' + fmtInt(qty) + ' anyway?');
+}
+
+// A delivery must carry a cost. Blank → offer the item's current cost
+// (recorded explicitly on the entry) or let the person enter the real one.
+// Returns true to proceed; fills the input when the current cost is accepted.
+function _ensureDeliveryCost(costEl, item, fallbackCost) {
+  var v = parseFloat(costEl && costEl.value);
+  if (!isNaN(v) && v > 0) return true;
+  var c = fallbackCost || currentUnitCost(item) || item.cost || 0;
+  if (!c) {
+    alert('Enter the delivery cost per unit for ' + item.name + ' — there is no current cost on record to use.');
+    if (costEl) costEl.focus();
+    return false;
+  }
+  if (!confirm('No delivery cost entered for ' + item.name + '.\n\nRecord this delivery at ₱' + (Math.round(c * 100) / 100) + ' per ' + (item.unit || 'unit')
+    + ' (the cost on record)?\n\nChoose Cancel to enter the actual invoice cost instead.')) {
+    if (costEl) costEl.focus();
+    return false;
+  }
+  if (costEl) costEl.value = Math.round(c * 100) / 100;
+  return true;
+}
+
 // Guards against the same entry being saved several times — e.g. Save
 // clicked repeatedly while the first save is still waiting on Supabase
 // (how four identical "300 rolls received" restocks landed seconds apart).
@@ -5054,9 +5121,10 @@ async function saveLog() {
 }
 
 async function _saveLogImpl() {
-  if (checkStocktakeLock()) return;
   const itemId = document.getElementById('lf-item').value;
   const type = document.getElementById('lf-type').value;
+  // During a stocktake only count entries (Manual Adjust) are allowed
+  if (checkStocktakeLock(type === 'adjust' ? 'count' : null)) return;
   const qty = parseFloat(document.getElementById('lf-qty').value);
   if (!itemId) { alert('Select an item.'); return; }
   if (!type) { alert('Select a transaction type.'); return; }
@@ -5097,6 +5165,14 @@ async function _saveLogImpl() {
       }
     }
   }
+  // Safety net: an unusually large quantity (e.g. 102,000 typed for 10,200)
+  if ((type === 'restock' || type === 'use' || type === 'damage') && !_confirmUnusualQty(item, type, qty)) return;
+  // Safety net: never save a delivery without a cost — otherwise its FIFO
+  // batch silently reuses whatever cost happens to be current.
+  if (type === 'restock') {
+    const dcEl = document.getElementById('lf-delivery-cost');
+    if (!_ensureDeliveryCost(dcEl, item)) return;
+  }
   // Always fetch the latest qty from Supabase to prevent stale-read issues
   // when multiple users log transactions concurrently
   if (sb) {
@@ -5135,7 +5211,8 @@ async function _saveLogImpl() {
   if (type === 'restock' || (type === 'adjust' && newQty > originalQty)) {
     updateMaxRef(item, newQty);
   }
-  const logDate = new Date().toISOString();
+  // A count entered during the stocktake lock closes the week being counted
+  const logDate = type === 'adjust' ? _countEntryDate(new Date().toISOString()) : new Date().toISOString();
   const logEntry = {
     id: uid(), itemId, type,
     qty: type === 'adjust' ? newQty - originalQty : qty,
@@ -5143,7 +5220,7 @@ async function _saveLogImpl() {
     by: by,
     date: logDate,
     ref: refVal,
-    notes: document.getElementById('lf-notes').value.trim(),
+    notes: document.getElementById('lf-notes').value.trim() + (type === 'adjust' ? _countEntryNote() : ''),
   };
   if (type === 'adjust') {
     logEntry.variance = newQty - originalQty;
@@ -5781,6 +5858,13 @@ async function confirmReceive() {
   if (!item) { closeModal('receive-modal'); return; }
   var qty = parseFloat(document.getElementById('recv-qty').value);
   if (!qty || qty <= 0) { alert('Enter a valid quantity received.'); return; }
+  // Safety net: more than is still due on this PO line, or far bigger than
+  // any delivery before, is usually a typo (e.g. 102,000 for 10,200)
+  var dueNow = Math.max(0, (r.qty || 0) - _reorderReceivedSoFar(r));
+  if (qty > dueNow && !confirm(fmtInt(qty) + ' ' + (item.unit || '') + ' is more than the ' + fmtInt(dueNow) + ' still due on '
+      + (r.poNumber || 'this order') + ' (ordered ' + fmtInt(r.qty) + ').\n\nReceive ' + fmtInt(qty) + ' anyway?')) return;
+  if (qty <= dueNow && !_confirmUnusualQty(item, 'restock', qty)) return;
+  if (!_ensureDeliveryCost(document.getElementById('recv-cost'), item, r.cost)) return;
   var cost = parseFloat(document.getElementById('recv-cost').value);
   var extraNotes = document.getElementById('recv-notes').value.trim();
 
@@ -7093,7 +7177,7 @@ function calcAdjVariance() {
 }
 
 async function applyAdjust() {
-  if (checkStocktakeLock()) return;
+  if (checkStocktakeLock('count')) return;
   const item = db.items.find(i => i.id === adjustItemId);
   if (!item) return;
   // Always fetch the latest qty from Supabase first — otherwise this adjustment
@@ -7160,8 +7244,10 @@ async function applyAdjust() {
     sysQty: sysQty,
     varianceReason: reasonSel,
     by: document.getElementById('adj-by').value.trim(),
-    date: (adjustTimestamp || new Date()).toISOString(),
-    notes: notes,
+    // An explicit count time wins; otherwise a count during the stocktake
+    // lock is dated just before the cutoff so it closes the counted week
+    date: adjustTimestamp ? adjustTimestamp.toISOString() : _countEntryDate(new Date().toISOString()),
+    notes: notes + (adjustTimestamp ? '' : _countEntryNote()),
     ref: '',
     costAmount: _aCost,
     costDetail: _aDetail
@@ -7245,6 +7331,7 @@ async function saveInlineQty(itemId) {
     } catch(e) {}
   }
   if (newQty === item.qty) { renderInventory(); return; }
+  if (checkStocktakeLock('count')) { renderInventory(); return; }
   var oldQty = item.qty;
   var diff = newQty - oldQty;
   // FIFO: move batches so costing stays consistent (this previously skipped
@@ -7258,8 +7345,8 @@ async function saveInlineQty(itemId) {
     qty: newQty, absQty: newQty, variance: diff, sysQty: oldQty,
     varianceReason: 'Manual qty entry',
     by: (currentUser && currentUser.username) || 'manual',
-    date: new Date().toISOString(),
-    notes: 'Manual qty: ' + oldQty + ' → ' + newQty, ref: '',
+    date: _countEntryDate(new Date().toISOString()),
+    notes: 'Manual qty: ' + oldQty + ' → ' + newQty + _countEntryNote(), ref: '',
     costAmount: iqCost, costDetail: iqDetail
   };
   db.logs.push(logEntry);
@@ -7549,7 +7636,7 @@ function openRptDetail(itemId, typeGroup) {
   _rptDetailMeta = { itemName: item ? item.name : 'Deleted Item', unit: unit, typeGroup: typeGroup, from: from, to: to };
   var rateKeys = Object.keys(rates).sort(function(a, b) { return parseFloat(b) - parseFloat(a); });
   var isRestock = typeGroup === 'restock';
-  var period = (from || to) ? (from || '…') + ' to ' + (to || '…') : 'All dates';
+  var period = _rptPeriodLabel();
   var fmtDT = function(iso) { return new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }); };
 
   var html = '<h2 style="margin-bottom:4px">' + esc(_rptDetailMeta.itemName) + '</h2>'
@@ -7618,6 +7705,7 @@ function exportRptDetailCSV() {
 }
 
 function initReportDates() {
+  _rptRange = null;
   const to = new Date();
   const from = new Date();
   from.setDate(1); // first of current month
@@ -7654,8 +7742,12 @@ function renderReport() {
   const types = typeVal === 'all' ? ['use', 'damage', 'restock', 'adjust'] : typeVal.split(',');
   const cat = document.getElementById('rpt-cat').value;
 
-  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
-  const to = toVal ? new Date(toVal + 'T23:59:59') : null;
+  const bounds = _rptBounds();
+  const rangeLbl = document.getElementById('rpt-range-label');
+  if (rangeLbl) {
+    rangeLbl.style.display = _rptRange ? '' : 'none';
+    rangeLbl.textContent = _rptRange ? '📅 ' + _rptPeriodLabel() + ' (count to count)' : '';
+  }
 
   // Update category filter
   const cats = [...new Set(catalogItems().map(i => i.category).filter(Boolean))].sort();
@@ -7667,9 +7759,7 @@ function renderReport() {
   const logs = db.logs.filter(l => {
     if (!types.includes(l.type)) return false;
     if (!isLogVisible(l)) return false;
-    const d = new Date(l.date);
-    if (from && d < from) return false;
-    if (to && d > to) return false;
+    if (!_rptInBounds(l.date, bounds)) return false;
     const item = db.items.find(i => i.id === l.itemId);
     if (cat && item?.category !== cat) return false;
     return true;
@@ -7738,6 +7828,20 @@ function renderReport() {
   document.getElementById('rpt-total-qty').textContent = fmt(grandQty);
   document.getElementById('rpt-unique').textContent = [...new Set(rows.map(r => r.itemId))].length;
   document.getElementById('rpt-entries').textContent = logs.length;
+  // Finance view: usage + damage + count variance for the same period and
+  // category (independent of the Type filter, so it always shows full cost).
+  const wk = weeklyCostFor(bounds.from, bounds.to, { toInclusive: !bounds.exclusive, cat: cat });
+  const nv = document.getElementById('rpt-net-variance');
+  if (nv) {
+    nv.textContent = (wk.variance < 0 ? '−' : '') + fmtPHP(Math.abs(wk.variance));
+    nv.style.color = wk.variance > 0 ? 'var(--danger)' : wk.variance < 0 ? 'var(--success, #16a34a)' : '';
+    nv.parentElement.title = 'Shortages ' + fmtPHP(wk.shortage) + ' − excess found ' + fmtPHP(wk.excess);
+  }
+  const tv = document.getElementById('rpt-total-with-var');
+  if (tv) tv.textContent = fmtPHP(wk.total);
+  const tb = document.getElementById('rpt-total-breakdown');
+  if (tb) tb.textContent = 'Usage ' + fmtPHP(wk.usage) + (wk.damage ? ' + damage ' + fmtPHP(wk.damage) : '')
+    + (wk.variance >= 0 ? ' + variance ' : ' − variance ') + fmtPHP(Math.abs(wk.variance));
   // Before the early "no log data" return below, so non-catalog spend still
   // shows for a period with no inventory movements.
   renderNonCatalogExpenses();
@@ -7799,17 +7903,12 @@ function renderReport() {
 // dated by delivery (once marked delivered) or else by the PO date, and
 // filtered by the report's own From / To range.
 function _nonCatalogLines() {
-  var fromVal = document.getElementById('rpt-from').value;
-  var toVal = document.getElementById('rpt-to').value;
-  var from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
-  var to = toVal ? new Date(toVal + 'T23:59:59') : null;
+  var bounds = _rptBounds();
   var lines = [];
   (db.purchaseOrders || []).forEach(function(po) {
     (po.customItems || []).forEach(function(c) {
       var date = c.receivedAt || po.date || po.createdAt;
-      var d = new Date(date);
-      if (from && d < from) return;
-      if (to && d > to) return;
+      if (!_rptInBounds(date, bounds)) return;
       lines.push({
         date: date, poNumber: po.poNumber || '', supplier: po.supplier || '',
         name: c.description || '', qty: c.qty || 0, unit: c.unit || '', cost: c.cost || 0,
@@ -7891,17 +7990,14 @@ function exportDetailedCSV() {
   const types   = typeVal === 'all' ? ['use', 'damage', 'restock', 'adjust'] : typeVal.split(',');
   const cat     = document.getElementById('rpt-cat').value;
 
-  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
-  const to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+  const bounds = _rptBounds();
 
   const TYPE_LABELS = { use: 'Consumption', damage: 'Damage / Loss', restock: 'Restock', adjust: 'Adjustment' };
 
   const filtered = db.logs.filter(l => {
     if (!types.includes(l.type)) return false;
     if (!isLogVisible(l)) return false;
-    const d = new Date(l.date);
-    if (from && d < from) return false;
-    if (to   && d > to)   return false;
+    if (!_rptInBounds(l.date, bounds)) return false;
     const item = db.items.find(i => i.id === l.itemId);
     if (cat && item?.category !== cat) return false;
     return true;
@@ -7947,16 +8043,13 @@ function exportAllLogsCSV() {
   const toVal   = document.getElementById('rpt-to').value;
   const cat     = document.getElementById('rpt-cat').value;
 
-  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
-  const to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+  const bounds = _rptBounds();
 
   const TYPE_LABELS = { use: 'Consumption', damage: 'Damage / Loss', restock: 'Restock', adjust: 'Adjustment' };
 
   const filtered = db.logs.filter(l => {
     if (!isLogVisible(l)) return false;
-    const d = new Date(l.date);
-    if (from && d < from) return false;
-    if (to   && d > to)   return false;
+    if (!_rptInBounds(l.date, bounds)) return false;
     const item = db.items.find(i => i.id === l.itemId);
     if (cat && item?.category !== cat) return false;
     return true;
@@ -8001,8 +8094,7 @@ function renderVariance() {
   const toVal   = document.getElementById('rpt-to').value;
   const vType   = document.getElementById('var-type').value;
 
-  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
-  const to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+  const bounds = _rptBounds();
 
   // adjustDelta() recovers the true signed variance even for legacy rows that
   // never stored a signed `variance` field — using raw l.variance here would
@@ -8012,9 +8104,7 @@ function renderVariance() {
     if (l.type !== 'adjust') return false;
     if (!adjustDelta(l)) return false; // zero variance = confirmed match, not a discrepancy
     if (!isLogVisible(l)) return false;
-    const d = new Date(l.date);
-    if (from && d < from) return false;
-    if (to   && d > to)   return false;
+    if (!_rptInBounds(l.date, bounds)) return false;
     const v = adjustDelta(l);
     if (vType === 'negative' && v >= 0) return false;
     if (vType === 'positive' && v <= 0) return false;
@@ -8076,16 +8166,13 @@ function renderVariance() {
 function exportVarianceCSV() {
   const fromVal = document.getElementById('rpt-from').value;
   const toVal   = document.getElementById('rpt-to').value;
-  const from = fromVal ? new Date(fromVal + 'T00:00:00') : null;
-  const to   = toVal   ? new Date(toVal   + 'T23:59:59') : null;
+  const bounds = _rptBounds();
 
   const logs = db.logs.filter(l => {
     if (l.type !== 'adjust') return false;
     if (!adjustDelta(l)) return false; // zero variance = confirmed match, not a discrepancy
     if (!isLogVisible(l)) return false;
-    const d = new Date(l.date);
-    if (from && d < from) return false;
-    if (to   && d > to)   return false;
+    if (!_rptInBounds(l.date, bounds)) return false;
     return true;
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -9066,6 +9153,7 @@ function openConfirmModal(reqId) {
 
 var _issuanceInFlight = false;
 async function confirmIssuance() {
+  if (checkStocktakeLock()) return;
   // Same reentrancy guard as confirmBatchIssuance() — prevents a repeat click
   // or re-fired handler from posting a second "use" log / second deduction
   // for the same request.
@@ -9238,6 +9326,7 @@ function updateMassActionBar() {
 }
 
 async function massConfirmRequests() {
+  if (checkStocktakeLock()) return;
   var ids = Array.from(selectedReqIds).filter(function(id) {
     var r = db_reqs.find(function(x) { return x.id === id; });
     return r && r.status === 'pending';
@@ -10478,6 +10567,7 @@ function applyRoleUI() {
   show('btn-po-history',     can('reorder'));
   show('btn-import-suppliers', currentRole === 'superuser');
   show('btn-supplier-dir', currentRole === 'superuser' || currentRole === 'user');
+  if (typeof renderOpsReminders === 'function') renderOpsReminders();
   // Test Mode banner is superuser-only, so re-check it whenever the role UI
   // is applied (login / account switch), not just when settings load. Only
   // the banner itself — applyTestMode() would re-render the whole app.
@@ -10569,6 +10659,7 @@ function canManageStocktake() {
 }
 
 function applyStocktakeLock() {
+  if (typeof renderOpsReminders === 'function') renderOpsReminders();
   var banner = document.getElementById('stocktake-banner');
   var unlockBtn = document.getElementById('stocktake-unlock-btn');
   var loginPopup = document.getElementById('stocktake-login-popup');
@@ -10598,23 +10689,215 @@ function applyStocktakeLock() {
 async function toggleStocktakeLock() {
   if (!canManageStocktake()) return;
   stocktakeLock = !stocktakeLock;
+  var nowIso = new Date().toISOString();
+  if (stocktakeLock) {
+    // The moment counting starts is the operational week's cutoff: everything
+    // before it belongs to the week being counted, everything after the lock
+    // comes off belongs to the next one. Kept as a history so past weeks keep
+    // their real boundaries.
+    stocktakeLockAt = nowIso;
+    stocktakeLockBy = (currentUser && currentUser.username) || '';
+    opWeekCutoffs = opWeekCutoffs.concat([nowIso]).slice(-150);
+  } else {
+    stocktakeLockAt = null;
+    stocktakeLockBy = '';
+  }
   applyStocktakeLock();
+  logAudit(stocktakeLock ? 'Stocktake locked' : 'Stocktake unlocked', stocktakeLock ? 'Week cutoff set at ' + new Date(nowIso).toLocaleString('en-PH') : '');
   // Save to Supabase so all devices see it
   if (sb) {
     try {
-      await sb.from('settings').delete().eq('key', 'stocktakeLock');
-      await sb.from('settings').insert([{ key: 'stocktakeLock', value: stocktakeLock ? 'true' : 'false' }]);
+      var keys = ['stocktakeLock', STOCKTAKE_LOCK_AT_KEY, STOCKTAKE_LOCK_BY_KEY].concat(stocktakeLock ? [OPWEEK_CUTOFFS_KEY] : []);
+      await sb.from('settings').delete().in('key', keys);
+      var rows = [{ key: 'stocktakeLock', value: stocktakeLock ? 'true' : 'false' },
+                  { key: STOCKTAKE_LOCK_AT_KEY, value: stocktakeLockAt || '' },
+                  { key: STOCKTAKE_LOCK_BY_KEY, value: stocktakeLockBy || '' }];
+      if (stocktakeLock) rows.push({ key: OPWEEK_CUTOFFS_KEY, value: JSON.stringify(opWeekCutoffs) });
+      await sb.from('settings').insert(rows);
     } catch(e) {}
   }
+  if (typeof renderOpsReminders === 'function') renderOpsReminders();
+  if (typeof updateSummary === 'function') updateSummary();
 }
 
-function checkStocktakeLock() {
-  // Returns true (and shows alert) if locked and user cannot manage stocktake
+// Returns true (and explains why) when an action must wait for the count to
+// finish. While locked, nothing that moves stock is allowed for ANY role —
+// otherwise an issue or delivery during the count would land in the new week
+// even though it happened before or during counting, and the count wouldn't
+// reconcile. Only count entries (kind 'count': adjustments, counted qty,
+// imports/reconciliation) are allowed, and only for users who manage
+// stocktakes. Those are dated just before the cutoff (_countEntryDate).
+function checkStocktakeLock(kind) {
   if (!stocktakeLock) return false;
-  if (canManageStocktake()) return false; // superuser and user can still act
-  alert('🔒 Stocktake in progress — transactions are temporarily locked. Please try again later.');
+  if (kind === 'count' && canManageStocktake()) return false;
+  alert('🔒 Stocktake in progress — issuing, receiving and logging usage are paused until the count is finished.'
+    + (canManageStocktake() ? '\n\nOnly count entries (adjustments / counted quantities) are allowed. Unlock the stocktake when counting is done.' : ' Please try again later.'));
   return true;
 }
+
+// Date for a count entry: while the stocktake lock is on, it's 1 second before
+// the cutoff, so the count closes the week it was counting (not the next one).
+function _countEntryDate(nowIso) {
+  if (stocktakeLock && stocktakeLockAt) return new Date(new Date(stocktakeLockAt).getTime() - 1000).toISOString();
+  return nowIso || new Date().toISOString();
+}
+function _countEntryNote() {
+  return (stocktakeLock && stocktakeLockAt) ? ' (counted during stocktake; entered ' + new Date().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + ')' : '';
+}
+
+// ─── OPERATIONAL WEEK ──────────────────────────────────────────────────────
+// A week runs from one Saturday count to the next. The boundary is the moment
+// Lock for Stocktake went on that weekend (Fri–Sun, Philippine time); if no
+// lock was used, it falls back to Saturday 5:00 PM. Every timestamp keeps its
+// real date — only the grouping into weeks follows the cutoff.
+var STOCKTAKE_LOCK_AT_KEY = 'stocktakeLockAt';
+var STOCKTAKE_LOCK_BY_KEY = 'stocktakeLockBy';
+var OPWEEK_CUTOFFS_KEY = 'opWeekCutoffs';
+var stocktakeLockAt = null;
+var stocktakeLockBy = '';
+var opWeekCutoffs = [];
+var OPWEEK_DAY = 6;   // Saturday
+var OPWEEK_HOUR = 17; // 5:00 PM
+var PH_OFFSET_MS = 8 * 3600 * 1000;
+
+function _phYmd(d) { return new Date(d.getTime() + PH_OFFSET_MS).toISOString().slice(0, 10); }
+function _ymdAdd(ymd, days) { return new Date(new Date(ymd + 'T00:00:00Z').getTime() + days * 86400000).toISOString().slice(0, 10); }
+
+// The cutoff for the weekend whose Saturday is `satYmd`
+function _opCutoffFor(satYmd) {
+  var win = [_ymdAdd(satYmd, -1), satYmd, _ymdAdd(satYmd, 1)];
+  var recs = opWeekCutoffs.filter(function(c) { return win.indexOf(_phYmd(new Date(c))) !== -1; }).sort();
+  if (recs.length) return new Date(recs[0]);
+  return new Date(satYmd + 'T' + String(OPWEEK_HOUR).padStart(2, '0') + ':00:00+08:00');
+}
+
+// { start, end } (start inclusive, end exclusive) of the operational week containing `at`
+function opWeekRange(at) {
+  at = at || new Date();
+  var ph = new Date(at.getTime() + PH_OFFSET_MS);
+  var back = (ph.getUTCDay() - OPWEEK_DAY + 7) % 7;
+  var satYmd = new Date(ph.getTime() - back * 86400000).toISOString().slice(0, 10);
+  var cut = _opCutoffFor(satYmd);
+  if (at >= cut) return { start: cut, end: _opCutoffFor(_ymdAdd(satYmd, 7)) };
+  return { start: _opCutoffFor(_ymdAdd(satYmd, -7)), end: cut };
+}
+
+// Timestamp for a count booked against a calendar date (YYYY-MM-DD, PH):
+// 1 second before a stocktake lock recorded that day, else 4:59:59 PM.
+function _countStampFor(ymd) {
+  var recs = opWeekCutoffs.filter(function(c) { return _phYmd(new Date(c)) === ymd; }).sort();
+  if (recs.length) return new Date(new Date(recs[0]).getTime() - 1000).toISOString();
+  return new Date(ymd + 'T' + String(OPWEEK_HOUR - 1).padStart(2, '0') + ':59:59+08:00').toISOString();
+}
+
+function opWeekLabel(range) {
+  var f = function(d) { return d.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Manila' }); };
+  return f(range.start) + ' – ' + f(range.end);
+}
+
+// Weekly cost the way finance needs it: what was issued (usage + damage) plus
+// what went missing beyond that (count shortages), minus stock found (excess).
+function weeklyCostFor(from, to, opts) {
+  opts = opts || {};
+  var r = { usage: 0, damage: 0, shortage: 0, excess: 0 };
+  db.logs.forEach(function(l) {
+    var d = new Date(l.date);
+    if (from && d < from) return;
+    if (to && (opts.toInclusive ? d > to : d >= to)) return;
+    if (typeof isLogVisible === 'function' && !isLogVisible(l)) return;
+    var item = db.items.find(function(i) { return i.id === l.itemId; });
+    if (opts.cat && (!item || item.category !== opts.cat)) return;
+    if (l.type === 'use') r.usage += logCostOf(l, item);
+    else if (l.type === 'damage') r.damage += logCostOf(l, item);
+    else if (l.type === 'adjust') {
+      var delta = adjustDelta(l);
+      if (!delta) return;
+      var c = (l.costAmount !== undefined && l.costAmount !== null) ? Math.abs(l.costAmount) : Math.abs(delta) * (item ? (item.cost || 0) : 0);
+      if (delta < 0) r.shortage += c; else r.excess += c;
+    }
+  });
+  r.variance = r.shortage - r.excess;
+  r.total = r.usage + r.damage + r.variance;
+  return r;
+}
+
+// ─── COST REPORT: OPERATIONAL-WEEK PRESETS ─────────────────────────────────
+// When a preset is active the report uses the exact cutoff timestamps
+// (e.g. Sat 5:00 PM → Sat 5:00 PM) instead of whole calendar days.
+var _rptRange = null; // { start: Date, end: Date (exclusive), label }
+function setRptPreset(which) {
+  var cur = opWeekRange();
+  var r = which === 'last' ? opWeekRange(new Date(cur.start.getTime() - 1000)) : cur;
+  _rptRange = { start: r.start, end: r.end, label: (which === 'last' ? 'Last' : 'This') + ' operational week' };
+  var fromEl = document.getElementById('rpt-from'), toEl = document.getElementById('rpt-to');
+  if (fromEl) fromEl.value = _phYmd(r.start);
+  if (toEl) toEl.value = _phYmd(new Date(r.end.getTime() - 1000));
+  renderReport();
+  renderVariance();
+}
+// Active bounds for every Cost Report section. `to` is exclusive for presets
+// and inclusive (end of day) for manually picked dates.
+function _rptBounds() {
+  if (_rptRange) return { from: _rptRange.start, to: _rptRange.end, exclusive: true };
+  var fv = (document.getElementById('rpt-from') || {}).value, tv = (document.getElementById('rpt-to') || {}).value;
+  return { from: fv ? new Date(fv + 'T00:00:00') : null, to: tv ? new Date(tv + 'T23:59:59') : null, exclusive: false };
+}
+function _rptInBounds(date, b) {
+  var d = new Date(date);
+  if (b.from && d < b.from) return false;
+  if (b.to && (b.exclusive ? d >= b.to : d > b.to)) return false;
+  return true;
+}
+function _rptPeriodLabel() {
+  if (_rptRange) return _rptRange.label + ' (' + opWeekLabel({ start: _rptRange.start, end: _rptRange.end }) + ')';
+  var fv = (document.getElementById('rpt-from') || {}).value, tv = (document.getElementById('rpt-to') || {}).value;
+  return (fv || tv) ? (fv || '…') + ' to ' + (tv || '…') : 'All dates';
+}
+
+// ─── STOCKTAKE REMINDERS ───────────────────────────────────────────────────
+// For users/superusers: nudge to lock on Saturday afternoon, warn about a
+// forgotten lock, and note when last week closed on the 5 PM fallback.
+var OPS_DISMISS_KEY = 'sb_opsReminderDismissed';
+function renderOpsReminders() {
+  var el = document.getElementById('ops-reminder-banner');
+  if (!el) return;
+  var msgs = [];
+  if (currentRole && canManageStocktake()) {
+    var now = new Date();
+    var ph = new Date(now.getTime() + PH_OFFSET_MS);
+    var dow = ph.getUTCDay(), mins = ph.getUTCHours() * 60 + ph.getUTCMinutes();
+    var todayYmd = ph.toISOString().slice(0, 10);
+    var lockedToday = opWeekCutoffs.some(function(c) { return _phYmd(new Date(c)) === todayYmd; });
+    if (dow === OPWEEK_DAY && mins >= OPWEEK_HOUR * 60 - 30 && !stocktakeLock && !lockedToday) {
+      msgs.push({ id: '', text: '📋 Weekly count today: turn on <strong>Lock for Stocktake</strong> when counting starts. If no lock is used, the week closes at 5:00 PM.' });
+    }
+    if (stocktakeLock && stocktakeLockAt && (now - new Date(stocktakeLockAt)) > 4 * 3600 * 1000) {
+      var hrs = Math.floor((now - new Date(stocktakeLockAt)) / 3600000);
+      msgs.push({ id: '', text: '🔒 The stocktake lock has been on for ' + hrs + ' hours (since ' + new Date(stocktakeLockAt).toLocaleString('en-PH', { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) + (stocktakeLockBy ? ', by ' + esc(stocktakeLockBy) : '') + '). Issuing and receiving are paused — unlock when the count is done.' });
+    }
+    if (dow >= 0 && dow <= 2) { // Sun–Tue: did last weekend use the lock?
+      var lastSat = _ymdAdd(todayYmd, -((dow + 1) % 7));
+      var used = opWeekCutoffs.some(function(c) { var y = _phYmd(new Date(c)); return y >= _ymdAdd(lastSat, -1) && y <= _ymdAdd(lastSat, 1); });
+      var dismissed = '';
+      try { dismissed = localStorage.getItem(OPS_DISMISS_KEY) || ''; } catch(e) {}
+      if (!used && dismissed !== lastSat) {
+        msgs.push({ id: lastSat, text: '⚠️ Last week closed at Saturday 5:00 PM — no stocktake lock was used. If counting started at a different time, weekly figures may not match the count.' });
+      }
+    }
+  }
+  el.style.display = msgs.length ? '' : 'none';
+  el.innerHTML = msgs.map(function(m) {
+    return '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 0">'
+      + '<span>' + m.text + '</span>'
+      + (m.id ? '<button class="btn btn-secondary btn-sm" onclick="dismissOpsReminder(\'' + m.id + '\')">Dismiss</button>' : '')
+      + '</div>';
+  }).join('');
+}
+function dismissOpsReminder(id) {
+  try { localStorage.setItem(OPS_DISMISS_KEY, id); } catch(e) {}
+  renderOpsReminders();
+}
+setInterval(function() { if (typeof renderOpsReminders === 'function') renderOpsReminders(); }, 5 * 60 * 1000);
 
 // ─── TEST MODE ────────────────────────────────────────────────────────────────
 function applyTestMode() {
@@ -12077,6 +12360,7 @@ function runCompare() {
 
 async function bookCompareVariance() {
   if (currentRole !== 'superuser') return;
+  if (checkStocktakeLock('count')) return;
   var dateVal = document.getElementById('cmp-book-date').value;
   if (!dateVal) { document.getElementById('cmp-error').textContent = 'Choose a count date first.'; return; }
   // Only rows with an actual discrepancy — booking zero-variance rows just
@@ -12090,7 +12374,10 @@ async function bookCompareVariance() {
     + 'This cannot be undone.';
 
   showConfirm('Book Variance', msg, async function() {
-    var stamp = new Date(dateVal + 'T12:00:00').toISOString();
+    // Dated at the count, not noon: just before that weekend's cutoff (the
+    // stocktake lock time, or 5:00 PM) so the variance closes the counted
+    // week. A weekday count is dated 4:59:59 PM that day.
+    var stamp = _countStampFor(dateVal);
     var newLogs = [], changedItems = [];
 
     // Refresh live qty right before booking — the compare may have been run a
@@ -12657,6 +12944,7 @@ function saveReconDraft() {
 
 async function finalizeReconciliation() {
   if (currentRole !== 'superuser') return;
+  if (checkStocktakeLock('count')) return;
   if (!_reconRows.length) { alert('Load system quantities first.'); return; }
   var missingReason = _reconRows.some(function(l) { return l.countedQty != null && l.variance !== 0 && !(l.reason || '').trim(); });
   if (missingReason) { alert('Every item with a variance needs a reason before this can be finalized.'); return; }
@@ -12697,8 +12985,8 @@ async function finalizeReconciliation() {
         qty: line.countedQty, absQty: line.countedQty, variance: diff, sysQty: liveSysQty,
         varianceReason: line.reason || 'Reconciliation',
         by: (currentUser && currentUser.username) || 'superuser',
-        date: now,
-        notes: 'Reconciliation sign-off — ' + line.reason, ref: 'recon:' + reconId,
+        date: _countEntryDate(now),
+        notes: 'Reconciliation sign-off — ' + line.reason + _countEntryNote(), ref: 'recon:' + reconId,
         costAmount: aCost, costDetail: aDetail
       };
       db.logs.push(adjLog);
@@ -13017,6 +13305,7 @@ function previewImport(rows) {
 }
 
 async function applyImport() {
+  if (checkStocktakeLock('count')) return;
   // Refresh quantities for every matched item right before applying — the import
   // preview can sit open for a while (reviewing a big file, waiting for a supervisor
   // to confirm), during which another device could log usage, a restock, or a manual
@@ -13112,9 +13401,9 @@ async function applyImport() {
         qty:    Math.abs(diff),
         absQty: r.newQty,
         by:     currentUser.username,
-        date:   new Date().toISOString(),
+        date:   _countEntryDate(new Date().toISOString()),
         ref:    '',
-        notes:  'Import update — was ' + r.item.qty + (r.item.unit ? ' ' + r.item.unit : ''),
+        notes:  'Import update — was ' + r.item.qty + (r.item.unit ? ' ' + r.item.unit : '') + _countEntryNote(),
         // Feed the Variance Adjustments report (signed: negative = shortage)
         variance:       diff,
         varianceReason: 'Physical count (import)'
@@ -14152,6 +14441,15 @@ async function aiConfirmAction() {
   aiBusy = true;
   renderAiChat();
   var result;
+  // Same stocktake rule as the app: while the count is locked, nothing that
+  // moves stock goes through Shelfie either (count adjustments only, by managers)
+  var aiType = (action.input && action.input.type) || '';
+  var aiMovesStock = ['mark_reorder_received', 'approve_supply_request', 'mass_approve_requests'].indexOf(action.name) !== -1
+    || (action.name === 'log_usage' && aiType !== 'adjust');
+  var aiIsCount = action.name === 'log_usage' && aiType === 'adjust';
+  if (stocktakeLock && (aiMovesStock || (aiIsCount && !canManageStocktake()))) {
+    result = { ok: false, message: 'Stocktake in progress — issuing, receiving and logging usage are paused until the count is finished and the stocktake is unlocked. Nothing was saved.' };
+  } else
   try {
     if (action.name === 'create_reorder') result = aiCreateReorder(action.input);
     else if (action.name === 'log_usage') result = await aiApplyLogEntry(action.input);
@@ -14918,13 +15216,13 @@ async function aiApplyLogEntry(input) {
   item.updatedAt = new Date().toISOString();
   if (type === 'restock' || (type === 'adjust' && newQty > originalQty)) updateMaxRef(item, newQty);
 
-  var logDate = new Date().toISOString();
+  var logDate = type === 'adjust' ? _countEntryDate(new Date().toISOString()) : new Date().toISOString();
   var logEntry = {
     id: uid(), itemId: item.id, type: type,
     qty: type === 'adjust' ? newQty - originalQty : qty,
     absQty: newQty,
     by: (currentUser && currentUser.username) ? currentUser.username + ' (Shelfie)' : 'Shelfie',
-    date: logDate, ref: '', notes: (input.notes || '').trim(),
+    date: logDate, ref: '', notes: (input.notes || '').trim() + (type === 'adjust' ? _countEntryNote() : ''),
   };
   if (type === 'adjust') { logEntry.variance = newQty - originalQty; logEntry.varianceReason = (input.notes || '').trim(); }
   if (fifoCost !== null) logEntry.costAmount = fifoCost;
