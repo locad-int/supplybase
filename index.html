@@ -860,6 +860,7 @@
       </select>
       <button id="btn-create-reorder" class="btn btn-primary" onclick="openReorderCreateModal()">+ Create Reorder</button>
       <button id="btn-po-history" class="btn btn-secondary" onclick="openPoHistoryModal()">📋 PO History</button>
+      <button id="btn-supplier-dir" class="btn btn-secondary" onclick="openSupplierDirectory()" style="display:none">🏢 Suppliers</button>
       <button id="btn-import-suppliers" class="btn btn-secondary" onclick="openSupplierImportModal()" style="display:none">⬆ Import Suppliers</button>
     </div>
     <div class="table-wrap">
@@ -2141,6 +2142,59 @@
   </div>
 </div>
 
+<!-- COST REPORT ROW DETAIL MODAL -->
+<div class="modal-bg" id="rpt-detail-modal">
+  <div class="modal" style="max-width:960px">
+    <div id="rptd-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="rptd-history-btn">📜 Item History</button>
+      <button class="btn btn-secondary" onclick="exportRptDetailCSV()">⬇ Export CSV</button>
+      <button class="btn btn-primary" onclick="closeModal('rpt-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- SUPPLIER DIRECTORY MODAL -->
+<div class="modal-bg" id="supplier-dir-modal">
+  <div class="modal" style="max-width:920px">
+    <h2>🏢 Supplier Directory</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <input type="text" id="sd-search" placeholder="Search name, address or TIN…" oninput="renderSupplierDirectory()" style="flex:1;min-width:200px">
+      <button class="btn btn-secondary" onclick="exportSupplierDirectoryCSV()" style="font-size:12px">⬇ Export CSV</button>
+      <button class="btn btn-primary" id="sd-add-btn" onclick="sdOpenForm(-1)" style="display:none">+ Add Supplier</button>
+    </div>
+    <div id="sd-form" style="display:none;background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:12px">
+      <div id="sd-form-title" style="font-size:13px;font-weight:700;margin-bottom:8px">Add Supplier</div>
+      <div class="form-grid">
+        <div class="form-group full"><label>Supplier Name *</label><input type="text" id="sd-name" placeholder="Registered business name"></div>
+        <div class="form-group full"><label>Address</label><input type="text" id="sd-address" placeholder="Street, city, province"></div>
+        <div class="form-group"><label>TIN</label><input type="text" id="sd-tin" placeholder="000-000-000-000"></div>
+        <div class="form-group"><label>Supplier Prices</label>
+          <select id="sd-vat">
+            <option value="">Not set (defaults to VAT-inclusive)</option>
+            <option value="inc">VAT-inclusive</option>
+            <option value="ex">VAT-exclusive (+12% on POs)</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-secondary" onclick="sdCloseForm()">Cancel</button>
+        <button class="btn btn-primary" onclick="sdSave()">Save Supplier</button>
+      </div>
+    </div>
+    <div class="table-wrap" style="max-height:55vh;overflow-y:auto">
+      <table>
+        <thead><tr><th>Supplier</th><th>Address</th><th>TIN</th><th>Prices</th><th style="text-align:right">POs</th><th></th></tr></thead>
+        <tbody id="sd-tbody"></tbody>
+      </table>
+    </div>
+    <div id="sd-count" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="closeModal('supplier-dir-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- PO DETAILS MODAL (staggered deliveries) -->
 <div class="modal-bg" id="po-detail-modal">
   <div class="modal" style="max-width:860px">
@@ -2903,6 +2957,134 @@ function setSupplierVatPref(name, isEx) {
   if (!e || e.vatExclusive === !!isEx) return;
   e.vatExclusive = !!isEx;
   saveSupplierDirectory();
+}
+
+// ─── SUPPLIER DIRECTORY VIEW ───────────────────────────────────────────────
+// Browse every saved supplier (name, address, TIN, VAT basis, how many POs).
+// Open to user + superuser; only superusers can add, edit or delete. Editing
+// here changes what future POs fill in — POs already generated keep the
+// supplier details they were issued with.
+var _sdList = [];        // current filtered/sorted rows, so buttons pass an index (names can contain quotes)
+var _sdEditKey = null;   // directory key being edited, or null when adding
+
+function _sdCanEdit() { return currentRole === 'superuser'; }
+
+function openSupplierDirectory() {
+  if (currentRole !== 'superuser' && currentRole !== 'user') return;
+  document.getElementById('sd-search').value = '';
+  document.getElementById('sd-add-btn').style.display = _sdCanEdit() ? '' : 'none';
+  sdCloseForm();
+  renderSupplierDirectory();
+  openModal('supplier-dir-modal');
+}
+
+function _sdPoCount(key) {
+  return (db.purchaseOrders || []).filter(function(p) { return _supKey(p.supplier) === key; }).length;
+}
+
+function renderSupplierDirectory() {
+  var q = document.getElementById('sd-search').value.trim().toLowerCase();
+  var all = Object.keys(supplierDirectory).map(function(k) { return Object.assign({ key: k }, supplierDirectory[k]); });
+  _sdList = all.filter(function(s) {
+    return !q || [s.name, s.address, s.tin].some(function(v) { return String(v || '').toLowerCase().indexOf(q) !== -1; });
+  }).sort(function(a, b) { return String(a.name || '').localeCompare(String(b.name || '')); });
+  var edit = _sdCanEdit();
+  document.getElementById('sd-tbody').innerHTML = _sdList.length ? _sdList.map(function(s, i) {
+    var vat = s.vatExclusive === true ? '<span class="badge badge-warn">VAT-ex</span>'
+      : (s.vatExclusive === false ? '<span class="badge badge-ok">VAT-inc</span>' : '<span style="color:var(--muted)">—</span>');
+    var n = _sdPoCount(s.key);
+    return '<tr>'
+      + '<td><strong>' + esc(s.name || s.key) + '</strong></td>'
+      + '<td style="font-size:12px;max-width:300px">' + (s.address ? esc(s.address) : '<span style="color:var(--muted)">—</span>') + '</td>'
+      + '<td style="white-space:nowrap">' + (s.tin ? esc(s.tin) : '<span style="color:var(--muted)">—</span>') + '</td>'
+      + '<td>' + vat + '</td>'
+      + '<td style="text-align:right">' + n + '</td>'
+      + '<td style="white-space:nowrap">' + (edit
+          ? '<button class="btn btn-icon btn-sm" title="Edit" onclick="sdOpenForm(' + i + ')">✏️</button>'
+            + '<button class="btn btn-icon btn-sm btn-danger" title="Delete" onclick="sdDelete(' + i + ')">🗑</button>'
+          : '') + '</td></tr>';
+  }).join('') : '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:16px">No suppliers' + (q ? ' match "' + esc(q) + '"' : ' saved yet') + '.</td></tr>';
+  document.getElementById('sd-count').textContent = _sdList.length + ' of ' + all.length + ' supplier' + (all.length === 1 ? '' : 's');
+}
+
+function sdOpenForm(idx) {
+  if (!_sdCanEdit()) return;
+  var s = idx >= 0 ? _sdList[idx] : null;
+  _sdEditKey = s ? s.key : null;
+  document.getElementById('sd-form-title').textContent = s ? 'Edit ' + (s.name || s.key) : 'Add Supplier';
+  document.getElementById('sd-name').value = s ? (s.name || '') : '';
+  document.getElementById('sd-address').value = s ? (s.address || '') : '';
+  document.getElementById('sd-tin').value = s ? (s.tin || '') : '';
+  document.getElementById('sd-vat').value = s ? (s.vatExclusive === true ? 'ex' : (s.vatExclusive === false ? 'inc' : '')) : '';
+  document.getElementById('sd-form').style.display = '';
+  document.getElementById('sd-name').focus();
+}
+
+function sdCloseForm() {
+  _sdEditKey = null;
+  var f = document.getElementById('sd-form');
+  if (f) f.style.display = 'none';
+}
+
+function sdSave() {
+  if (!_sdCanEdit()) return;
+  var name = document.getElementById('sd-name').value.trim();
+  if (!name) { alert('Enter the supplier name.'); return; }
+  var newKey = _supKey(name);
+  // A different supplier already saved under this name would be overwritten
+  if (supplierDirectory[newKey] && newKey !== _sdEditKey) {
+    alert('"' + supplierDirectory[newKey].name + '" is already in the directory. Edit that entry instead, or use a different name.');
+    return;
+  }
+  var prev = _sdEditKey ? supplierDirectory[_sdEditKey] : null;
+  var entry = Object.assign({}, prev || {}, {
+    name: name,
+    address: document.getElementById('sd-address').value.trim(),
+    tin: document.getElementById('sd-tin').value.trim(),
+  });
+  var vat = document.getElementById('sd-vat').value;
+  if (vat === 'ex') entry.vatExclusive = true;
+  else if (vat === 'inc') entry.vatExclusive = false;
+  else delete entry.vatExclusive;
+  if (_sdEditKey && _sdEditKey !== newKey) delete supplierDirectory[_sdEditKey]; // renamed
+  supplierDirectory[newKey] = entry;
+  saveSupplierDirectory();
+  if (typeof populateAllSupplierDatalists === 'function') populateAllSupplierDatalists();
+  logAudit(prev ? 'Supplier edited' : 'Supplier added', name + (prev && prev.name !== name ? ' (was ' + prev.name + ')' : ''));
+  sdCloseForm();
+  renderSupplierDirectory();
+}
+
+function sdDelete(idx) {
+  if (!_sdCanEdit()) return;
+  var s = _sdList[idx];
+  if (!s) return;
+  var n = _sdPoCount(s.key);
+  showConfirm('Delete Supplier', 'Remove "' + (s.name || s.key) + '" from the supplier directory?'
+      + (n ? '\n\n' + n + ' PO' + (n === 1 ? '' : 's') + ' were issued to this supplier. They keep their details; only the saved entry used to auto-fill new POs is removed.' : ''),
+    function() {
+      delete supplierDirectory[s.key];
+      saveSupplierDirectory();
+      if (typeof populateAllSupplierDatalists === 'function') populateAllSupplierDatalists();
+      logAudit('Supplier deleted', s.name || s.key);
+      sdCloseForm();
+      renderSupplierDirectory();
+    }, { danger: true, confirmLabel: 'Delete' });
+}
+
+function exportSupplierDirectoryCSV() {
+  var q = function(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+  var rows = [['Supplier', 'Address', 'TIN', 'Prices', 'POs'].join(',')];
+  Object.keys(supplierDirectory).sort().forEach(function(k) {
+    var s = supplierDirectory[k];
+    rows.push([q(s.name || k), q(s.address), q(s.tin),
+      q(s.vatExclusive === true ? 'VAT-exclusive' : (s.vatExclusive === false ? 'VAT-inclusive' : '')), _sdPoCount(k)].join(','));
+  });
+  var blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'supplier_directory_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
 }
 
 function populateSupplierDatalist(targetId) {
@@ -7276,6 +7458,136 @@ function handleImport(e) {
 // ─── COST REPORT ─────────────────────────────────────────────────────────────────
 let rptSortField = 'totalCost';
 let rptSortDir = -1;
+var _rptLogs = []; // the exact entries behind the current report (for row drill-down)
+
+// An entry's split by cost batch, e.g. [[27, 59.80], [117, 57.50]]. Uses the
+// split stored on the entry so a usage spanning two batches isn't shown as a
+// blended price that never existed; falls back to cost ÷ qty.
+function _logBatchParts(l, cost) {
+  var parts = [];
+  String(l.costDetail || '').replace(/([\d,.]+)\s*@\s*₱\s*([\d,.]+)/g, function(m, q, c) {
+    parts.push([parseFloat(q.replace(/,/g, '')), parseFloat(c.replace(/,/g, ''))]);
+  });
+  var partsQty = parts.reduce(function(s, p) { return s + p[0]; }, 0);
+  if (parts.length && Math.abs(partsQty - (l.qty || 0)) < 0.001) return parts;
+  return l.qty ? [[l.qty, Math.round(cost / l.qty * 100) / 100]] : [];
+}
+
+// ─── COST REPORT ROW DRILL-DOWN ────────────────────────────────────────────
+// Clicking a Cost Report row lists the entries that make up that row's total,
+// for the report's own date range and filters: usage entries (who issued it,
+// for which request, at which batch price) or deliveries (supplier, PO, unit
+// cost). The entries always add up to the row.
+var _rptDetailRows = [];
+var _rptDetailMeta = null;
+
+function _rptSupplierFor(l) {
+  var m = String(l.ref || '').match(PO_NUMBER_RE);
+  if (m) {
+    var po = (db.purchaseOrders || []).find(function(p) { return String(p.poNumber).toUpperCase() === m[0].toUpperCase(); });
+    if (po && po.supplier) return { supplier: po.supplier, po: po.poNumber };
+    return { supplier: '', po: m[0] };
+  }
+  var n = String(l.notes || '').match(/received from ([^—(]+)/i);
+  return { supplier: n ? n[1].trim() : '', po: '' };
+}
+
+function openRptDetail(itemId, typeGroup) {
+  var item = db.items.find(function(i) { return i.id === itemId; });
+  var unit = item ? (item.unit || '') : '';
+  var entries = _rptLogs.filter(function(l) {
+    if (l.itemId !== itemId) return false;
+    if (l.type === 'adjust' || l.type === 'edit' || l.type === 'adjustment') return false;
+    return typeGroup === 'restock' ? l.type === 'restock' : l.type !== 'restock';
+  }).sort(function(a, b) { return String(b.date).localeCompare(String(a.date)); });
+
+  var totalQty = 0, totalCost = 0, rates = {}, uncosted = 0;
+  _rptDetailRows = entries.map(function(l) {
+    var cost = logCostOf(l, item);
+    var parts = _logBatchParts(l, cost);
+    totalQty += l.qty || 0; totalCost += cost;
+    parts.forEach(function(p) { var k = p[1].toFixed(2); rates[k] = (rates[k] || 0) + p[0]; });
+    var noCost = l.costAmount === undefined || l.costAmount === null;
+    if (noCost) uncosted++;
+    var sp = typeGroup === 'restock' ? _rptSupplierFor(l) : null;
+    return {
+      date: l.date, type: l.type, qty: l.qty || 0, cost: cost, noCost: noCost,
+      batches: parts.map(function(p) { return fmtInt(p[0]) + ' @ ₱' + p[1].toFixed(2); }).join(' + '),
+      unitCost: l.qty ? cost / l.qty : 0, by: l.by || '', ref: l.ref || '', notes: l.notes || '',
+      supplier: sp ? sp.supplier : '', po: sp ? sp.po : '',
+    };
+  });
+  var from = document.getElementById('rpt-from').value, to = document.getElementById('rpt-to').value;
+  _rptDetailMeta = { itemName: item ? item.name : 'Deleted Item', unit: unit, typeGroup: typeGroup, from: from, to: to };
+  var rateKeys = Object.keys(rates).sort(function(a, b) { return parseFloat(b) - parseFloat(a); });
+  var isRestock = typeGroup === 'restock';
+  var period = (from || to) ? (from || '…') + ' to ' + (to || '…') : 'All dates';
+  var fmtDT = function(iso) { return new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }); };
+
+  var html = '<h2 style="margin-bottom:4px">' + esc(_rptDetailMeta.itemName) + '</h2>'
+    + '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">'
+    + (isRestock ? '<span class="badge badge-ok">Restock</span>' : '<span class="badge badge-danger">Consumption</span>') + ' · ' + esc(period) + '</div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+    + [['Qty', fmtInt(totalQty) + ' ' + esc(unit)], ['Total cost', fmtPHP(Math.round(totalCost * 100) / 100)],
+       ['Avg cost / unit', totalQty ? fmtPHP(Math.round(totalCost / totalQty * 100) / 100) : '—'], ['Entries', String(entries.length)]]
+      .map(function(c) { return '<div style="background:var(--surface2);border-radius:8px;padding:8px 12px;min-width:120px"><div style="font-size:11px;color:var(--muted)">' + c[0] + '</div><div style="font-size:16px;font-weight:700">' + c[1] + '</div></div>'; }).join('')
+    + '</div>'
+    + (rateKeys.length ? '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">By cost batch: ' + rateKeys.map(function(k) { return '<strong>' + fmtInt(rates[k]) + ' @ ₱' + k + '</strong>'; }).join(' + ') + '</div>' : '')
+    + (uncosted ? '<div style="font-size:12px;color:#b45309;margin-bottom:12px">⚠️ ' + uncosted + ' entr' + (uncosted === 1 ? 'y has' : 'ies have') + ' no cost recorded' + (isRestock ? ' (delivery logged without a cost)' : '') + ' and ' + (uncosted === 1 ? 'is' : 'are') + ' valued at the item\'s current cost.</div>' : '');
+
+  if (!entries.length) {
+    html += '<div style="color:var(--muted);padding:12px 0">No entries.</div>';
+  } else if (isRestock) {
+    html += '<div class="table-wrap" style="max-height:50vh;overflow-y:auto"><table><thead><tr><th>Date</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit cost</th><th style="text-align:right">Total</th><th>Supplier</th><th>PO</th><th>By</th><th>Notes</th></tr></thead><tbody>'
+      + _rptDetailRows.map(function(x) {
+        return '<tr><td style="white-space:nowrap">' + fmtDT(x.date) + '</td>'
+          + '<td style="text-align:right">+' + fmtInt(x.qty) + '</td>'
+          + '<td style="text-align:right">' + fmtPHP(Math.round(x.unitCost * 100) / 100) + (x.noCost ? ' <span title="No cost entered on this delivery — valued at the current cost" style="color:#b45309">⚠️</span>' : '') + '</td>'
+          + '<td style="text-align:right;font-weight:600">' + fmtPHP(Math.round(x.cost * 100) / 100) + '</td>'
+          + '<td>' + (x.supplier ? esc(x.supplier) : '<span style="color:var(--muted)">—</span>') + '</td>'
+          + '<td>' + (x.po ? '<a href="#" onclick="event.preventDefault();openPoDetail(\'' + esc(x.po) + '\')">' + esc(x.po) + '</a>' : '<span style="color:var(--muted)">—</span>') + '</td>'
+          + '<td>' + esc(x.by || '—') + '</td>'
+          + '<td style="font-size:12px;color:var(--muted);max-width:220px">' + esc(x.notes) + '</td></tr>';
+      }).join('')
+      + '</tbody></table></div>';
+  } else {
+    html += '<div class="table-wrap" style="max-height:50vh;overflow-y:auto"><table><thead><tr><th>Date</th><th>Type</th><th style="text-align:right">Qty</th><th style="text-align:right">Cost</th><th>Batch</th><th>Issued by</th><th>Request / Ref</th><th>Notes</th></tr></thead><tbody>'
+      + _rptDetailRows.map(function(x) {
+        return '<tr><td style="white-space:nowrap">' + fmtDT(x.date) + '</td>'
+          + '<td>' + (x.type === 'damage' ? '<span class="badge badge-danger">damage</span>' : 'use') + '</td>'
+          + '<td style="text-align:right">' + fmtInt(x.qty) + '</td>'
+          + '<td style="text-align:right;font-weight:600">' + fmtPHP(Math.round(x.cost * 100) / 100) + (x.noCost ? ' <span title="No cost recorded on this entry — valued at the current cost" style="color:#b45309">⚠️</span>' : '') + '</td>'
+          + '<td style="font-size:12px;white-space:nowrap">' + esc(x.batches) + '</td>'
+          + '<td>' + esc(x.by || '—') + '</td>'
+          + '<td style="font-size:12px">' + (x.ref ? esc(x.ref) : '<span style="color:var(--muted)">—</span>') + '</td>'
+          + '<td style="font-size:12px;color:var(--muted);max-width:240px">' + esc(x.notes) + '</td></tr>';
+      }).join('')
+      + '</tbody></table></div>';
+  }
+  document.getElementById('rptd-body').innerHTML = html;
+  var histBtn = document.getElementById('rptd-history-btn');
+  if (histBtn) histBtn.onclick = item ? function() { closeModal('rpt-detail-modal'); openItemHistory(item.id); } : null;
+  openModal('rpt-detail-modal');
+}
+
+function exportRptDetailCSV() {
+  if (!_rptDetailMeta) return;
+  var q = function(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+  var isRestock = _rptDetailMeta.typeGroup === 'restock';
+  var head = isRestock ? ['Date', 'Qty', 'Unit cost', 'Total', 'Cost recorded', 'Supplier', 'PO', 'By', 'Notes']
+                       : ['Date', 'Type', 'Qty', 'Cost', 'Cost recorded', 'Batch', 'Issued by', 'Request / Ref', 'Notes'];
+  var rows = [head.join(',')].concat(_rptDetailRows.map(function(x) {
+    var d = q(new Date(x.date).toLocaleString('en-PH'));
+    return (isRestock
+      ? [d, x.qty, (Math.round(x.unitCost * 100) / 100).toFixed(2), x.cost.toFixed(2), x.noCost ? 'No' : 'Yes', q(x.supplier), q(x.po), q(x.by), q(x.notes)]
+      : [d, q(x.type), x.qty, x.cost.toFixed(2), x.noCost ? 'No' : 'Yes', q(x.batches), q(x.by), q(x.ref), q(x.notes)]).join(',');
+  }));
+  var blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (_rptDetailMeta.itemName || 'item').replace(/[^a-z0-9]+/gi, '_') + '_' + _rptDetailMeta.typeGroup + '_' + (_rptDetailMeta.from || 'all') + '_' + (_rptDetailMeta.to || 'dates') + '.csv';
+  a.click();
+}
 
 function initReportDates() {
   const to = new Date();
@@ -7334,6 +7646,7 @@ function renderReport() {
     if (cat && item?.category !== cat) return false;
     return true;
   });
+  _rptLogs = logs; // row drill-down shows exactly these entries
 
   // Aggregate by item + type (adjustments excluded — they don't represent cost)
   const map = {};
@@ -7363,20 +7676,7 @@ function renderReport() {
     const lc = logCostOf(l, db.items.find(i => i.id === l.itemId));
     map[key].totalCost += lc;
     if (l.qty) {
-      // Prefer the entry's own batch split ("27 @ ₱59.80 + 117 @ ₱57.50") so a
-      // usage that spans two batches isn't shown as a blended price that never
-      // existed (e.g. ₱57.93). Falls back to cost ÷ qty when there's no split.
-      const parts = [];
-      String(l.costDetail || '').replace(/([\d,.]+)\s*@\s*₱\s*([\d,.]+)/g, (m, q, c) => {
-        parts.push([parseFloat(q.replace(/,/g, '')), parseFloat(c.replace(/,/g, ''))]);
-      });
-      const partsQty = parts.reduce((s, p) => s + p[0], 0);
-      if (parts.length && Math.abs(partsQty - l.qty) < 0.001) {
-        parts.forEach(p => { const k = p[1].toFixed(2); map[key].rates[k] = (map[key].rates[k] || 0) + p[0]; });
-      } else {
-        const rate = (Math.round(lc / l.qty * 100) / 100).toFixed(2);
-        map[key].rates[rate] = (map[key].rates[rate] || 0) + l.qty;
-      }
+      _logBatchParts(l, lc).forEach(p => { const k = p[1].toFixed(2); map[key].rates[k] = (map[key].rates[k] || 0) + p[0]; });
     }
     map[key].entries++;
   });
@@ -7425,6 +7725,9 @@ function renderReport() {
     const pct = grandTotal > 0 ? (r.totalCost / grandTotal * 100).toFixed(1) : 0;
     const barW = grandTotal > 0 ? Math.round(r.totalCost / grandTotal * 100) : 0;
     const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.title = 'Click to see the entries behind this total';
+    tr.onclick = () => openRptDetail(r.itemId, r.typeGroup);
     const isRestock = r.typeGroup === 'restock';
     const typeBadge = isRestock
       ? '<span class="badge" style="background:rgba(22,163,74,.12);color:#16a34a;border:1px solid rgba(22,163,74,.25)">Restock</span>'
@@ -10146,6 +10449,7 @@ function applyRoleUI() {
   show('btn-create-reorder', can('reorder'));
   show('btn-po-history',     can('reorder'));
   show('btn-import-suppliers', currentRole === 'superuser');
+  show('btn-supplier-dir', currentRole === 'superuser' || currentRole === 'user');
   // Test Mode banner is superuser-only, so re-check it whenever the role UI
   // is applied (login / account switch), not just when settings load. Only
   // the banner itself — applyTestMode() would re-render the whole app.
