@@ -10688,8 +10688,32 @@ function applyStocktakeLock() {
 
 async function toggleStocktakeLock() {
   if (!canManageStocktake()) return;
-  stocktakeLock = !stocktakeLock;
   var nowIso = new Date().toISOString();
+  var cutoffsChanged = false;
+  if (!stocktakeLock) {
+    // Guard against a stray tap: locking pauses stock movements for everyone
+    // and (Fri–Sun) sets the week's cost cutoff.
+    var phDow = new Date(Date.now() + PH_OFFSET_MS).getUTCDay();
+    var dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][phDow];
+    var msg = '🔒 Start the stocktake now?\n\n• Issuing, receiving and usage logging will be paused for everyone until you unlock.\n'
+      + (phDow === 5 || phDow === 6 || phDow === 0
+          ? '• This time becomes the cutoff for this week\'s cost report.'
+          : '• Today is ' + dayName + ' — not count day. This will NOT change the weekly cutoff, but it will still pause operations.');
+    if (!confirm(msg)) return;
+  } else {
+    // Unlocking: if nothing was counted during the lock, it was probably a
+    // mistake — offer to drop it so it doesn't move the week's cutoff.
+    var lockAt = stocktakeLockAt;
+    var countStamp = lockAt ? new Date(new Date(lockAt).getTime() - 1000).toISOString() : null;
+    var counted = countStamp && db.logs.some(function(l) { return l.type === 'adjust' && l.date === countStamp; });
+    if (lockAt && !counted && opWeekCutoffs.indexOf(lockAt) !== -1) {
+      if (confirm('No counts were entered during this lock.\n\nWas the lock a mistake? Choose OK to discard it so it does NOT count as the week\'s cutoff.\nChoose Cancel to keep it as the cutoff.')) {
+        opWeekCutoffs = opWeekCutoffs.filter(function(c) { return c !== lockAt; });
+        cutoffsChanged = true;
+      }
+    }
+  }
+  stocktakeLock = !stocktakeLock;
   if (stocktakeLock) {
     // The moment counting starts is the operational week's cutoff: everything
     // before it belongs to the week being counted, everything after the lock
@@ -10703,16 +10727,19 @@ async function toggleStocktakeLock() {
     stocktakeLockBy = '';
   }
   applyStocktakeLock();
-  logAudit(stocktakeLock ? 'Stocktake locked' : 'Stocktake unlocked', stocktakeLock ? 'Week cutoff set at ' + new Date(nowIso).toLocaleString('en-PH') : '');
+  logAudit(stocktakeLock ? 'Stocktake locked' : 'Stocktake unlocked',
+    stocktakeLock ? 'Week cutoff set at ' + new Date(nowIso).toLocaleString('en-PH')
+                  : (cutoffsChanged ? 'Lock discarded as accidental (not used as week cutoff)' : ''));
   // Save to Supabase so all devices see it
   if (sb) {
     try {
-      var keys = ['stocktakeLock', STOCKTAKE_LOCK_AT_KEY, STOCKTAKE_LOCK_BY_KEY].concat(stocktakeLock ? [OPWEEK_CUTOFFS_KEY] : []);
+      var saveCutoffs = stocktakeLock || cutoffsChanged;
+      var keys = ['stocktakeLock', STOCKTAKE_LOCK_AT_KEY, STOCKTAKE_LOCK_BY_KEY].concat(saveCutoffs ? [OPWEEK_CUTOFFS_KEY] : []);
       await sb.from('settings').delete().in('key', keys);
       var rows = [{ key: 'stocktakeLock', value: stocktakeLock ? 'true' : 'false' },
                   { key: STOCKTAKE_LOCK_AT_KEY, value: stocktakeLockAt || '' },
                   { key: STOCKTAKE_LOCK_BY_KEY, value: stocktakeLockBy || '' }];
-      if (stocktakeLock) rows.push({ key: OPWEEK_CUTOFFS_KEY, value: JSON.stringify(opWeekCutoffs) });
+      if (saveCutoffs) rows.push({ key: OPWEEK_CUTOFFS_KEY, value: JSON.stringify(opWeekCutoffs) });
       await sb.from('settings').insert(rows);
     } catch(e) {}
   }
