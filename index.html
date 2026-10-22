@@ -94,10 +94,7 @@
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; border-left: 3px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,.05); transition: background .15s, border-color .15s; }
   .card[onclick]:hover { background: var(--surface-alt); border-color: rgba(0,0,0,0.12); }
   .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
-  .card .value { font-size: 1.6rem; font-weight: 700; }
-  /* Report totals run into the millions — scale down so they fit the card */
-  #rpt-summary .card .value { font-size: clamp(1.1rem, 1.5vw, 1.6rem); overflow-wrap: anywhere; }
-  .card.danger { border-left-color: var(--danger); }
+  .card .value { font-size: 1.6rem; font-weight: 700; }  .card.danger { border-left-color: var(--danger); }
   .card.danger .value { color: var(--danger); }
   .card.warn { border-left-color: var(--warn); }
   .card.warn .value { color: var(--warn); }
@@ -916,17 +913,9 @@
 
     <div id="rpt-range-label" style="display:none;font-size:12px;color:var(--muted);margin:-6px 0 12px"></div>
     <div class="summary" style="margin-bottom:18px" id="rpt-summary">
-      <div class="card" title="Usage + damage + shortages − excess (count variance) for this period">
-        <div class="label">Total Cost (incl. Variance)</div>
-        <div class="value" id="rpt-total-with-var" style="color:var(--danger)">₱0.00</div>
-      </div>
       <div class="card">
         <div class="label">Total Cost Consumed</div>
         <div class="value" id="rpt-total-cost" style="color:var(--danger)">₱0.00</div>
-      </div>
-      <div class="card" title="Count shortages minus excess found (booked adjustments)">
-        <div class="label">Net Variance</div>
-        <div class="value" id="rpt-net-variance">₱0.00</div>
       </div>
       <div class="card">
         <div class="label">Total Cost Restocked</div>
@@ -7829,20 +7818,6 @@ function renderReport() {
   document.getElementById('rpt-total-qty').textContent = fmt(grandQty);
   document.getElementById('rpt-unique').textContent = [...new Set(rows.map(r => r.itemId))].length;
   document.getElementById('rpt-entries').textContent = logs.length;
-  // Finance view: usage + damage + count variance for the same period and
-  // category (independent of the Type filter, so it always shows full cost).
-  const wk = weeklyCostFor(bounds.from, bounds.to, { toInclusive: !bounds.exclusive, cat: cat });
-  const nv = document.getElementById('rpt-net-variance');
-  if (nv) {
-    nv.textContent = (wk.variance < 0 ? '−' : '') + fmtPHP(Math.abs(wk.variance));
-    nv.style.color = wk.variance > 0 ? 'var(--danger)' : wk.variance < 0 ? 'var(--success, #16a34a)' : '';
-    nv.parentElement.title = 'Shortages ' + fmtPHP(wk.shortage) + ' − excess found ' + fmtPHP(wk.excess);
-  }
-  const tv = document.getElementById('rpt-total-with-var');
-  if (tv) tv.textContent = fmtPHP(wk.total);
-  // Breakdown lives in the hover tooltip only (kept off the card face).
-  if (tv) tv.parentElement.title = 'Usage ' + fmtPHP(wk.usage) + (wk.damage ? ' + damage ' + fmtPHP(wk.damage) : '')
-    + (wk.variance >= 0 ? ' + variance ' : ' − variance ') + fmtPHP(Math.abs(wk.variance));
   // Before the early "no log data" return below, so non-catalog spend still
   // shows for a period with no inventory movements.
   renderNonCatalogExpenses();
