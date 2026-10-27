@@ -473,6 +473,19 @@
     padding: 3px 10px; border-radius: 6px; cursor: pointer;
   }
 
+  /* ─── COUNT SHEET ────────────────────────────────────────────────────────── */
+  .cs-chip { font-size: 12px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  .cs-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .cs-cat { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 14px 0 4px; display: flex; justify-content: space-between; }
+  .cs-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .cs-row .cs-name { flex: 1; min-width: 0; font-size: 14px; }
+  .cs-spots { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+  .cs-spot { display: flex; gap: 4px; align-items: center; }
+  .cs-spot input { width: 96px; height: 38px; text-align: right; font-size: 16px; }
+  .cs-mini { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; font-size: 12px; padding: 3px 8px; cursor: pointer; }
+  .cs-progress { height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+  .cs-progress > div { height: 100%; background: var(--accent); transition: width .2s; }
+
   /* ─── TEST MODE BANNER ───────────────────────────────────────────────────── */
   #testmode-banner {
     display: none; background: #7c3aed; color: #fff;
@@ -664,6 +677,7 @@
       <button id="btn-contact-admin" class="sidebar-action-btn" onclick="openContactAdmin()">📞 Contact Admin</button>
       <button id="btn-refresh" class="sidebar-action-btn" onclick="refreshData()">↻ Refresh</button>
       <button id="btn-stocktake-lock" class="sidebar-action-btn" onclick="toggleStocktakeLock()" style="display:none">🔒 Lock for Stocktake</button>
+      <button id="btn-count-sheet" class="sidebar-action-btn" onclick="openCountSheet()" style="display:none">📋 Count Sheet</button>
       <button id="btn-testmode-settings" class="sidebar-action-btn" onclick="openSettings()" style="display:none">🧪 Test Mode</button>
       <button id="btn-reset" class="sidebar-action-btn sidebar-action-danger" onclick="confirmReset()">↺ Reset</button>
       <button id="btn-install-app" class="sidebar-action-btn" onclick="openInstallModal()" style="display:none;color:#38bdf8">📲 Install App</button>
@@ -706,6 +720,7 @@
   <!-- STOCKTAKE LOCK BANNER -->
   <div id="stocktake-banner">
     🔒 Stocktake in Progress — issuing, receiving and usage are paused; only count entries are allowed
+    <button id="stocktake-count-btn" onclick="openCountSheet()" style="display:none">📋 Open Count Sheet</button>
     <button id="stocktake-unlock-btn" onclick="toggleStocktakeLock()" style="display:none">Unlock</button>
   </div>
 
@@ -2208,6 +2223,13 @@
   </div>
 </div>
 
+<!-- COUNT SHEET MODAL (stocktake counting + review + booking) -->
+<div class="modal-bg" id="count-sheet-modal">
+  <div class="modal" style="max-width:760px">
+    <div id="cs-body"></div>
+  </div>
+</div>
+
 <!-- SUPPLIER PERFORMANCE MODAL -->
 <div class="modal-bg" id="supplier-perf-modal">
   <div class="modal" style="max-width:1080px">
@@ -2297,7 +2319,7 @@
     <p style="color:var(--muted);font-size:11px;margin-top:4px">Entering less than the remaining quantity keeps this reorder marked "ordered" with a partial-delivery note, so you can log the rest later. Entering the full remaining amount marks it "received."</p>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('receive-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmReceive()">Confirm Receipt</button>
+      <button class="btn btn-primary" id="recv-confirm-btn" onclick="confirmReceive()">Confirm Receipt</button>
     </div>
   </div>
 </div>
@@ -4264,6 +4286,7 @@ function openMobileMoreMenu() {
   if (canManageStocktake()) {
     var lockLabel = stocktakeLock ? '🔓 Unlock — End Stocktake' : '🔒 Lock for Stocktake';
     html += '<div class="mm-item" onclick="toggleStocktakeLock();closeMobileMoreMenu()">' + lockLabel + '</div>';
+    html += '<div class="mm-item" onclick="closeMobileMoreMenu();openCountSheet()">📋 Count Sheet</div>';
   }
   if (currentRole === 'superuser') {
     html += '<div class="mm-item" onclick="closeMobileMoreMenu();openCompareModal()">⚖ Compare Count Files</div>';
@@ -6267,7 +6290,24 @@ function openReceiveModal(id) {
   openModal('receive-modal');
 }
 
+// Reentrancy guard (same as issuing has): a second tap while the first
+// receipt was still saving posted the delivery twice — e.g. Bubble Wrap 13"
+// on PO-202610-014 was received 112 + 112 seven seconds apart on Oct 27.
+var _receiveInFlight = false;
 async function confirmReceive() {
+  if (_receiveInFlight) return;
+  _receiveInFlight = true;
+  var btn = document.getElementById('recv-confirm-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    await _confirmReceiveImpl();
+  } finally {
+    _receiveInFlight = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirm Receipt'; }
+  }
+}
+
+async function _confirmReceiveImpl() {
   if (checkStocktakeLock()) return;
   var id = document.getElementById('recv-reorder-id').value;
   var r = db.reorders.find(function(x) { return x.id === id; });
@@ -9173,10 +9213,83 @@ function closeReqItemDropdown() {
   if (dd) dd.style.display = 'none';
 }
 
+// Double-submit guard. Saving a big cart used to take a few seconds (one
+// insert per line) while the Submit button stayed live, so a second tap
+// filed the whole cart again — the "double entries" approvers kept having
+// to reject (e.g. Oct 14: 20 lines twice, 2 seconds apart). Now the button
+// locks while saving, lines go up in one insert, and a cart identical to one
+// this user just sent asks before filing it again.
+var _reqSubmitting = false;
 async function submitRequest() {
+  if (_reqSubmitting) return;
+  _reqSubmitting = true;
+  var btn = document.getElementById('req-submit-btn');
+  var prevText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Submitting…'; btn.style.pointerEvents = 'none'; btn.style.opacity = '.6'; }
+  try {
+    await _submitRequestImpl();
+  } finally {
+    _reqSubmitting = false;
+    if (btn) { btn.textContent = prevText || 'Submit Request'; }
+    renderReqCart(); // restores the button's enabled state from the cart
+  }
+}
+
+// Possible duplicates: a request for the same item and quantity, by anyone,
+// that is still pending (any age — a second open request for the same thing
+// is almost always a duplicate), or was issued within the last 3 hours.
+// Covers both an accidental resubmission and the "someone else was asked to
+// request it and already did" case (e.g. Oct 20: Aira and Rodessa both
+// requested Bubble Wrap 40" × 6). Issued requests older than 3 hours aren't
+// flagged so stations that legitimately re-request the same small amount
+// through the day don't get constant warnings.
+var REQ_DUP_CONFIRMED_WINDOW_MS = 3 * 60 * 60 * 1000;
+var REQ_DUP_PENDING_WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // requests cover 2–3 days
+function _findDuplicateReq(itemId, qty, opts) {
+  opts = opts || {};
+  var at = opts.at ? new Date(opts.at).getTime() : Date.now();
+  var hits = db_reqs.filter(function(r) {
+    if (opts.excludeId && r.id === opts.excludeId) return false;
+    if (opts.batchId && r.batchId && r.batchId === opts.batchId) return false; // same submission
+    if (r.itemId !== itemId || Number(r.qty) !== Number(qty)) return false;
+    var gap = Math.abs(new Date(r.createdAt).getTime() - at);
+    if (r.status === 'pending') return gap <= REQ_DUP_PENDING_WINDOW_MS;
+    if (r.status === 'confirmed') return gap <= REQ_DUP_CONFIRMED_WINDOW_MS;
+    return false;
+  });
+  hits.sort(function(a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+  return hits[0] || null;
+}
+
+function _dupReqWho(r) {
+  var me = currentUser && currentUser.username;
+  return r.requestedBy === me ? 'You' : (r.requestedBy || 'Someone');
+}
+function _dupReqWhen(r) {
+  var d = new Date(r.createdAt);
+  var sameDay = d.toDateString() === new Date().toDateString();
+  return d.toLocaleString('en-PH', sameDay ? { hour: 'numeric', minute: '2-digit', hour12: true }
+    : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function _recentDuplicateReqLines(cart) {
+  return cart.map(function(c) {
+    var d = _findDuplicateReq(c.itemId, c.qty);
+    return d ? { cart: c, dup: d } : null;
+  }).filter(Boolean);
+}
+
+async function _submitRequestImpl() {
   if (checkStocktakeLock()) return;
   var errEl = document.getElementById('req-error');
   if (reqCart.length === 0) { errEl.textContent = 'Add at least one item to the request.'; return; }
+  var dupLines = _recentDuplicateReqLines(reqCart);
+  if (dupLines.length && !confirm('⚠️ Possible duplicate — the same item and quantity was already requested:\n\n'
+      + dupLines.slice(0, 8).map(function(d) {
+          return '• ' + d.cart.itemName + ' × ' + fmtInt(d.cart.qty) + ' — ' + _dupReqWho(d.dup) + ' at ' + _dupReqWhen(d.dup)
+            + (d.dup.status === 'confirmed' ? ' (already issued)' : ' (still pending)');
+        }).join('\n') + (dupLines.length > 8 ? '\n…' : '')
+      + '\n\nSubmit anyway? Cancel if this was already requested for you.')) return;
 
   // Re-check stock at submit — an item may have gone to zero since it was added,
   // and this covers batch (multi-item) carts as well as single requests
@@ -9223,16 +9336,31 @@ async function submitRequest() {
   saveReqsLocal();
 
   if (sb && REQ_TABLE_OK !== false) {
-    for (var i = 0; i < newReqs.length; i++) {
-      var req = newReqs[i];
-      try { await sb.from('supply_requests').insert([req]); REQ_TABLE_OK = true; }
-      catch(e) {
+    // One round trip for the whole cart (was one per line).
+    var bulkOK = false;
+    try {
+      var bulk = await sb.from('supply_requests').insert(newReqs);
+      if (!bulk || !bulk.error) { bulkOK = true; REQ_TABLE_OK = true; }
+      else console.warn('Bulk request insert failed, retrying per line:', bulk.error.message);
+    } catch(e) {}
+    if (!bulkOK) {
+      // Per-line fallback (older tables may lack priority/reqNumber/batchId/station).
+      // Upsert on id so a line that did land in the bulk call isn't duplicated.
+      for (var i = 0; i < newReqs.length; i++) {
+        var req = newReqs[i];
         try {
-          var base = Object.assign({}, req); delete base.priority; delete base.reqNumber; delete base.batchId; delete base.station;
-          await sb.from('supply_requests').insert([base]);
+          var one = await sb.from('supply_requests').upsert([req], { onConflict: 'id' });
+          if (one && one.error) throw one.error;
           REQ_TABLE_OK = true;
-          sb.from('supply_requests').update({ reqNumber: req.reqNumber, batchId: req.batchId, station: req.station }).eq('id', req.id).then(function(){}).catch(function(){});
-        } catch(e2) { REQ_TABLE_OK = false; }
+        } catch(e) {
+          try {
+            var base = Object.assign({}, req); delete base.priority; delete base.reqNumber; delete base.batchId; delete base.station;
+            var two = await sb.from('supply_requests').upsert([base], { onConflict: 'id' });
+            if (two && two.error) throw two.error;
+            REQ_TABLE_OK = true;
+            sb.from('supply_requests').update({ reqNumber: req.reqNumber, batchId: req.batchId, station: req.station }).eq('id', req.id).then(function(){}).catch(function(){});
+          } catch(e2) { REQ_TABLE_OK = false; }
+        }
       }
     }
   }
@@ -10025,6 +10153,16 @@ alter publication supabase_realtime add table settings;</pre>
     return `<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px;background:${csBg};color:${csColor}">${csLabel}</span>`;
   }
 
+  // Approver hint on pending lines: another pending/issued request for the
+  // same item and quantity within an hour (by anyone, different submission).
+  function dupReqTag(r) {
+    if (r.status !== 'pending' || !isAdmin) return '';
+    var d = _findDuplicateReq(r.itemId, r.qty, { at: r.createdAt, excludeId: r.id, batchId: r.batchId });
+    if (!d) return '';
+    var whenTxt = _dupReqWhen(d);
+    return `<div style="font-size:11px;font-weight:600;color:#b45309;background:rgba(245,158,11,.1);border-radius:6px;padding:3px 8px;margin-top:4px;display:inline-block">⚠️ Possible duplicate — ${esc(d.requestedBy)} requested the same ${fmtInt(d.qty)} ${esc(d.unit || '')} at ${whenTxt}${d.reqNumber ? ' (' + esc(d.reqNumber) + ')' : ''}, ${d.status === 'confirmed' ? 'already issued' : 'still pending'}</div>`;
+  }
+
   out += '<div class="req-list">';
   displayGroups.forEach(function(group) {
     if (!group.isBatch) {
@@ -10070,6 +10208,7 @@ alter publication supabase_realtime add table settings;</pre>
         ${stockRow}
         <div class="req-card-meta">${req.issuedQty && req.issuedQty !== req.qty ? `Requested: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong> · Issued: <strong style="color:var(--accent)">${fmtInt(req.issuedQty)} ${esc(req.unit)}</strong>` : `Qty: <strong>${fmtInt(req.qty)} ${esc(req.unit)}</strong>`} · Requested by: <strong>${esc(req.requestedBy)}</strong> · ${fmtDT(req.createdAt)}${(QC_STATION_FEATURE_ENABLED && req.station) ? ` · <span style="background:rgba(37,99,235,.1);color:#2563eb;padding:1px 6px;border-radius:4px;font-weight:600;font-size:11px">📦 ${esc(req.station)}</span>` : ''}</div>
         ${req.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;white-space:pre-wrap">${esc(req.notes)}</div>` : ''}
+        ${dupReqTag(req)}
         ${actionButtons}
       </div>`;
     } else {
@@ -10150,6 +10289,7 @@ alter publication supabase_realtime add table settings;</pre>
               <div style="flex:1;min-width:0">
                 <div style="font-weight:600">${esc(r.itemName)} ${itemStockTag}</div>
                 <div style="font-size:11px;color:var(--muted)">Qty: ${fmtInt(r.qty)} ${esc(r.unit||'')}${r.notes ? ' · <em>' + esc(r.notes) + '</em>' : ''}</div>
+                ${dupReqTag(r)}
               </div>
               ${lineActions}
             </div>`;
@@ -11073,6 +11213,10 @@ function applyStocktakeLock() {
   var loginPopup = document.getElementById('stocktake-login-popup');
   if (banner) banner.classList.toggle('active', stocktakeLock);
   if (unlockBtn) unlockBtn.style.display = (stocktakeLock && canManageStocktake()) ? '' : 'none';
+  var bannerCountBtn = document.getElementById('stocktake-count-btn');
+  if (bannerCountBtn) bannerCountBtn.style.display = (stocktakeLock && canManageStocktake()) ? '' : 'none';
+  var countSheetBtn = document.getElementById('btn-count-sheet');
+  if (countSheetBtn) countSheetBtn.style.display = canManageStocktake() ? '' : 'none';
   var sidebarLockBtn = document.getElementById('btn-stocktake-lock');
   if (sidebarLockBtn) {
     sidebarLockBtn.style.display = canManageStocktake() ? '' : 'none';
@@ -11178,6 +11322,395 @@ function _countEntryDate(nowIso) {
 }
 function _countEntryNote() {
   return (stocktakeLock && stocktakeLockAt) ? ' (counted during stocktake; entered ' + new Date().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + ')' : '';
+}
+
+// ─── COUNT SHEET ───────────────────────────────────────────────────────────
+// Phone-friendly stocktake: items grouped by category, expected quantities
+// hidden while counting (blind count), several "spots" per item that are
+// added up (stock is scattered right now), then a review that reveals the
+// differences, flags anything off by more than 50% for a recount, and books
+// every count as an adjustment — the same FIFO adjustment entries as other
+// count paths, dated just before the stocktake lock so they close the week.
+// Progress is kept as a draft on this device so a refresh doesn't lose it.
+// Several people can count different categories on their own phones and
+// each book what they counted; items nobody counted keep their quantity.
+var CS_DRAFT_KEY = 'sb_countSheetDraft';
+var CS_FLAG_PCT = 50;
+var _cs = { counts: {}, view: 'count', filter: 'all', q: '', flagged: {}, recounted: {}, busy: false, result: null };
+
+function _csSaveDraft() {
+  try { localStorage.setItem(CS_DRAFT_KEY, JSON.stringify({ lockAt: stocktakeLockAt || null, savedAt: new Date().toISOString(), counts: _cs.counts, flagged: _cs.flagged, recounted: _cs.recounted })); } catch(e) {}
+}
+function _csLoadDraft() {
+  try { return JSON.parse(localStorage.getItem(CS_DRAFT_KEY) || 'null'); } catch(e) { return null; }
+}
+function _csClearDraft() { try { localStorage.removeItem(CS_DRAFT_KEY); } catch(e) {} }
+
+function openCountSheet() {
+  if (!canManageStocktake()) return;
+  var draft = _csLoadDraft();
+  _cs = { counts: {}, view: 'count', filter: 'all', q: '', flagged: {}, recounted: {}, busy: false, result: null };
+  if (draft && draft.counts && Object.keys(draft.counts).length) {
+    var sameLock = (draft.lockAt || null) === (stocktakeLockAt || null);
+    var n = Object.keys(draft.counts).filter(function(id) { return _csSum(draft.counts[id]) !== null; }).length;
+    var keep = sameLock || confirm('You have ' + n + ' unbooked count' + (n === 1 ? '' : 's') + ' from '
+      + new Date(draft.savedAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+      + '.\n\nOK = continue those counts\nCancel = start a new count sheet');
+    if (keep) { _cs.counts = draft.counts; _cs.flagged = draft.flagged || {}; _cs.recounted = draft.recounted || {}; }
+    else _csClearDraft();
+  }
+  renderCountSheet();
+  openModal('count-sheet-modal');
+}
+
+// Sum of the spots entered for an item; null when nothing has been entered.
+function _csSum(spots) {
+  var any = false, total = 0;
+  (spots || []).forEach(function(v) {
+    if (v === '' || v === null || v === undefined) return;
+    var n = parseFloat(v);
+    if (isNaN(n) || n < 0) return;
+    any = true; total += n;
+  });
+  return any ? Math.round(total * 1000) / 1000 : null;
+}
+
+function _csItems() {
+  return catalogItems().slice().sort(function(a, b) {
+    var ca = (a.category || 'Uncategorized'), cb = (b.category || 'Uncategorized');
+    return ca === cb ? String(a.name || '').localeCompare(String(b.name || '')) : ca.localeCompare(cb);
+  });
+}
+
+function _csCountedN() {
+  return _csItems().filter(function(i) { return _csSum(_cs.counts[i.id]) !== null; }).length;
+}
+
+function renderCountSheet() {
+  var body = document.getElementById('cs-body');
+  if (!body) return;
+  if (_cs.view === 'done') { body.innerHTML = _csDoneHtml(); return; }
+  if (_cs.view === 'review') { body.innerHTML = _csReviewHtml(); return; }
+  var items = _csItems();
+  var counted = _csCountedN();
+  var pct = items.length ? Math.round(counted / items.length * 100) : 0;
+  var flaggedN = Object.keys(_cs.flagged).filter(function(id) { return _cs.flagged[id] && !_cs.recounted[id]; }).length;
+  var lockInfo = stocktakeLock
+    ? '<span class="badge badge-warn">🔒 Locked ' + (stocktakeLockAt ? new Date(stocktakeLockAt).toLocaleString('en-PH', { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) : '') + '</span>'
+    : '<span class="badge badge-danger">Not locked</span>';
+  var html = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'
+    + '<h2 style="margin:0">📋 Count Sheet</h2>' + lockInfo + '</div>'
+    + (stocktakeLock ? '' : '<div style="background:#fef3c7;color:#92400e;border-radius:8px;padding:8px 10px;font-size:12px;margin-top:8px">The stocktake isn\'t locked, so issues and deliveries can still change stock while you count. '
+        + '<button class="cs-mini" style="color:#92400e;border-color:#f59e0b" onclick="toggleStocktakeLock().then(renderCountSheet)">🔒 Lock now</button></div>')
+    + '<div style="font-size:12px;color:var(--muted);margin:8px 0 4px"><span id="cs-progress-text">' + counted + ' of ' + items.length + ' items counted</span> · Counter: ' + esc((currentUser && currentUser.username) || '') + '</div>'
+    + '<div class="cs-progress"><div id="cs-progress-bar" style="width:' + pct + '%"></div></div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 8px">'
+    + [['all', 'All'], ['todo', 'Not counted'], ['done', 'Counted']].concat(flaggedN ? [['flagged', 'Recount (' + flaggedN + ')']] : [])
+        .map(function(f) { return '<button class="cs-chip' + (_cs.filter === f[0] ? ' on' : '') + '" onclick="csSetFilter(\'' + f[0] + '\')">' + f[1] + '</button>'; }).join('')
+    + '</div>'
+    + '<input type="search" id="cs-search" placeholder="Search item…" value="' + esc(_cs.q) + '" oninput="csSearch(this.value)" style="width:100%;margin-bottom:4px">'
+    + '<div id="cs-list" style="max-height:52vh;overflow-y:auto">' + _csListHtml() + '</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin:10px 0">🙈 Expected quantities stay hidden while counting. Use <strong>+ spot</strong> when an item is in more than one place — the spots are added up.</div>'
+    + '<div class="modal-actions" style="margin-top:6px">'
+    + '<button class="btn btn-secondary" onclick="csDiscard()">Discard</button>'
+    + '<button class="btn btn-secondary" onclick="closeModal(\'count-sheet-modal\')">Close (keeps counts)</button>'
+    + '<button class="btn btn-primary" onclick="csReview()"' + (counted ? '' : ' disabled') + '>Review counts →</button>'
+    + '</div>';
+  body.innerHTML = html;
+}
+
+function _csListHtml() {
+  var q = (_cs.q || '').trim().toLowerCase();
+  var items = _csItems().filter(function(i) {
+    var c = _csSum(_cs.counts[i.id]);
+    if (_cs.filter === 'todo' && c !== null) return false;
+    if (_cs.filter === 'done' && c === null) return false;
+    if (_cs.filter === 'flagged' && !(_cs.flagged[i.id] && !_cs.recounted[i.id])) return false;
+    if (q && [i.name, i.category, i.sku].every(function(v) { return String(v || '').toLowerCase().indexOf(q) === -1; })) return false;
+    return true;
+  });
+  if (!items.length) return '<div style="color:var(--muted);text-align:center;padding:20px">' + (_cs.filter === 'todo' ? '✅ Everything is counted.' : 'No items match.') + '</div>';
+  var html = '', lastCat = null;
+  var allItems = _csItems();
+  items.forEach(function(i) {
+    var cat = i.category || 'Uncategorized';
+    if (cat !== lastCat) {
+      var inCat = allItems.filter(function(x) { return (x.category || 'Uncategorized') === cat; });
+      var doneCat = inCat.filter(function(x) { return _csSum(_cs.counts[x.id]) !== null; }).length;
+      html += '<div class="cs-cat"><span>' + esc(cat) + '</span><span id="cs-cat-' + _csCatKey(cat) + '">' + doneCat + '/' + inCat.length + '</span></div>';
+      lastCat = cat;
+    }
+    html += '<div class="cs-row" id="cs-row-' + esc(i.id) + '">' + _csRowInner(i) + '</div>';
+  });
+  return html;
+}
+
+function _csCatKey(cat) { return String(cat).replace(/[^a-z0-9]/gi, '_'); }
+
+function _csRowInner(i) {
+  var spots = _cs.counts[i.id] && _cs.counts[i.id].length ? _cs.counts[i.id] : [''];
+  var total = _csSum(spots);
+  var flagged = _cs.flagged[i.id] && !_cs.recounted[i.id];
+  return '<div class="cs-name"><div style="font-weight:600">' + (total !== null ? '<span style="color:var(--ok)">✓</span> ' : '') + esc(i.name) + '</div>'
+    + '<div style="font-size:12px;color:var(--muted)">' + esc(i.unit || '') + (i.sku ? ' · ' + esc(i.sku) : '') + '</div>'
+    + (flagged ? '<div style="font-size:12px;color:var(--danger);margin-top:2px">⚠️ Recount — this was far from expected</div>' : '')
+    + (spots.length > 1 ? '<div id="cs-total-' + esc(i.id) + '" style="font-size:12px;margin-top:4px">Total: <strong>' + (total === null ? '—' : fmt(total)) + '</strong></div>' : '')
+    + '</div>'
+    + '<div class="cs-spots">'
+    + spots.map(function(v, idx) {
+      return '<div class="cs-spot">'
+        + (spots.length > 1 ? '<button class="cs-mini" title="Remove this spot" onclick="csRemoveSpot(\'' + esc(i.id) + '\',' + idx + ')">✕</button>' : '')
+        + '<input type="number" inputmode="decimal" min="0" step="any" placeholder="' + (spots.length > 1 ? 'Spot ' + (idx + 1) : 'Count') + '" value="' + (v === null || v === undefined ? '' : esc(String(v))) + '" oninput="csInput(\'' + esc(i.id) + '\',' + idx + ',this.value)">'
+        + '</div>';
+    }).join('')
+    + '<button class="cs-mini" onclick="csAddSpot(\'' + esc(i.id) + '\')">+ spot</button>'
+    + '</div>';
+}
+
+function csSetFilter(f) { _cs.filter = f; renderCountSheet(); }
+function csSearch(v) {
+  _cs.q = v;
+  var list = document.getElementById('cs-list');
+  if (list) list.innerHTML = _csListHtml();
+}
+
+// Typing updates state without re-rendering (keeps focus on the input).
+function csInput(id, idx, val) {
+  var spots = _cs.counts[id] && _cs.counts[id].length ? _cs.counts[id] : [''];
+  spots[idx] = val;
+  _cs.counts[id] = spots;
+  if (_cs.flagged[id]) _cs.recounted[id] = true;
+  _csSaveDraft();
+  var tot = document.getElementById('cs-total-' + id);
+  if (tot) { var t = _csSum(spots); tot.innerHTML = 'Total: <strong>' + (t === null ? '—' : fmt(t)) + '</strong>'; }
+  var items = _csItems(), counted = _csCountedN();
+  var pt = document.getElementById('cs-progress-text');
+  if (pt) pt.textContent = counted + ' of ' + items.length + ' items counted';
+  var pb = document.getElementById('cs-progress-bar');
+  if (pb) pb.style.width = (items.length ? Math.round(counted / items.length * 100) : 0) + '%';
+  var item = items.find(function(x) { return x.id === id; });
+  if (item) {
+    var cat = item.category || 'Uncategorized';
+    var inCat = items.filter(function(x) { return (x.category || 'Uncategorized') === cat; });
+    var cc = document.getElementById('cs-cat-' + _csCatKey(cat));
+    if (cc) cc.textContent = inCat.filter(function(x) { return _csSum(_cs.counts[x.id]) !== null; }).length + '/' + inCat.length;
+  }
+  var reviewBtn = document.querySelector('#cs-body .btn-primary');
+  if (reviewBtn) reviewBtn.disabled = !counted;
+}
+
+function _csRerenderRow(id) {
+  var row = document.getElementById('cs-row-' + id);
+  var item = db.items.find(function(x) { return x.id === id; });
+  if (row && item) row.innerHTML = _csRowInner(item);
+}
+function csAddSpot(id) {
+  var spots = _cs.counts[id] && _cs.counts[id].length ? _cs.counts[id] : [''];
+  spots.push('');
+  _cs.counts[id] = spots;
+  _csSaveDraft();
+  _csRerenderRow(id);
+  var inputs = document.querySelectorAll('#cs-row-' + id + ' input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+function csRemoveSpot(id, idx) {
+  var spots = _cs.counts[id] || [];
+  spots.splice(idx, 1);
+  _cs.counts[id] = spots.length ? spots : [''];
+  _csSaveDraft();
+  _csRerenderRow(id);
+  csInput(id, 0, _cs.counts[id][0]); // refresh progress
+}
+
+function csDiscard() {
+  if (_csCountedN() && !confirm('Discard all counts on this sheet? Nothing has been booked yet.')) return;
+  _csClearDraft();
+  _cs = { counts: {}, view: 'count', filter: 'all', q: '', flagged: {}, recounted: {}, busy: false, result: null };
+  closeModal('count-sheet-modal');
+}
+
+// Counted items compared with the system quantity. Cost is an estimate at
+// the current FIFO batch cost; booking values each line exactly.
+function _csReviewRows() {
+  return _csItems().map(function(i) {
+    var counted = _csSum(_cs.counts[i.id]);
+    if (counted === null) return null;
+    var expected = i.qty || 0;
+    var diff = Math.round((counted - expected) * 1000) / 1000;
+    var pctOff = expected > 0 ? Math.abs(diff) / expected * 100 : (counted > 0 ? null : 0);
+    return {
+      item: i, counted: counted, expected: expected, diff: diff,
+      estCost: Math.abs(diff) * (currentUnitCost(i) || i.cost || 0),
+      pctOff: pctOff, flag: expected > 0 && Math.abs(diff) / expected * 100 > CS_FLAG_PCT,
+      spots: (_cs.counts[i.id] || []).filter(function(v) { return v !== '' && v !== null && !isNaN(parseFloat(v)); }),
+    };
+  }).filter(Boolean);
+}
+
+function csReview() {
+  _cs.view = 'review';
+  // Flag only once per item: after a recount the new number stands, even if
+  // it is still far off (it may be a real loss).
+  _csReviewRows().forEach(function(r) { if (r.flag && !_cs.recounted[r.item.id]) _cs.flagged[r.item.id] = true; });
+  _csSaveDraft();
+  renderCountSheet();
+}
+function csBackToCount(filter) { _cs.view = 'count'; _cs.filter = filter || 'all'; renderCountSheet(); }
+
+function _csReviewHtml() {
+  var rows = _csReviewRows();
+  var all = _csItems();
+  var diffs = rows.filter(function(r) { return r.diff !== 0; }).sort(function(a, b) { return b.estCost - a.estCost; });
+  var matched = rows.length - diffs.length;
+  var notCounted = all.filter(function(i) { return _csSum(_cs.counts[i.id]) === null; });
+  var shortage = diffs.filter(function(r) { return r.diff < 0; }).reduce(function(s, r) { return s + r.estCost; }, 0);
+  var excess = diffs.filter(function(r) { return r.diff > 0; }).reduce(function(s, r) { return s + r.estCost; }, 0);
+  var pending = rows.filter(function(r) { return _cs.flagged[r.item.id] && !_cs.recounted[r.item.id]; });
+  var card = function(label, val, color) {
+    return '<div style="background:var(--surface2);border-radius:8px;padding:8px 12px;flex:1;min-width:120px"><div style="font-size:11px;color:var(--muted)">' + label + '</div><div style="font-size:17px;font-weight:700' + (color ? ';color:' + color : '') + '">' + val + '</div></div>';
+  };
+  var html = '<h2 style="margin-bottom:4px">Review before booking</h2>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">' + rows.length + ' of ' + all.length + ' items counted · amounts are estimates at the current batch cost</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+    + card('Shortage', '≈ ' + fmtPHP(Math.round(shortage * 100) / 100), 'var(--danger)')
+    + card('Excess found', '≈ ' + fmtPHP(Math.round(excess * 100) / 100), 'var(--ok)')
+    + card('Net variance', '≈ ' + fmtPHP(Math.round((shortage - excess) * 100) / 100))
+    + card('Matched', matched + ' item' + (matched === 1 ? '' : 's'))
+    + '</div>';
+  if (pending.length) {
+    html += '<div style="background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:10px">⚠️ ' + pending.length + ' item' + (pending.length === 1 ? ' is' : 's are')
+      + ' off by more than ' + CS_FLAG_PCT + '%. Recount ' + (pending.length === 1 ? 'it' : 'them') + ' before booking — a typo here becomes a big false variance in this week\'s cost.</div>';
+  }
+  html += '<div class="table-wrap" style="max-height:42vh;overflow-y:auto"><table><thead><tr><th>Item</th><th style="text-align:right">Counted</th><th style="text-align:right">Expected</th><th style="text-align:right">Difference</th><th style="text-align:right">≈ Value</th></tr></thead><tbody>'
+    + (diffs.length ? diffs.map(function(r) {
+      var flagNow = _cs.flagged[r.item.id] && !_cs.recounted[r.item.id];
+      return '<tr' + (flagNow ? ' style="background:rgba(220,38,38,.06)"' : '') + '><td><strong>' + esc(r.item.name) + '</strong>'
+        + '<div style="font-size:11px;color:var(--muted)">' + esc(r.item.category || '') + (r.spots.length > 1 ? ' · ' + r.spots.map(function(s) { return fmt(parseFloat(s)); }).join(' + ') : '') + '</div>'
+        + (flagNow ? '<span class="badge badge-danger">Recount</span>' : (_cs.recounted[r.item.id] ? '<span class="badge badge-info">Recounted</span>' : '')) + '</td>'
+        + '<td style="text-align:right">' + fmt(r.counted) + '</td><td style="text-align:right">' + fmt(r.expected) + '</td>'
+        + '<td style="text-align:right;font-weight:600;color:' + (r.diff < 0 ? 'var(--danger)' : 'var(--ok)') + '">' + (r.diff > 0 ? '+' : '') + fmt(r.diff)
+        + (r.pctOff !== null ? '<div style="font-size:11px;font-weight:400;color:var(--muted)">' + Math.round(r.pctOff) + '%</div>' : '') + '</td>'
+        + '<td style="text-align:right">' + fmtPHP(Math.round(r.estCost * 100) / 100) + '</td></tr>';
+    }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:16px">✅ Every counted item matches the system.</td></tr>')
+    + '</tbody></table></div>';
+  if (notCounted.length) {
+    html += '<div style="font-size:12px;color:var(--muted);margin-top:10px">Not counted (' + notCounted.length + ') — these keep their current quantity: '
+      + notCounted.slice(0, 12).map(function(i) { return esc(i.name); }).join(', ') + (notCounted.length > 12 ? '…' : '') + '</div>';
+  }
+  html += '<div style="font-size:12px;color:var(--muted);margin-top:8px">Counts will be dated '
+    + new Date(_countEntryDate(new Date().toISOString())).toLocaleString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+    + (stocktakeLock ? ' — just before the lock, so they close this week.' : ' (now — the stocktake isn\'t locked).') + '</div>'
+    + '<div class="modal-actions">'
+    + '<button class="btn btn-secondary" onclick="csBackToCount()">← Back to counting</button>'
+    + (pending.length ? '<button class="btn btn-secondary" onclick="csBackToCount(\'flagged\')">Recount flagged (' + pending.length + ')</button>' : '')
+    + '<button class="btn btn-primary" id="cs-book-btn" onclick="csBook()">Book ' + rows.length + ' count' + (rows.length === 1 ? '' : 's') + '</button>'
+    + '</div>';
+  return html;
+}
+
+// Books the counts: one FIFO adjustment per item that differs (re-checked
+// against the live quantity right before writing), plus a finalized
+// reconciliation record listing every counted item (matched ones included,
+// so there's a record of when each item was last counted).
+async function csBook() {
+  if (_cs.busy) return;
+  if (checkStocktakeLock('count')) return;
+  var rows = _csReviewRows();
+  if (!rows.length) return;
+  var pending = rows.filter(function(r) { return _cs.flagged[r.item.id] && !_cs.recounted[r.item.id]; });
+  if (pending.length && !confirm(pending.length + ' flagged item' + (pending.length === 1 ? ' has' : 's have') + ' not been recounted:\n\n'
+      + pending.map(function(r) { return '• ' + r.item.name + ': counted ' + fmt(r.counted) + ', expected ' + fmt(r.expected); }).join('\n')
+      + '\n\nBook anyway?')) return;
+  if (!stocktakeLock && !confirm('The stocktake isn\'t locked, so these counts will be dated now and anything issued or received while you counted can make them off.\n\nBook anyway?')) return;
+  var nDiff = rows.filter(function(r) { return r.diff !== 0; }).length;
+  if (!confirm('Book ' + rows.length + ' count' + (rows.length === 1 ? '' : 's') + '?\n\n' + nDiff + ' adjustment' + (nDiff === 1 ? '' : 's') + ' will be posted to inventory and the Variance report. This can\'t be undone from here.')) return;
+
+  _cs.busy = true;
+  var btn = document.getElementById('cs-book-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Booking…'; }
+  var now = new Date().toISOString();
+  var date = _countEntryDate(now);
+  var by = (currentUser && currentUser.username) || 'user';
+  var sessionId = uid();
+  var lines = [], logs = [], shortage = 0, excess = 0, failed = [];
+  try {
+    for (var k = 0; k < rows.length; k++) {
+      var r = rows[k], item = r.item;
+      if (sb) {
+        try {
+          var fresh = await sb.from('items').select('qty').eq('id', item.id).single();
+          if (fresh.data && !fresh.error && fresh.data.qty !== undefined) item.qty = fresh.data.qty;
+        } catch(e) {}
+      }
+      var sysQty = item.qty || 0;
+      var diff = Math.round((r.counted - sysQty) * 1000) / 1000;
+      var spotsTxt = r.spots.length > 1 ? ' (spots: ' + r.spots.map(function(s) { return fmt(parseFloat(s)); }).join(' + ') + ')' : '';
+      lines.push({ itemId: item.id, itemName: item.name, sku: item.sku || '', unit: item.unit || '', systemQty: sysQty, countedQty: r.counted, variance: diff,
+        reason: 'Count sheet' + spotsTxt + (_cs.recounted[item.id] ? ' — recounted' : '') });
+      if (diff === 0) continue;
+      getLayers(item);
+      var cost = null, detail = '';
+      if (diff < 0) { detail = describeConsumption(item, -diff); cost = consumeLayers(item, -diff); shortage += cost || 0; }
+      else { cost = addFoundStock(item, diff); excess += cost || 0; }
+      var log = {
+        id: uid(), itemId: item.id, type: 'adjust',
+        qty: r.counted, absQty: r.counted, variance: diff, sysQty: sysQty,
+        varianceReason: 'Count sheet',
+        by: by, date: date,
+        notes: 'Count sheet: counted ' + fmt(r.counted) + ', system ' + fmt(sysQty) + spotsTxt + (_cs.recounted[item.id] ? ' — recounted' : '') + _countEntryNote(),
+        ref: 'count:' + sessionId, costAmount: cost, costDetail: detail,
+      };
+      db.logs.push(log); logs.push(log);
+      item.qty = r.counted;
+      item.updatedAt = now;
+      syncItemCost(item);
+      if (typeof updateMaxRef === 'function') { try { updateMaxRef(item, r.counted); } catch(e) {} }
+      if (sb) {
+        try {
+          var okItem = await sbUpdateItem(item);
+          var okLog = await sbInsertLogs([log]);
+          if (!okItem || !okLog) failed.push(item.name);
+        } catch(e) { failed.push(item.name); }
+      }
+    }
+    var rec = { id: sessionId, asOfDate: date, createdBy: by, createdAt: now, status: 'finalized', finalizedBy: by, finalizedAt: now, applied: true, lines: lines };
+    db.reconciliations = db.reconciliations || [];
+    db.reconciliations.push(rec);
+    if (sb) {
+      try { var rr = await sb.from('reconciliations').upsert([rec]); if (rr && rr.error) console.warn('Count sheet record not saved:', rr.error.message); } catch(e) {}
+    }
+    if (!sb || failed.length) save();
+    logAudit('Count sheet booked', rows.length + ' counted, ' + logs.length + ' adjusted · shortage ' + fmtPHP(Math.round(shortage * 100) / 100) + ', excess ' + fmtPHP(Math.round(excess * 100) / 100));
+    _csClearDraft();
+    _cs.result = { counted: rows.length, adjusted: logs.length, shortage: shortage, excess: excess, failed: failed, date: date };
+    _cs.view = 'done';
+  } finally {
+    _cs.busy = false;
+  }
+  renderCountSheet();
+  if (typeof renderInventory === 'function') renderInventory();
+  if (typeof updateSummary === 'function') updateSummary();
+}
+
+// Counts are dated just before the lock, which is the end of the week being
+// closed — once the lock has started a new week, that is "last week".
+function _csWeekPreset(dateIso) {
+  if (!dateIso) return 'this';
+  return opWeekRange(new Date(dateIso)).start.getTime() === opWeekRange().start.getTime() ? 'this' : 'last';
+}
+
+function _csDoneHtml() {
+  var r = _cs.result || {};
+  return '<h2>✅ Counts booked</h2>'
+    + '<div style="font-size:14px;line-height:1.7">' + r.counted + ' item' + (r.counted === 1 ? '' : 's') + ' counted · ' + r.adjusted + ' adjustment' + (r.adjusted === 1 ? '' : 's') + ' posted<br>'
+    + 'Shortage <strong style="color:var(--danger)">' + fmtPHP(Math.round((r.shortage || 0) * 100) / 100) + '</strong> · Excess <strong style="color:var(--ok)">' + fmtPHP(Math.round((r.excess || 0) * 100) / 100) + '</strong> (exact FIFO values)<br>'
+    + '<span style="color:var(--muted);font-size:12px">Dated ' + new Date(r.date).toLocaleString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + '</span></div>'
+    + (r.failed && r.failed.length ? '<div style="background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 10px;font-size:13px;margin-top:10px">⚠️ Could not save to the server for: ' + r.failed.map(esc).join(', ') + '. They were saved locally and will retry on the next sync — check the Variance report after a refresh.</div>' : '')
+    + (stocktakeLock ? '<div style="font-size:13px;margin-top:12px">Once every category is counted and booked, unlock the stocktake so issuing and receiving can resume.</div>' : '')
+    + '<div class="modal-actions">'
+    + '<button class="btn btn-secondary" onclick="closeModal(\'count-sheet-modal\');switchTab(\'report\');setRptPreset(\'' + _csWeekPreset(r.date) + '\')">View in Cost Report</button>'
+    + (stocktakeLock ? '<button class="btn btn-secondary" onclick="closeModal(\'count-sheet-modal\');toggleStocktakeLock()">🔓 Unlock stocktake</button>' : '')
+    + '<button class="btn btn-primary" onclick="closeModal(\'count-sheet-modal\')">Done</button></div>';
 }
 
 // ─── OPERATIONAL WEEK ──────────────────────────────────────────────────────
