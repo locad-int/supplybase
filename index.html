@@ -1963,9 +1963,9 @@
         <input type="text" id="pog-ship-terms" placeholder="e.g. FOB, Prepaid">
       </div>
       <div class="form-group">
-        <label>Delivery Date / Terms</label>
+        <label>Delivery Date *</label>
         <div style="display:flex;gap:6px">
-          <input type="text" id="pog-delivery" placeholder="e.g. 10/05/2026 or Bi-monthly delivery" style="flex:1">
+          <input type="text" id="pog-delivery" placeholder="MM/DD/YYYY — pick with 📅" style="flex:1">
           <button type="button" class="btn btn-icon btn-sm" title="Pick a date" onclick="openPogDeliveryDatePicker()">📅</button>
           <input type="date" id="pog-delivery-date-picker" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none" onchange="applyPogDeliveryDatePick()">
         </div>
@@ -2099,8 +2099,8 @@
         <input type="text" id="poe-ship-terms" placeholder="e.g. FOB, Prepaid">
       </div>
       <div class="form-group">
-        <label>Delivery Date / Terms</label>
-        <input type="text" id="poe-delivery" placeholder="e.g. 10/05/2026 or Bi-monthly delivery">
+        <label>Delivery Date *</label>
+        <input type="text" id="poe-delivery" placeholder="MM/DD/YYYY, e.g. 10/26/2026">
       </div>
       <div class="form-group">
         <label>Shipping Cost (₱)</label>
@@ -3192,6 +3192,19 @@ function _parsePromisedYmd(s) {
   if (m) return m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
   return null;
 }
+// Delivery date is required on reorders/POs (it drives on-time tracking).
+// Accepts MM/DD/YYYY or YYYY-MM-DD, optionally followed by a note
+// ("10/26/2026 – staggered"). Returns an error message, or '' when valid.
+function _deliveryDateError(s) {
+  s = String(s || '').trim();
+  if (!s) return 'Enter the expected delivery date.';
+  var ymd = _parsePromisedYmd(s);
+  if (!ymd) return 'Delivery date must include a date (MM/DD/YYYY), e.g. "10/26/2026" or "10/26/2026 – staggered". Use the 📅 button to pick one.';
+  var d = new Date(ymd + 'T00:00:00Z');
+  if (isNaN(d) || d.toISOString().slice(0, 10) !== ymd) return '"' + s + '" is not a valid calendar date.';
+  return '';
+}
+
 function _ymdDiff(a, b) { return Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000); }
 
 // Timing and fill facts for one PO.
@@ -6602,6 +6615,8 @@ async function saveReorderCart(generatePdf) {
   var supplier = document.getElementById('pog-supplier').value.trim();
   if (!supplier) { alert('Enter a supplier.'); return; }
   if (!poCart.length) { alert('Add at least one item.'); return; }
+  var delivErr = _deliveryDateError(document.getElementById('pog-delivery').value);
+  if (delivErr) { alert(delivErr); document.getElementById('pog-delivery').focus(); return; }
 
   var catalogCart = poCart.filter(function(c) { return !c.isCustom; });
   var customCart  = poCart.filter(function(c) { return c.isCustom; });
@@ -7107,6 +7122,8 @@ async function savePoEdit() {
   var supplier = document.getElementById('poe-supplier').value.trim();
   if (!supplier) { alert('Enter a supplier.'); return; }
   if (!poEditLines.length) { alert('A Purchase Order needs at least one item.'); return; }
+  var delivErrE = _deliveryDateError(document.getElementById('poe-delivery').value);
+  if (delivErrE) { alert(delivErrE); document.getElementById('poe-delivery').focus(); return; }
 
   var supplierAddress = document.getElementById('poe-supplier-address').value.trim();
   var supplierTin     = document.getElementById('poe-supplier-tin').value.trim();
@@ -15515,6 +15532,8 @@ async function aiGeneratePO(input) {
   ];
   var missing = requiredFields.filter(function(f) { return !(input[f[0]] || '').toString().trim(); }).map(function(f) { return f[1]; });
   if (missing.length) return { ok: false, message: 'Missing required field(s) before this PO can be generated: ' + missing.join(', ') + '.' };
+  var delivErrAi = _deliveryDateError(input.delivery);
+  if (delivErrAi) return { ok: false, message: delivErrAi + ' Ask the user for the expected delivery date (MM/DD/YYYY).' };
 
   var cart = [];
   for (var i = 0; i < rawItems.length; i++) {
