@@ -2171,6 +2171,8 @@
     <h2>🏢 Supplier Directory</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
       <input type="text" id="sd-search" placeholder="Search name, address or TIN…" oninput="renderSupplierDirectory()" style="flex:1;min-width:200px">
+      <button class="btn btn-secondary" onclick="openSupplierPerformance()" style="font-size:12px">📊 Performance</button>
+      <button class="btn btn-secondary" onclick="openPriceHistory()" style="font-size:12px">📈 Price History</button>
       <button class="btn btn-secondary" onclick="exportSupplierDirectoryCSV()" style="font-size:12px">⬇ Export CSV</button>
       <button class="btn btn-primary" id="sd-add-btn" onclick="sdOpenForm(-1)" style="display:none">+ Add Supplier</button>
     </div>
@@ -2202,6 +2204,46 @@
     <div id="sd-count" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="closeModal('supplier-dir-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- SUPPLIER PERFORMANCE MODAL -->
+<div class="modal-bg" id="supplier-perf-modal">
+  <div class="modal" style="max-width:1080px">
+    <h2>📊 Supplier Performance</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <select id="sp-period" onchange="renderSupplierPerformance()" style="width:auto;flex:0 0 auto">
+        <option value="0">All time</option>
+        <option value="90">POs from the last 90 days</option>
+        <option value="30">POs from the last 30 days</option>
+      </select>
+      <span style="flex:1"></span>
+      <button class="btn btn-secondary" onclick="exportSupplierPerformanceCSV()" style="font-size:12px">⬇ Export CSV</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+      <strong>Lead time</strong>: PO date → last delivery that completed the PO. <strong>On time</strong>: completed by the PO's delivery date (open POs past that date count as late).
+      <strong>Fill rate</strong>: quantity delivered ÷ ordered on finished lines (closed-short lines lower it). Click a supplier to see its POs.
+    </div>
+    <div class="table-wrap" style="max-height:60vh;overflow-y:auto">
+      <table>
+        <thead><tr><th>Supplier</th><th style="text-align:right">POs</th><th style="text-align:right">PO Value</th><th style="text-align:right">Avg Lead Time</th><th style="text-align:right">1st Delivery</th><th style="text-align:right">On Time</th><th style="text-align:right">Fill Rate</th><th style="text-align:right">Closed Short</th><th>Last PO</th></tr></thead>
+        <tbody id="sp-tbody"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="closeModal('supplier-perf-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- PRICE HISTORY MODAL -->
+<div class="modal-bg" id="price-history-modal">
+  <div class="modal" style="max-width:1000px">
+    <div id="ph-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="ph-export-btn" onclick="exportPriceHistoryCSV()">⬇ Export CSV</button>
+      <button class="btn btn-primary" onclick="closeModal('price-history-modal')">Close</button>
     </div>
   </div>
 </div>
@@ -3118,6 +3160,379 @@ function exportSupplierDirectoryCSV() {
   a.href = URL.createObjectURL(blob);
   a.download = 'supplier_directory_' + new Date().toISOString().slice(0, 10) + '.csv';
   a.click();
+}
+
+function _csvDownload(rows, filename) {
+  var blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+function _csvQ(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }
+function _supDisplayName(name) {
+  var e = supplierDirectory[_supKey(name)];
+  return (e && e.name) || (name || '').trim() || 'Unknown supplier';
+}
+
+// ─── SUPPLIER PERFORMANCE ──────────────────────────────────────────────────
+// Scores each supplier from data SupplyBase already has: PO dates, the PO's
+// promised delivery date, and the PO-linked deliveries that drive "received
+// so far". Everything is computed per PO, then rolled up per supplier.
+var _spRows = [];
+var _spOpen = {}; // supplier key → expanded
+
+// The PO "Delivery" field is free text; use it as a due date only when it
+// holds a date (MM/DD/YYYY as the date picker writes it, or YYYY-MM-DD).
+function _parsePromisedYmd(s) {
+  s = String(s || '');
+  var m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = s.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+  if (m) return m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
+  return null;
+}
+function _ymdDiff(a, b) { return Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000); }
+
+// Timing and fill facts for one PO.
+function _poPerf(po, todayYmd) {
+  var d = _poDetailData(po.poNumber);
+  if (!d.lines.length) return null;
+  var orderedYmd = _phYmd(new Date(po.date || po.createdAt));
+  var promised = _parsePromisedYmd(po.delivery);
+  var allDates = [], lastDone = [], done = true, fillNum = 0, fillDen = 0, closedShort = 0;
+  d.lines.forEach(function(L) {
+    var dates = [];
+    if (L.kind === 'catalog') db.logs.forEach(function(l) { if (_logCountsTowardReorder(l, L.r)) dates.push(l.date); });
+    else if (L.receivedAt) dates.push(L.receivedAt);
+    dates.sort();
+    allDates = allDates.concat(dates);
+    var finished = L.status === 'received' || L.status === 'closed short';
+    if (!finished) { done = false; return; }
+    if (L.status === 'closed short') closedShort++;
+    // Completion = last delivery for the line; a line marked received with no
+    // linked delivery falls back to when it was marked received.
+    var comp = dates.length ? dates[dates.length - 1] : (L.r && L.r.receivedAt) || null;
+    if (comp && !(L.status === 'closed short' && L.received === 0)) lastDone.push(comp);
+    var counted = L.status === 'received' ? L.ordered : Math.min(L.received, L.ordered);
+    fillNum += counted; fillDen += L.ordered;
+  });
+  allDates.sort(); lastDone.sort();
+  var completedAt = done && lastDone.length ? lastDone[lastDone.length - 1] : null;
+  var completedYmd = completedAt ? _phYmd(new Date(completedAt)) : null;
+  var firstYmd = allDates.length ? _phYmd(new Date(allDates[0])) : null;
+  var onTime = null; // null = no due date, or not due yet
+  if (promised) {
+    if (completedYmd) onTime = completedYmd <= promised;
+    else if (!done && todayYmd > promised) onTime = false; // overdue
+  }
+  return {
+    po: po, poNumber: po.poNumber, supplierKey: _supKey(po.supplier), orderedYmd: orderedYmd, promised: promised,
+    firstYmd: firstYmd, completedYmd: completedYmd, done: done,
+    leadDays: completedYmd ? Math.max(0, _ymdDiff(orderedYmd, completedYmd)) : null,
+    firstDays: firstYmd ? Math.max(0, _ymdDiff(orderedYmd, firstYmd)) : null,
+    onTime: onTime, overdue: !done && !!promised && todayYmd > promised,
+    fillNum: fillNum, fillDen: fillDen, closedShort: closedShort, value: d.orderedValue,
+  };
+}
+
+function supplierPerformance(sinceDays) {
+  var todayYmd = _phYmd(new Date());
+  var sinceYmd = sinceDays ? _ymdAdd(todayYmd, -sinceDays) : null;
+  var map = {};
+  (db.purchaseOrders || []).forEach(function(po) {
+    if (!po || !po.poNumber) return;
+    var p = _poPerf(po, todayYmd);
+    if (!p) return;
+    if (sinceYmd && p.orderedYmd < sinceYmd) return;
+    var k = p.supplierKey || '(none)';
+    var s = map[k] || (map[k] = { key: k, name: _supDisplayName(po.supplier), pos: [], open: 0, value: 0,
+      lead: [], first: [], onTime: 0, late: 0, fillNum: 0, fillDen: 0, closedShort: 0, lastPo: '' });
+    s.pos.push(p);
+    if (!p.done) s.open++;
+    s.value += p.value;
+    if (p.leadDays !== null) s.lead.push(p.leadDays);
+    if (p.firstDays !== null) s.first.push(p.firstDays);
+    if (p.onTime === true) s.onTime++; else if (p.onTime === false) s.late++;
+    s.fillNum += p.fillNum; s.fillDen += p.fillDen;
+    s.closedShort += p.closedShort;
+    if (p.orderedYmd > s.lastPo) s.lastPo = p.orderedYmd;
+  });
+  var avg = function(a) { return a.length ? a.reduce(function(x, y) { return x + y; }, 0) / a.length : null; };
+  return Object.values(map).map(function(s) {
+    s.avgLead = avg(s.lead);
+    s.avgFirst = avg(s.first);
+    s.onTimePct = (s.onTime + s.late) ? Math.round(s.onTime / (s.onTime + s.late) * 100) : null;
+    s.fillPct = s.fillDen ? Math.round(s.fillNum / s.fillDen * 1000) / 10 : null;
+    s.pos.sort(function(a, b) { return b.orderedYmd.localeCompare(a.orderedYmd); });
+    return s;
+  }).sort(function(a, b) { return b.value - a.value; });
+}
+
+function openSupplierPerformance() {
+  if (currentRole !== 'superuser' && currentRole !== 'user') return;
+  _spOpen = {};
+  renderSupplierPerformance();
+  openModal('supplier-perf-modal');
+}
+
+function _spBadge(pct, good, ok, suffix) {
+  if (pct === null || pct === undefined) return '<span style="color:var(--muted)">—</span>';
+  var cls = pct >= good ? 'badge-ok' : (pct >= ok ? 'badge-warn' : 'badge-danger');
+  return '<span class="badge ' + cls + '">' + pct + (suffix || '%') + '</span>';
+}
+function _fmtYmd(ymd) {
+  return ymd ? new Date(ymd + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+}
+function _fmtDays(n) { return n === null || n === undefined ? '—' : (Math.round(n * 10) / 10) + ' day' + (n === 1 ? '' : 's'); }
+
+function renderSupplierPerformance() {
+  var since = parseInt(document.getElementById('sp-period').value, 10) || 0;
+  _spRows = supplierPerformance(since);
+  var mutedDash = '<span style="color:var(--muted)">—</span>';
+  var html = _spRows.map(function(s, i) {
+    var open = !!_spOpen[s.key];
+    var row = '<tr style="cursor:pointer" onclick="toggleSupplierPerfRow(' + i + ')">'
+      + '<td><span style="display:inline-block;width:14px;color:var(--muted)">' + (open ? '▾' : '▸') + '</span><strong>' + esc(s.name) + '</strong></td>'
+      + '<td style="text-align:right">' + s.pos.length + (s.open ? ' <span style="color:var(--muted);font-size:11px">(' + s.open + ' open)</span>' : '') + '</td>'
+      + '<td style="text-align:right">' + fmtPHP(s.value) + '</td>'
+      + '<td style="text-align:right">' + _fmtDays(s.avgLead) + '</td>'
+      + '<td style="text-align:right">' + _fmtDays(s.avgFirst) + '</td>'
+      + '<td style="text-align:right" title="' + s.onTime + ' on time, ' + s.late + ' late or overdue">' + _spBadge(s.onTimePct, 90, 70) + '</td>'
+      + '<td style="text-align:right">' + _spBadge(s.fillPct, 98, 90) + '</td>'
+      + '<td style="text-align:right">' + (s.closedShort ? '<span class="badge badge-warn">' + s.closedShort + ' line' + (s.closedShort === 1 ? '' : 's') + '</span>' : mutedDash) + '</td>'
+      + '<td style="white-space:nowrap">' + _fmtYmd(s.lastPo) + '</td></tr>';
+    if (open) {
+      row += '<tr><td colspan="9" style="background:var(--surface2);padding:8px 12px"><table style="font-size:12px;width:100%">'
+        + '<thead><tr><th>PO</th><th>Ordered</th><th>Due</th><th>1st Delivery</th><th>Completed</th><th style="text-align:right">Days</th><th>On Time</th><th style="text-align:right">Fill</th><th style="text-align:right">Value</th></tr></thead><tbody>'
+        + s.pos.map(function(p) {
+          var ot = p.onTime === true ? '<span class="badge badge-ok">On time</span>'
+            : p.onTime === false ? (p.overdue ? '<span class="badge badge-danger">Overdue</span>' : '<span class="badge badge-danger">Late ' + _ymdDiff(p.promised, p.completedYmd) + 'd</span>')
+            : (p.done ? '<span style="color:var(--muted)">No due date</span>' : '<span style="color:var(--muted)">Open</span>');
+          return '<tr>'
+            + '<td><a href="#" onclick="event.preventDefault();openPoDetail(\'' + esc(p.poNumber) + '\')">' + esc(p.poNumber) + '</a></td>'
+            + '<td>' + _fmtYmd(p.orderedYmd) + '</td><td>' + _fmtYmd(p.promised) + '</td>'
+            + '<td>' + _fmtYmd(p.firstYmd) + '</td><td>' + (p.done ? _fmtYmd(p.completedYmd) : '<span style="color:var(--muted)">Not complete</span>') + '</td>'
+            + '<td style="text-align:right">' + (p.leadDays === null ? '—' : p.leadDays) + '</td>'
+            + '<td>' + ot + '</td>'
+            + '<td style="text-align:right">' + (p.fillDen ? Math.round(p.fillNum / p.fillDen * 1000) / 10 + '%' : '—') + '</td>'
+            + '<td style="text-align:right">' + fmtPHP(p.value) + '</td></tr>';
+        }).join('') + '</tbody></table></td></tr>';
+    }
+    return row;
+  }).join('');
+  document.getElementById('sp-tbody').innerHTML = html || '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:16px">No purchase orders in this period.</td></tr>';
+}
+
+function toggleSupplierPerfRow(i) {
+  var s = _spRows[i];
+  if (!s) return;
+  _spOpen[s.key] = !_spOpen[s.key];
+  renderSupplierPerformance();
+}
+
+function exportSupplierPerformanceCSV() {
+  var rows = [['Supplier', 'PO', 'Ordered', 'Due', 'First Delivery', 'Completed', 'Lead Days', 'On Time', 'Fill %', 'Closed Short Lines', 'PO Value'].join(',')];
+  _spRows.forEach(function(s) {
+    s.pos.forEach(function(p) {
+      rows.push([_csvQ(s.name), _csvQ(p.poNumber), p.orderedYmd, p.promised || '', p.firstYmd || '', p.completedYmd || '',
+        p.leadDays === null ? '' : p.leadDays,
+        p.onTime === true ? 'Yes' : (p.onTime === false ? (p.overdue ? 'Overdue' : 'No') : ''),
+        p.fillDen ? Math.round(p.fillNum / p.fillDen * 1000) / 10 : '', p.closedShort, Math.round(p.value * 100) / 100].join(','));
+    });
+  });
+  _csvDownload(rows, 'supplier_performance_' + new Date().toISOString().slice(0, 10) + '.csv');
+}
+
+// ─── SUPPLIER PRICE HISTORY ────────────────────────────────────────────────
+// Every price paid per item: PO line prices (the supplier's price at the PO
+// date) plus costed deliveries that aren't tied to a PO (older entries).
+// Deliveries linked to a PO are not added again — the PO line already
+// represents that price. All prices are VAT-inclusive per unit, the same
+// basis as item costs (VAT-exclusive POs are stored ×1.12).
+var _phItemId = null;
+var _phSort = 'change';
+
+function _priceHistoryPoints(itemId) {
+  var pts = [];
+  var poByNum = {};
+  (db.purchaseOrders || []).forEach(function(p) { poByNum[String(p.poNumber).toUpperCase()] = p; });
+  var poLines = [];
+  db.reorders.forEach(function(r) {
+    if (r.itemId !== itemId || !r.poNumber || !(parseFloat(r.cost) > 0)) return;
+    poLines.push(r);
+    var po = poByNum[String(r.poNumber).toUpperCase()];
+    pts.push({ date: (po && po.date) || r.orderedAt || r.createdAt, supplier: (po && po.supplier) || r.supplier || '',
+      price: parseFloat(r.cost), qty: r.qty || 0, source: 'PO', ref: r.poNumber });
+  });
+  db.logs.forEach(function(l) {
+    if (l.itemId !== itemId || l.type !== 'restock' || l.costAmount === undefined || l.costAmount === null || !(l.qty > 0)) return;
+    if (l.by === 'Initial' || /opening stock|Item created/i.test(l.notes || '')) return; // not a purchase
+    if (typeof isLogVisible === 'function' && !isLogVisible(l)) return;
+    // Already represented by a priced PO line it was delivered against
+    // (linked by reference, or an older unlinked delivery the app counts
+    // toward that line) — don't list the same purchase twice.
+    if (poLines.some(function(r) { return _logCountsTowardReorder(l, r); })) return;
+    var sp = _rptSupplierFor(l);
+    pts.push({ date: l.date, supplier: sp.supplier || '', price: l.costAmount / l.qty, qty: l.qty, source: 'Delivery', ref: sp.po || '' });
+  });
+  pts.forEach(function(p) { p.price = Math.round(p.price * 100) / 100; p.supplierKey = _supKey(p.supplier); p.supplierName = p.supplier ? _supDisplayName(p.supplier) : 'Unknown supplier'; });
+  return pts.sort(function(a, b) { return String(a.date).localeCompare(String(b.date)); });
+}
+
+// One summary row per item that has any price history.
+function priceHistoryOverview() {
+  return catalogItems().map(function(item) {
+    var pts = _priceHistoryPoints(item.id);
+    if (!pts.length) return null;
+    var last = pts[pts.length - 1];
+    var prev = null;
+    for (var i = pts.length - 2; i >= 0; i--) { if (pts[i].price !== last.price) { prev = pts[i]; break; } }
+    var low = pts.reduce(function(m, p) { return p.price < m.price ? p : m; }, pts[0]);
+    var suppliers = {};
+    pts.forEach(function(p) { suppliers[p.supplierKey] = 1; });
+    return { item: item, pts: pts, last: last, prev: prev, low: low,
+      changePct: prev ? Math.round((last.price - prev.price) / prev.price * 1000) / 10 : null,
+      supplierCount: Object.keys(suppliers).length };
+  }).filter(Boolean);
+}
+
+function openPriceHistory(itemId) {
+  if (currentRole !== 'superuser' && currentRole !== 'user') return;
+  _phItemId = itemId || null;
+  renderPriceHistory();
+  openModal('price-history-modal');
+}
+
+function setPriceHistorySort(v) { _phSort = v; renderPriceHistory(); }
+
+function renderPriceHistory() {
+  var body = document.getElementById('ph-body');
+  if (!body) return;
+  if (_phItemId) { body.innerHTML = _priceHistoryDetailHtml(_phItemId); return; }
+  var q = ((document.getElementById('ph-search') || {}).value || '').trim().toLowerCase();
+  var rows = priceHistoryOverview().filter(function(r) {
+    return !q || [r.item.name, r.item.category, r.last.supplierName].some(function(v) { return String(v || '').toLowerCase().indexOf(q) !== -1; });
+  });
+  rows.sort(function(a, b) {
+    if (_phSort === 'name') return a.item.name.localeCompare(b.item.name);
+    if (_phSort === 'recent') return String(b.last.date).localeCompare(String(a.last.date));
+    return (b.changePct === null ? -1e9 : b.changePct) - (a.changePct === null ? -1e9 : a.changePct);
+  });
+  var html = '<h2>📈 Price History</h2>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
+    + '<input type="text" id="ph-search" placeholder="Search item, category or supplier…" value="' + esc(q) + '" oninput="renderPriceHistory();var e=document.getElementById(\'ph-search\');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="flex:1;min-width:200px">'
+    + '<select onchange="setPriceHistorySort(this.value)" style="width:auto;flex:0 0 auto">'
+    + [['change', 'Biggest increase first'], ['recent', 'Most recently bought'], ['name', 'Item name']].map(function(o) { return '<option value="' + o[0] + '"' + (_phSort === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('')
+    + '</select></div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Unit prices are VAT-inclusive. "Change" compares the latest price with the last different price paid. Click an item for its chart and every purchase.</div>'
+    + '<div class="table-wrap" style="max-height:58vh;overflow-y:auto"><table><thead><tr><th>Item</th><th style="text-align:right">Latest Price</th><th>Latest Supplier</th><th style="text-align:right">Change</th><th style="text-align:right">Lowest Paid</th><th style="text-align:right">Suppliers</th><th style="text-align:right">Purchases</th><th>Last Bought</th></tr></thead><tbody>'
+    + (rows.length ? rows.map(function(r) {
+      var ch = r.changePct === null ? '<span style="color:var(--muted)">—</span>'
+        : '<span style="font-weight:600;color:' + (r.changePct > 0 ? 'var(--danger)' : 'var(--ok)') + '">' + (r.changePct > 0 ? '▲ +' : '▼ ') + r.changePct + '%</span>'
+          + '<div style="font-size:11px;color:var(--muted)">from ' + fmtPHP(r.prev.price) + '</div>';
+      return '<tr style="cursor:pointer" onclick="openPriceHistoryItem(\'' + esc(r.item.id) + '\')">'
+        + '<td><strong>' + esc(r.item.name) + '</strong><div style="font-size:11px;color:var(--muted)">' + esc(r.item.category || '') + (r.item.unit ? ' · per ' + esc(r.item.unit) : '') + '</div></td>'
+        + '<td style="text-align:right">' + fmtPHP(r.last.price) + '</td>'
+        + '<td>' + esc(r.last.supplierName) + '</td>'
+        + '<td style="text-align:right">' + ch + '</td>'
+        + '<td style="text-align:right">' + fmtPHP(r.low.price) + (r.supplierCount > 1 ? '<div style="font-size:11px;color:var(--muted)">' + esc(r.low.supplierName) + '</div>' : '') + '</td>'
+        + '<td style="text-align:right">' + r.supplierCount + '</td>'
+        + '<td style="text-align:right">' + r.pts.length + '</td>'
+        + '<td style="white-space:nowrap">' + _fmtYmd(_phYmd(new Date(r.last.date))) + '</td></tr>';
+    }).join('') : '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:16px">No priced purchases found' + (q ? ' for "' + esc(q) + '"' : '') + '.</td></tr>')
+    + '</tbody></table></div>';
+  body.innerHTML = html;
+}
+
+function openPriceHistoryItem(id) { _phItemId = id; renderPriceHistory(); }
+function closePriceHistoryItem() { _phItemId = null; renderPriceHistory(); }
+
+var PH_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#db2777'];
+
+// Inline SVG line chart: one line per supplier, a dot per purchase.
+function _priceChartSvg(pts) {
+  var W = 900, H = 240, L = 64, R = 16, T = 14, B = 34;
+  var times = pts.map(function(p) { return new Date(p.date).getTime(); });
+  var tMin = Math.min.apply(null, times), tMax = Math.max.apply(null, times);
+  if (tMax === tMin) { tMin -= 86400000 * 7; tMax += 86400000 * 7; }
+  var prices = pts.map(function(p) { return p.price; });
+  var pMin = Math.min.apply(null, prices), pMax = Math.max.apply(null, prices);
+  var pad = (pMax - pMin) * 0.15 || pMax * 0.1 || 1;
+  pMin = Math.max(0, pMin - pad); pMax = pMax + pad;
+  var x = function(t) { return L + (t - tMin) / (tMax - tMin) * (W - L - R); };
+  var y = function(v) { return T + (1 - (v - pMin) / (pMax - pMin)) * (H - T - B); };
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">';
+  for (var g = 0; g <= 4; g++) {
+    var v = pMin + (pMax - pMin) * g / 4, gy = y(v);
+    svg += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + gy + '" y2="' + gy + '" stroke="currentColor" stroke-opacity="0.12"/>'
+      + '<text x="' + (L - 8) + '" y="' + (gy + 4) + '" text-anchor="end" font-size="11" fill="currentColor" fill-opacity="0.6">₱' + (Math.round(v * 100) / 100).toLocaleString('en-US') + '</text>';
+  }
+  for (var k = 0; k <= 4; k++) {
+    var t = tMin + (tMax - tMin) * k / 4;
+    svg += '<text x="' + x(t) + '" y="' + (H - 10) + '" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.6">'
+      + new Date(t).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: '2-digit' }) + '</text>';
+  }
+  var bySup = {}, order = [];
+  pts.forEach(function(p) { if (!bySup[p.supplierKey]) { bySup[p.supplierKey] = []; order.push(p.supplierKey); } bySup[p.supplierKey].push(p); });
+  order.forEach(function(key, i) {
+    var c = PH_COLORS[i % PH_COLORS.length], s = bySup[key];
+    if (s.length > 1) svg += '<polyline fill="none" stroke="' + c + '" stroke-width="2" points="' + s.map(function(p) { return x(new Date(p.date).getTime()) + ',' + y(p.price); }).join(' ') + '"/>';
+    s.forEach(function(p) {
+      svg += '<circle cx="' + x(new Date(p.date).getTime()) + '" cy="' + y(p.price) + '" r="4.5" fill="' + c + '"><title>'
+        + esc(p.supplierName) + ' · ' + fmtPHP(p.price) + ' · ' + _fmtYmd(_phYmd(new Date(p.date))) + (p.ref ? ' · ' + esc(p.ref) : '') + '</title></circle>';
+    });
+  });
+  return { svg: svg + '</svg>', order: order, bySup: bySup };
+}
+
+function _priceHistoryDetailHtml(itemId) {
+  var item = db.items.find(function(i) { return i.id === itemId; });
+  var pts = _priceHistoryPoints(itemId);
+  var unit = item ? (item.unit || 'unit') : 'unit';
+  var html = '<div style="margin-bottom:6px"><a href="#" onclick="event.preventDefault();closePriceHistoryItem()" style="font-size:13px">← All items</a></div>'
+    + '<h2 style="margin-bottom:4px">📈 ' + esc(item ? item.name : 'Deleted Item') + '</h2>'
+    + '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Price per ' + esc(unit) + ', VAT-inclusive' + (item ? ' · Current cost on record ' + fmtPHP(item.cost || 0) : '') + '</div>';
+  if (!pts.length) return html + '<div style="color:var(--muted);padding:16px 0">No priced purchases for this item yet.</div>';
+  var ch = _priceChartSvg(pts);
+  html += '<div style="background:var(--surface2);border-radius:10px;padding:10px 12px;margin-bottom:8px">' + ch.svg + '</div>'
+    + '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:14px">'
+    + ch.order.map(function(k, i) { return '<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + PH_COLORS[i % PH_COLORS.length] + ';margin-right:5px;vertical-align:middle"></span>' + esc(ch.bySup[k][0].supplierName) + '</span>'; }).join('')
+    + '</div>';
+  // Per-supplier summary
+  html += '<div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Supplier</th><th style="text-align:right">Latest</th><th style="text-align:right">Lowest</th><th style="text-align:right">Highest</th><th style="text-align:right">Purchases</th><th style="text-align:right">Total Qty</th><th>Last Bought</th></tr></thead><tbody>'
+    + ch.order.map(function(k) {
+      var s = ch.bySup[k], last = s[s.length - 1];
+      var lo = Math.min.apply(null, s.map(function(p) { return p.price; })), hi = Math.max.apply(null, s.map(function(p) { return p.price; }));
+      return '<tr><td><strong>' + esc(last.supplierName) + '</strong></td><td style="text-align:right">' + fmtPHP(last.price) + '</td>'
+        + '<td style="text-align:right">' + fmtPHP(lo) + '</td><td style="text-align:right">' + fmtPHP(hi) + '</td>'
+        + '<td style="text-align:right">' + s.length + '</td><td style="text-align:right">' + fmtInt(s.reduce(function(a, p) { return a + p.qty; }, 0)) + '</td>'
+        + '<td>' + _fmtYmd(_phYmd(new Date(last.date))) + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+  // Every purchase, newest first, with change vs the one before
+  var rev = pts.slice().reverse();
+  html += '<div style="font-size:13px;font-weight:700;margin-bottom:6px">All purchases</div>'
+    + '<div class="table-wrap" style="max-height:32vh;overflow-y:auto"><table><thead><tr><th>Date</th><th>Supplier</th><th>Source</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">vs Previous</th></tr></thead><tbody>'
+    + rev.map(function(p, i) {
+      var before = rev[i + 1];
+      var diff = before ? Math.round((p.price - before.price) / before.price * 1000) / 10 : null;
+      return '<tr><td style="white-space:nowrap">' + _fmtYmd(_phYmd(new Date(p.date))) + '</td><td>' + esc(p.supplierName) + '</td>'
+        + '<td style="font-size:12px">' + (p.source === 'PO' ? '<a href="#" onclick="event.preventDefault();openPoDetail(\'' + esc(p.ref) + '\')">' + esc(p.ref) + '</a>' : 'Delivery' + (p.ref ? ' (' + esc(p.ref) + ')' : '')) + '</td>'
+        + '<td style="text-align:right">' + fmtInt(p.qty) + '</td><td style="text-align:right">' + fmtPHP(p.price) + '</td>'
+        + '<td style="text-align:right">' + (diff === null || diff === 0 ? '<span style="color:var(--muted)">—</span>' : '<span style="color:' + (diff > 0 ? 'var(--danger)' : 'var(--ok)') + '">' + (diff > 0 ? '+' : '') + diff + '%</span>') + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+  return html;
+}
+
+function exportPriceHistoryCSV() {
+  var rows = [['Item', 'Category', 'Unit', 'Date', 'Supplier', 'Source', 'Reference', 'Qty', 'Unit Price (VAT-inc)'].join(',')];
+  var items = _phItemId ? db.items.filter(function(i) { return i.id === _phItemId; }) : catalogItems();
+  items.forEach(function(item) {
+    _priceHistoryPoints(item.id).forEach(function(p) {
+      rows.push([_csvQ(item.name), _csvQ(item.category || ''), _csvQ(item.unit || ''), _phYmd(new Date(p.date)), _csvQ(p.supplierName), p.source, _csvQ(p.ref || ''), p.qty, p.price].join(','));
+    });
+  });
+  _csvDownload(rows, 'price_history_' + new Date().toISOString().slice(0, 10) + '.csv');
 }
 
 function populateSupplierDatalist(targetId) {
