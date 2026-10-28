@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SupplyBase">
 <meta name="theme-color" content="#0f172a">
-<meta name="description" content="Consumables Management System">
+<meta name="description" content="Consumables & Asset Management">
 <link rel="apple-touch-icon" id="pwa-apple-icon" href="">
 <link rel="manifest" id="pwa-manifest" href="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -473,6 +473,33 @@
     padding: 3px 10px; border-radius: 6px; cursor: pointer;
   }
 
+  /* ─── COST REPORT TOOLBAR ────────────────────────────────────────────────── */
+  .rpt-toolbar { margin-bottom: 16px; gap: 8px; }
+  .rpt-toolbar > select { flex: 0 1 auto; min-width: 0; max-width: none; }
+  .rpt-range { display: flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 8px; padding: 3px 4px 3px 8px; background: var(--surface); flex-wrap: wrap; }
+  .rpt-range input[type="date"] { border: none; background: transparent; width: 132px; padding: 4px 2px; box-shadow: none; }
+  .rpt-range-sep { color: var(--muted); font-size: 13px; }
+  .rpt-seg { display: flex; border-left: 1px solid var(--border); margin-left: 4px; padding-left: 6px; gap: 2px; }
+  .rpt-seg button { border: none; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; padding: 5px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  .rpt-seg button:hover { background: var(--surface2); color: var(--text); }
+  .rpt-seg button.on { background: var(--accent); color: #fff; }
+  .rpt-export-wrap { position: relative; margin-left: auto; }
+  .rpt-menu { display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 250px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15); padding: 4px; }
+  .rpt-menu.open { display: block; }
+  .rpt-menu button { display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 8px 10px; border-radius: 6px; cursor: pointer; color: var(--text); font-size: 13px; }
+  .rpt-menu button:hover { background: var(--surface2); }
+  .rpt-menu button span { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+  @media (max-width: 700px) {
+    .rpt-range { width: 100%; display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); padding: 4px 6px; }
+    .rpt-range input[type="date"] { width: 100%; min-width: 0; font-size: 13px; }
+    .rpt-seg { grid-column: 1 / -1; border-left: none; border-top: 1px solid var(--border); margin: 4px 0 0; padding: 4px 0 0; }
+    .rpt-seg button { flex: 1; }
+    .rpt-toolbar > select { flex: 1 1 0; max-width: none; }
+    .rpt-export-wrap { width: 100%; }
+    .rpt-export-wrap > .btn { width: 100%; }
+    .rpt-menu { left: 0; right: 0; min-width: 0; }
+  }
+
   /* ─── COUNT SHEET ────────────────────────────────────────────────────────── */
   .cs-chip { font-size: 12px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; white-space: nowrap; }
   .cs-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -678,6 +705,7 @@
       <button id="btn-refresh" class="sidebar-action-btn" onclick="refreshData()">↻ Refresh</button>
       <button id="btn-stocktake-lock" class="sidebar-action-btn" onclick="toggleStocktakeLock()" style="display:none">🔒 Lock for Stocktake</button>
       <button id="btn-count-sheet" class="sidebar-action-btn" onclick="openCountSheet()" style="display:none">📋 Count Sheet</button>
+      <button id="btn-assets" class="sidebar-action-btn" onclick="location.href='./assets.html'" style="display:none">🧰 Assets <span style="background:#f59e0b;color:#1c1917;font-size:9px;font-weight:800;letter-spacing:.06em;padding:1px 6px;border-radius:99px;margin-left:4px">BETA</span></button>
       <button id="btn-health" class="sidebar-action-btn" onclick="openHealthCheck()" style="display:none">🩺 System Health <span id="health-badge" style="display:none;margin-left:6px;background:#dc2626;color:#fff;border-radius:99px;font-size:11px;padding:0 7px"></span></button>
       <button id="btn-testmode-settings" class="sidebar-action-btn" onclick="openSettings()" style="display:none">🧪 Test Mode</button>
       <button id="btn-reset" class="sidebar-action-btn sidebar-action-danger" onclick="confirmReset()">↺ Reset</button>
@@ -904,27 +932,35 @@
 
   <!-- COST REPORT TAB -->
   <div class="tab-panel" id="tab-report">
-    <div class="filters" style="margin-bottom:16px;flex-wrap:wrap">
-      <label style="color:var(--muted);font-size:12px;font-weight:500;align-self:center;white-space:nowrap">From</label>
-      <input type="date" id="rpt-from" style="width:150px;flex:0 0 auto" onchange="_rptRange=null;renderReport();renderVariance()">
-      <label style="color:var(--muted);font-size:12px;font-weight:500;align-self:center;white-space:nowrap">To</label>
-      <input type="date" id="rpt-to" style="width:150px;flex:0 0 auto" onchange="_rptRange=null;renderReport();renderVariance()">
-      <button class="btn btn-secondary btn-sm" onclick="setRptPreset('this')" title="Count to count: from the last stocktake cutoff">This Week</button>
-      <button class="btn btn-secondary btn-sm" onclick="setRptPreset('last')">Last Week</button>
-      <select id="rpt-type" style="flex:0 0 auto;width:auto" onchange="renderReport()">
-        <option value="all">All Transactions</option>
-        <option value="use,damage">Consumption (Use + Damage)</option>
+    <div class="filters rpt-toolbar">
+      <div class="rpt-range" title="Report period">
+        <input type="date" id="rpt-from" aria-label="From" onchange="_rptRange=null;renderReport();renderVariance()">
+        <span class="rpt-range-sep">→</span>
+        <input type="date" id="rpt-to" aria-label="To" onchange="_rptRange=null;renderReport();renderVariance()">
+        <div class="rpt-seg">
+          <button id="rpt-preset-this" onclick="setRptPreset('this')" title="Count to count: from the last stocktake cutoff">This week</button>
+          <button id="rpt-preset-last" onclick="setRptPreset('last')" title="The previous count-to-count week">Last week</button>
+        </div>
+      </div>
+      <select id="rpt-type" onchange="renderReport()" aria-label="Transaction type">
+        <option value="all">All transactions</option>
+        <option value="use,damage">Consumption (use + damage)</option>
         <option value="use">Use only</option>
-        <option value="damage">Damage / Loss only</option>
+        <option value="damage">Damage / loss only</option>
         <option value="restock">Restock only</option>
       </select>
-      <select id="rpt-cat" style="flex:0 0 auto;width:auto" onchange="renderReport()">
+      <select id="rpt-cat" onchange="renderReport()" aria-label="Category">
         <option value="">All Categories</option>
       </select>
-      <button class="btn btn-secondary" onclick="exportReportCSV()">⬇ Export Summary CSV</button>
-      <button class="btn btn-secondary" onclick="exportDetailedCSV()">⬇ Export Detailed Log</button>
-      <button class="btn btn-secondary" onclick="exportAllLogsCSV()">⬇ Export All Logs</button>
-      <button class="btn btn-secondary" onclick="exportCostReportCSV()" style="font-size:12px">⬇ Export Cost CSV</button>
+      <div class="rpt-export-wrap">
+        <button class="btn btn-secondary" id="rpt-export-btn" onclick="toggleRptExportMenu(event)" aria-haspopup="true">⬇ Export ▾</button>
+        <div class="rpt-menu" id="rpt-export-menu">
+          <button onclick="closeRptExportMenu();exportReportCSV()"><strong>Summary</strong><span>Totals per item for this period</span></button>
+          <button onclick="closeRptExportMenu();exportDetailedCSV()"><strong>Detailed log</strong><span>Every entry matching the filters</span></button>
+          <button onclick="closeRptExportMenu();exportCostReportCSV()"><strong>Cost</strong><span>Cost breakdown by item</span></button>
+          <button onclick="closeRptExportMenu();exportAllLogsCSV()"><strong>All logs</strong><span>Every transaction type in this period</span></button>
+        </div>
+      </div>
     </div>
 
     <div id="rpt-range-label" style="display:none;font-size:12px;color:var(--muted);margin:-6px 0 12px"></div>
@@ -4305,6 +4341,7 @@ function openMobileMoreMenu() {
     html += '<div class="mm-item" onclick="closeMobileMoreMenu();openCompareModal()">⚖ Compare Count Files</div>';
     html += '<div class="mm-item" onclick="closeMobileMoreMenu();openSnapshotModal()">🕒 Inventory Snapshot</div>';
   }
+  if (currentRole && currentRole !== 'brand') html += '<div class="mm-item" onclick="location.href=\'./assets.html\'">🧰 Assets (Beta)</div>';
   html += '<div class="mm-item" onclick="openSettings();closeMobileMoreMenu()">⚙ Settings</div>';
   html += '<div class="mm-item" onclick="openChangePassword();closeMobileMoreMenu()">🔑 Change Password</div>';
   if (currentRole === 'superuser') {
@@ -8223,6 +8260,10 @@ function renderReport() {
     rangeLbl.style.display = _rptRange ? '' : 'none';
     rangeLbl.textContent = _rptRange ? '📅 ' + _rptPeriodLabel() + ' (count to count)' : '';
   }
+  ['this', 'last'].forEach(function(w) {
+    var pb = document.getElementById('rpt-preset-' + w);
+    if (pb) pb.classList.toggle('on', !!(_rptRange && _rptRange.which === w));
+  });
 
   // Update category filter
   const cats = [...new Set(catalogItems().map(i => i.category).filter(Boolean))].sort();
@@ -11200,6 +11241,7 @@ function applyRoleUI() {
   show('btn-import-suppliers', currentRole === 'superuser');
   show('btn-supplier-dir', currentRole === 'superuser' || currentRole === 'user');
   show('btn-health', currentRole === 'superuser');
+  show('btn-assets', !!currentRole && currentRole !== 'brand');
   if (typeof scheduleAutoHealthCheck === 'function') scheduleAutoHealthCheck();
   if (typeof renderOpsReminders === 'function') renderOpsReminders();
   // Test Mode banner is superuser-only, so re-check it whenever the role UI
@@ -12167,10 +12209,26 @@ function weeklyCostFor(from, to, opts) {
 // When a preset is active the report uses the exact cutoff timestamps
 // (e.g. Sat 5:00 PM → Sat 5:00 PM) instead of whole calendar days.
 var _rptRange = null; // { start: Date, end: Date (exclusive), label }
+// Export menu (one button instead of four)
+function toggleRptExportMenu(ev) {
+  if (ev) ev.stopPropagation();
+  var m = document.getElementById('rpt-export-menu');
+  if (m) m.classList.toggle('open');
+}
+function closeRptExportMenu() {
+  var m = document.getElementById('rpt-export-menu');
+  if (m) m.classList.remove('open');
+}
+document.addEventListener('click', function(e) {
+  var wrap = document.querySelector('.rpt-export-wrap');
+  if (wrap && !wrap.contains(e.target)) closeRptExportMenu();
+});
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeRptExportMenu(); });
+
 function setRptPreset(which) {
   var cur = opWeekRange();
   var r = which === 'last' ? opWeekRange(new Date(cur.start.getTime() - 1000)) : cur;
-  _rptRange = { start: r.start, end: r.end, label: (which === 'last' ? 'Last' : 'This') + ' operational week' };
+  _rptRange = { start: r.start, end: r.end, which: which === 'last' ? 'last' : 'this', label: (which === 'last' ? 'Last' : 'This') + ' operational week' };
   var fromEl = document.getElementById('rpt-from'), toEl = document.getElementById('rpt-to');
   if (fromEl) fromEl.value = _phYmd(r.start);
   if (toEl) toEl.value = _phYmd(new Date(r.end.getTime() - 1000));
@@ -12910,7 +12968,7 @@ function initPWA() {
   var manifest = {
     name: 'SupplyBase',
     short_name: 'SupplyBase',
-    description: 'Consumables Management System',
+    description: 'Consumables & Asset Management',
     start_url: window.location.href.split('?')[0].split('#')[0],
     display: 'standalone',
     background_color: '#0b1220',
@@ -16680,7 +16738,7 @@ async function aiApplyLogEntry(input) {
     <div style="text-align:center;margin-bottom:32px">
       <img src="https://www.golocad.com/images/LOCAD-LOGO-WHITE.svg" alt="Locad" style="height:28px;margin-bottom:10px" onerror="this.src='https://www.golocad.com/images/LOCAD-LOGO-BLACK.svg';this.style.filter='invert(1) brightness(2)'">
       <p style="color:#fff;font-size:1.4rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;margin:0 0 4px">SupplyBase</p>
-      <p style="color:#94a3b8;font-size:13px;margin:0">Consumables Management System</p>
+      <p style="color:#94a3b8;font-size:13px;margin:0">Consumables &amp; Asset Management</p>
     </div>
 
     <!-- Recent logins -->

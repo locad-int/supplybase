@@ -1,0 +1,1680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Locad SupplyBase · Assets (Beta)</title>
+<meta name="theme-color" content="#0f172a">
+<meta name="description" content="FC Asset Management">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧰</text></svg>">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f5f7; --surface: #ffffff; --surface2: #f8f9fa; --border: #e2e4e9;
+    --accent: #16a34a; --accent2: #15803d; --danger: #dc2626; --warn: #d97706; --ok: #16a34a; --info: #2563eb;
+    --text: #0f172a; --muted: #64748b; --radius: 8px; --nav: #0c0c0c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+  button { cursor: pointer; font-family: inherit; }
+  h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
+  h3 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 18px 0 8px; }
+
+  /* Header + nav */
+  .top { background: var(--nav); color: #e2e8f0; position: sticky; top: 0; z-index: 40; }
+  .top-row { display: flex; align-items: center; gap: 12px; padding: 12px 20px; }
+  .brand { font-weight: 800; letter-spacing: .08em; font-size: 15px; }
+  .brand small { display: block; font-size: 10px; letter-spacing: .12em; color: #64748b; font-weight: 700; text-transform: uppercase; }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .beta { display: inline-block; vertical-align: middle; background: #f59e0b; color: #1c1917; font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 2px 7px; border-radius: 99px; margin-left: 4px; }
+  .beta-bar { background: #fef3c7; color: #92400e; border-bottom: 1px solid #fcd34d; font-size: 12px; padding: 7px 20px; display: flex; gap: 10px; align-items: center; }
+  .beta-bar button { margin-left: auto; background: none; border: none; color: #92400e; font-size: 16px; line-height: 1; }
+  .who { font-size: 12px; color: #94a3b8; background: #1a1a1a; padding: 5px 10px; border-radius: 6px; }
+  .top-btn { background: #1a1a1a; color: #cbd5e1; border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; text-decoration: none; }
+  .top-btn:hover { background: #252525; color: #fff; }
+  .nav { display: flex; gap: 2px; padding: 0 14px; overflow-x: auto; scrollbar-width: none; }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav button { background: none; border: none; color: #94a3b8; padding: 10px 12px; font-size: 13px; font-weight: 600; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .nav button.active { color: #22c55e; border-bottom-color: #22c55e; }
+  .nav .count { background: #dc2626; color: #fff; border-radius: 99px; font-size: 10px; padding: 0 6px; margin-left: 4px; }
+  main { padding: 18px 20px 40px; max-width: 1400px; margin: 0 auto; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* Common UI */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+  .card[onclick] { cursor: pointer; }
+  .card[onclick]:hover { background: var(--surface2); }
+  .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .card .value { font-size: 1.5rem; font-weight: 700; }
+  .card.danger { border-left-color: var(--danger); } .card.danger .value { color: var(--danger); }
+  .card.warn { border-left-color: var(--warn); } .card.warn .value { color: var(--warn); }
+  .card.ok { border-left-color: var(--ok); } .card.ok .value { color: var(--ok); }
+  .card.info { border-left-color: var(--info); } .card.info .value { color: var(--info); }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .toolbar > select { width: auto; flex: 0 1 auto; }
+  .spacer { flex: 1; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { background: var(--surface2); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 8px 10px; font-size: 13px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface2); }
+  tr.overdue td { background: rgba(220,38,38,.05); }
+  .muted { color: var(--muted); } .small { font-size: 12px; } .nowrap { white-space: nowrap; } .right { text-align: right; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .b-ok { background: #dcfce7; color: #15803d; } .b-warn { background: #fef3c7; color: #92400e; } .b-danger { background: #fee2e2; color: #991b1b; }
+  .b-info { background: #dbeafe; color: #1e40af; } .b-muted { background: #e2e8f0; color: #475569; } .b-dark { background: #1e293b; color: #e2e8f0; }
+  .btn { padding: 7px 14px; border-radius: 7px; border: none; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; transition: .15s; white-space: nowrap; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #fff; font-weight: 600; } .btn-primary:hover:not(:disabled) { background: var(--accent2); }
+  .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); } .btn-secondary:hover:not(:disabled) { background: var(--surface2); }
+  .btn-danger { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; }
+  .btn-sm { padding: 4px 9px; font-size: 12px; }
+  input, select, textarea { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 7px; padding: 8px 10px; font-size: 13px; width: 100%; outline: none; font-family: inherit; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  input[type="checkbox"] { width: auto; }
+  .scan { font-size: 15px; padding: 11px 12px; border: 2px solid var(--accent); }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .fg { display: flex; flex-direction: column; gap: 5px; } .fg.full { grid-column: 1 / -1; }
+  .fg label { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .msg { font-size: 13px; padding: 8px 10px; border-radius: 7px; margin-top: 8px; display: none; }
+  .msg.show { display: block; } .msg.err { background: #fee2e2; color: #991b1b; } .msg.okm { background: #dcfce7; color: #15803d; } .msg.wrn { background: #fef3c7; color: #92400e; }
+  .list-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .list-row:last-child { border-bottom: none; }
+  .list-row .grow { flex: 1; min-width: 0; }
+  .empty { color: var(--muted); text-align: center; padding: 18px; font-size: 13px; }
+  .link { color: var(--accent2); cursor: pointer; text-decoration: underline; }
+  .timeline { border-left: 2px solid var(--border); margin-left: 6px; padding-left: 14px; }
+  .timeline .ev { position: relative; padding: 6px 0; font-size: 13px; }
+  .timeline .ev::before { content: ''; position: absolute; left: -20px; top: 11px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+
+  /* Modals */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 100; align-items: center; justify-content: center; padding: 16px; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--surface); border-radius: 14px; padding: 22px; width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; }
+  .modal.wide { max-width: 860px; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+
+  /* Login */
+  #login { position: fixed; inset: 0; background: #0f172a; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  #login .box { background: var(--surface); border-radius: 14px; padding: 26px; width: 100%; max-width: 360px; }
+
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #0f172a; color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 300; display: none; max-width: 90vw; }
+
+  @media (max-width: 760px) {
+    .grid2, .form-grid { grid-template-columns: 1fr; }
+    main { padding: 12px 12px 40px; }
+    .top-row { padding: 10px 12px; }
+    .who { display: none; }
+    input, select, textarea { font-size: 16px; }
+    .modal-bg { align-items: flex-end; padding: 0; }
+    .modal { border-radius: 14px 14px 0 0; max-height: 92vh; }
+    .btn { min-height: 40px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="login" style="display:none">
+  <div class="box">
+    <div style="font-weight:800;letter-spacing:.08em;font-size:18px">LOCAD SUPPLYBASE <span class="beta">BETA</span></div>
+    <div class="muted small" style="margin-bottom:16px">FC Asset Management · sign in with your SupplyBase account</div>
+    <div class="fg" style="margin-bottom:10px"><label>Username</label><input id="li-user" autocomplete="username"></div>
+    <div class="fg" style="margin-bottom:10px"><label>Password</label><input id="li-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doLogin()">Sign in</button>
+    <div class="msg err" id="li-err"></div>
+  </div>
+</div>
+
+<div class="top">
+  <div class="top-row">
+    <div class="brand">LOCAD SUPPLYBASE <span class="beta" title="Beta: still being tested at Cabuyao FC">BETA</span><small>FC Asset Management · Cabuyao</small></div>
+    <div class="top-right">
+      <span class="who" id="who"></span>
+      <a class="top-btn" href="./index.html" title="Back to consumables">← Consumables</a>
+      <button class="top-btn" onclick="reloadAll(true)" title="Reload from the server">↻</button>
+      <button class="top-btn" onclick="logout()">Sign out</button>
+    </div>
+  </div>
+  <div class="nav" id="nav">
+    <button data-v="dashboard" class="active" onclick="go('dashboard')">Dashboard</button>
+    <button data-v="register" onclick="go('register')">Register</button>
+    <button data-v="checkout" onclick="go('checkout')">Check-out / in<span class="count" id="nav-overdue" style="display:none"></span></button>
+    <button data-v="maintenance" onclick="go('maintenance')">Maintenance<span class="count" id="nav-pm" style="display:none"></span></button>
+    <button data-v="issues" onclick="go('issues')">Issues<span class="count" id="nav-issues" style="display:none"></span></button>
+    <button data-v="audits" onclick="go('audits')">Audits</button>
+  </div>
+</div>
+<div class="beta-bar" id="beta-bar">
+  <span>🧪 <strong>Beta</strong> — Asset Management is still being tested at Cabuyao FC. Features may change; report anything that looks wrong to the SupplyBase admin.</span>
+  <button onclick="dismissBeta()" aria-label="Hide for today" title="Hide for today">×</button>
+</div>
+
+<main>
+  <!-- DASHBOARD -->
+  <section class="view active" id="v-dashboard"></section>
+
+  <!-- REGISTER -->
+  <section class="view" id="v-register">
+    <div class="toolbar">
+      <input id="reg-q" placeholder="Scan or search asset ID, name, serial…" style="flex:1;min-width:220px" oninput="renderRegister()" onkeydown="if(event.key==='Enter')regEnter()">
+      <select id="reg-cat" onchange="renderRegister()"><option value="">All categories</option></select>
+      <select id="reg-status" onchange="renderRegister()"><option value="">All statuses</option></select>
+      <select id="reg-zone" onchange="renderRegister()"><option value="">All zones</option></select>
+    </div>
+    <div class="toolbar">
+      <span class="muted small" id="reg-count"></span>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" onclick="openLabels()">🏷 Print labels</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportRegisterCSV()">⬇ Export CSV</button>
+      <button class="btn btn-secondary btn-sm perm-edit" onclick="openImport()">⬆ Import CSV</button>
+      <button class="btn btn-primary btn-sm perm-edit" onclick="openAssetForm()">+ Add asset</button>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th style="width:28px"><input type="checkbox" id="reg-all" onchange="regSelectAll(this.checked)"></th><th>Asset ID</th><th>Name</th><th>Category</th><th>Zone / location</th><th>Status</th><th>With</th><th>Next PM</th></tr></thead>
+      <tbody id="reg-body"></tbody>
+    </table></div>
+  </section>
+
+  <!-- CHECK-OUT / IN -->
+  <section class="view" id="v-checkout">
+    <div class="grid2">
+      <div class="panel">
+        <h2>➡️ Check out</h2>
+        <input class="scan" id="co-scan" placeholder="Scan asset to add…" onkeydown="if(event.key==='Enter'){coAdd(this.value);this.value='';}">
+        <div class="msg" id="co-msg"></div>
+        <div id="co-cart" style="margin-top:8px"></div>
+        <div class="form-grid" style="margin-top:10px">
+          <div class="fg full"><label>Borrower *</label><input id="co-borrower" list="people" placeholder="Name or SupplyBase username"></div>
+          <div class="fg"><label>Shift *</label><select id="co-shift"></select></div>
+          <div class="fg"><label>Due back in (hours)</label><input id="co-hours" type="number" min="1" max="168" value="12"></div>
+          <div class="fg full"><label>Notes</label><input id="co-notes" placeholder="Optional"></div>
+        </div>
+        <div class="modal-actions" style="margin-top:12px"><button class="btn btn-primary" id="co-btn" onclick="confirmCheckout()">Check out</button></div>
+      </div>
+      <div class="panel">
+        <h2>⬅️ Check in</h2>
+        <input class="scan" id="ci-scan" placeholder="Scan returned asset…" onkeydown="if(event.key==='Enter'){ciAdd(this.value);this.value='';}">
+        <div class="msg" id="ci-msg"></div>
+        <div id="ci-cart" style="margin-top:8px"></div>
+        <div class="modal-actions" style="margin-top:12px"><button class="btn btn-primary" id="ci-btn" onclick="confirmCheckin()">Check in</button></div>
+      </div>
+    </div>
+    <h3>Currently out</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Asset</th><th>Borrower</th><th>Shift</th><th>Out since</th><th>Due</th><th></th></tr></thead>
+      <tbody id="co-out"></tbody>
+    </table></div>
+  </section>
+
+  <!-- MAINTENANCE -->
+  <section class="view" id="v-maintenance">
+    <div class="toolbar">
+      <select id="pm-filter" onchange="renderMaintenance()">
+        <option value="due">Overdue + due in 7 days</option>
+        <option value="all">All assets with a PM schedule</option>
+        <option value="maint">Under maintenance now</option>
+      </select>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm perm-maintain" onclick="openMaintForm('Repair')">🔧 Log repair</button>
+      <button class="btn btn-primary btn-sm perm-maintain" onclick="openMaintForm('PM')">✅ Log PM</button>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Asset</th><th>Interval</th><th>Last PM</th><th>Next due</th><th>Status</th><th></th></tr></thead>
+      <tbody id="pm-body"></tbody>
+    </table></div>
+    <h3>Maintenance history</h3>
+    <div class="muted small" id="mh-sum" style="margin-bottom:6px"></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Date</th><th>Asset</th><th>Kind</th><th>By</th><th class="right">Cost</th><th class="right">Downtime</th><th>Notes</th></tr></thead>
+      <tbody id="mh-body"></tbody>
+    </table></div>
+  </section>
+
+  <!-- ISSUES -->
+  <section class="view" id="v-issues">
+    <div class="toolbar">
+      <select id="is-filter" onchange="renderIssues()">
+        <option value="open">Open + in progress</option>
+        <option value="resolved">Resolved</option>
+        <option value="all">All</option>
+      </select>
+      <span class="spacer"></span>
+      <button class="btn btn-primary btn-sm perm-issue" onclick="openIssueForm()">⚠️ Report issue</button>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Reported</th><th>Asset</th><th>Type</th><th>Severity</th><th>Status</th><th>Assigned</th><th>Description</th><th></th></tr></thead>
+      <tbody id="is-body"></tbody>
+    </table></div>
+  </section>
+
+  <!-- AUDITS -->
+  <section class="view" id="v-audits"></section>
+</main>
+
+<datalist id="people"></datalist>
+
+<!-- Asset detail -->
+<div class="modal-bg" id="m-asset"><div class="modal wide" id="m-asset-body"></div></div>
+
+<!-- Asset add / edit -->
+<div class="modal-bg" id="m-form"><div class="modal wide">
+  <h2 id="af-title">Add asset</h2>
+  <div class="form-grid">
+    <div class="fg"><label>Category *</label><select id="af-cat" onchange="afCatChanged()"></select></div>
+    <div class="fg"><label>Asset ID</label><input id="af-id" readonly style="background:var(--surface2)"></div>
+    <div class="fg full"><label>Name *</label><input id="af-name" placeholder="e.g. Zebra RF scanner #3"></div>
+    <div class="fg"><label>Type</label><input id="af-type" list="types" placeholder="e.g. RF scanner"></div>
+    <div class="fg"><label>Serial no.</label><input id="af-serial"></div>
+    <div class="fg"><label>Brand</label><input id="af-brand"></div>
+    <div class="fg"><label>Model</label><input id="af-model"></div>
+    <div class="fg"><label>Zone *</label><input id="af-zone" list="zones" placeholder="e.g. Packing"></div>
+    <div class="fg"><label>Location detail</label><input id="af-location" placeholder="e.g. Station 12, Rack B"></div>
+    <div class="fg"><label>Assigned to (permanent)</label><input id="af-assigned" list="people" placeholder="Optional"></div>
+    <div class="fg"><label>Shared / checked out per shift?</label><select id="af-checkout"><option value="0">No</option><option value="1">Yes — use check-out / in</option></select></div>
+    <div class="fg"><label>PM every (days)</label><input id="af-pm" type="number" min="0" placeholder="Blank = no PM"></div>
+    <div class="fg"><label>Last PM date</label><input id="af-lastpm" type="date"></div>
+    <div class="fg"><label>Supplier</label><input id="af-supplier"></div>
+    <div class="fg"><label>Purchase date</label><input id="af-pdate" type="date"></div>
+    <div class="fg"><label>Purchase cost (₱)</label><input id="af-pcost" type="number" min="0" step="0.01"></div>
+    <div class="fg"><label>Warranty until</label><input id="af-warranty" type="date"></div>
+    <div class="fg full"><label>Notes</label><textarea id="af-notes" rows="2"></textarea></div>
+  </div>
+  <div class="msg err" id="af-err"></div>
+  <div class="modal-actions">
+    <button class="btn btn-secondary" onclick="closeM('m-form')">Cancel</button>
+    <button class="btn btn-primary" id="af-save" onclick="saveAsset()">Save</button>
+  </div>
+</div></div>
+<datalist id="zones"></datalist><datalist id="types"></datalist>
+
+<!-- Maintenance log -->
+<div class="modal-bg" id="m-maint"><div class="modal">
+  <h2 id="mf-title">Log PM</h2>
+  <div class="form-grid">
+    <div class="fg full"><label>Asset *</label><input id="mf-asset" class="scan" placeholder="Scan or type asset ID" onchange="mfAssetChanged()" onkeydown="if(event.key==='Enter')mfAssetChanged()"></div>
+    <div class="fg full muted small" id="mf-asset-info"></div>
+    <div class="fg"><label>Kind</label><select id="mf-kind" onchange="mfKindChanged()"><option>PM</option><option>Repair</option></select></div>
+    <div class="fg"><label>Date *</label><input id="mf-date" type="date"></div>
+    <div class="fg"><label>Done by (vendor / technician)</label><input id="mf-by"></div>
+    <div class="fg"><label>Cost (₱)</label><input id="mf-cost" type="number" min="0" step="0.01" value="0"></div>
+    <div class="fg"><label>Downtime (hours)</label><input id="mf-down" type="number" min="0" step="0.5" value="0"></div>
+    <div class="fg" id="mf-issue-wrap"><label>Fixes issue</label><select id="mf-issue"><option value="">— none —</option></select></div>
+    <div class="fg full"><label>Notes</label><textarea id="mf-notes" rows="2"></textarea></div>
+    <div class="fg full"><label style="display:flex;gap:8px;align-items:center;font-weight:500;color:var(--text)"><input type="checkbox" id="mf-return" checked> Return asset to service (Available)</label></div>
+  </div>
+  <div class="msg err" id="mf-err"></div>
+  <div class="modal-actions">
+    <button class="btn btn-secondary" onclick="closeM('m-maint')">Cancel</button>
+    <button class="btn btn-primary" id="mf-save" onclick="saveMaint()">Save</button>
+  </div>
+</div></div>
+
+<!-- Issue report -->
+<div class="modal-bg" id="m-issue"><div class="modal">
+  <h2>Report an issue</h2>
+  <div class="form-grid">
+    <div class="fg full"><label>Asset *</label><input id="if-asset" class="scan" placeholder="Scan or type asset ID" onchange="ifAssetChanged()" onkeydown="if(event.key==='Enter')ifAssetChanged()"></div>
+    <div class="fg full muted small" id="if-asset-info"></div>
+    <div class="fg"><label>Type *</label><select id="if-type" onchange="ifTypeChanged()"><option>Broken</option><option>Damaged</option><option>Missing</option><option>Other</option></select></div>
+    <div class="fg"><label>Severity *</label><select id="if-sev" onchange="ifTypeChanged()"><option>Low</option><option selected>Medium</option><option>High</option><option>Critical</option></select></div>
+    <div class="fg full"><label>What happened *</label><textarea id="if-desc" rows="3"></textarea></div>
+    <div class="fg full"><label style="display:flex;gap:8px;align-items:center;font-weight:500;color:var(--text)"><input type="checkbox" id="if-oos"> Take out of service until fixed</label></div>
+  </div>
+  <div class="msg err" id="if-err"></div>
+  <div class="modal-actions">
+    <button class="btn btn-secondary" onclick="closeM('m-issue')">Cancel</button>
+    <button class="btn btn-primary" id="if-save" onclick="saveIssue()">Report</button>
+  </div>
+</div></div>
+
+<!-- Issue resolve -->
+<div class="modal-bg" id="m-resolve"><div class="modal">
+  <h2>Resolve issue</h2>
+  <div class="muted small" id="rs-info" style="margin-bottom:10px"></div>
+  <div class="fg" style="margin-bottom:10px"><label>Resolution *</label><textarea id="rs-text" rows="3" placeholder="What was done / what was found"></textarea></div>
+  <div class="fg" id="rs-outcome-wrap"><label>Asset afterwards</label><select id="rs-outcome">
+    <option value="service">Back in service</option>
+    <option value="keep">Leave status as is</option>
+    <option value="dispose">Dispose (write off)</option>
+  </select></div>
+  <div class="msg err" id="rs-err"></div>
+  <div class="modal-actions">
+    <button class="btn btn-secondary" onclick="closeM('m-resolve')">Cancel</button>
+    <button class="btn btn-primary" id="rs-save" onclick="saveResolve()">Resolve</button>
+  </div>
+</div></div>
+
+<!-- Import -->
+<div class="modal-bg" id="m-import"><div class="modal wide">
+  <h2>Import assets from CSV</h2>
+  <div class="small muted" style="margin-bottom:10px">Columns (header row): <code>name, category, type, brand, model, serial, zone, location, checkoutable, pmIntervalDays, lastPmAt, assignedTo, supplier, purchaseDate, purchaseCost, warrantyUntil, notes, id</code>. Category is IT, MHE or TF. Leave <code>id</code> blank to number automatically. Dates as YYYY-MM-DD. <span class="link" onclick="downloadImportTemplate()">Download template</span></div>
+  <input type="file" id="im-file" accept=".csv,text/csv" onchange="importFileChosen(this)">
+  <div id="im-preview" style="margin-top:10px"></div>
+  <div class="msg err" id="im-err"></div>
+  <div class="modal-actions">
+    <button class="btn btn-secondary" onclick="closeM('m-import')">Cancel</button>
+    <button class="btn btn-primary" id="im-save" onclick="confirmImport()" disabled>Import</button>
+  </div>
+</div></div>
+
+<!-- Labels -->
+<div class="modal-bg" id="m-labels"><div class="modal">
+  <h2>🏷 Print labels</h2>
+  <div class="muted small" id="lb-info" style="margin-bottom:10px"></div>
+  <div class="form-grid">
+    <div class="fg"><label>Label stock</label><select id="lb-stock"><option value="roll">50 × 25 mm roll (label printer)</option><option value="a4">A4 sheet (3 × 8)</option></select></div>
+    <div class="fg"><label>Code</label><select id="lb-code"><option value="both">QR + Code 128</option><option value="qr">QR only</option><option value="c128">Code 128 only (1D scanners)</option></select></div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-secondary" onclick="closeM('m-labels')">Cancel</button>
+    <button class="btn btn-primary" onclick="printLabels()">Open print view</button>
+  </div>
+</div></div>
+
+<!-- Generic confirm / prompt -->
+<div class="modal-bg" id="m-ask"><div class="modal">
+  <h2 id="ask-title"></h2>
+  <div id="ask-body" class="small" style="white-space:pre-wrap;margin-bottom:10px"></div>
+  <input id="ask-input" style="display:none">
+  <div class="modal-actions">
+    <button class="btn btn-secondary" onclick="askDone(false)">Cancel</button>
+    <button class="btn btn-primary" id="ask-ok" onclick="askDone(true)">OK</button>
+  </div>
+</div></div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// FC ASSET MANAGEMENT — companion page to SupplyBase (same Supabase project,
+// same accounts, same sign-in session when opened from the same site).
+// Tables: assets, asset_checkouts, asset_maintenance, asset_issues,
+// asset_audits, asset_audit_scans, asset_log (see assets_setup.sql).
+//
+// Status rules — these workflows are the only ways a status changes:
+//   Available ⇄ Checked Out            check-out / check-in
+//   → Out of Service                    issue flagged out-of-service, or returned Damaged
+//   → Under Maintenance                 sent to maintenance
+//   → Missing                           issue type Missing, or not found in a completed audit
+//   → Disposed                          superuser only; assets are never deleted
+//   back to Available                   when nothing keeps it out (open out-of-service
+//                                       issue, open check-out, maintenance)
+// ═══════════════════════════════════════════════════════════════════════════
+
+var SUPABASE_URL = 'https://tkasifllaagsxhpcpzrf.supabase.co';
+var SUPABASE_KEY = 'sb_publishable_eKsY9d1RsINGrGKx3SK6Fg_YrLK4aUn';
+var SESSION_ROLE_KEY = 'consumables_tracker_session_role'; // shared with SupplyBase
+var SESSION_USER_KEY = 'consumables_tracker_session_user';
+
+var CATEGORIES = { IT: 'IT / Devices', MHE: 'MHE', TF: 'Tools & Fixtures' };
+var STATUSES = ['Available', 'Checked Out', 'Under Maintenance', 'Out of Service', 'Missing', 'Disposed'];
+var SHIFTS = ['Morning', 'Afternoon', 'Night'];
+var DEFAULT_DUE_HOURS = 12;
+var SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
+
+// What each SupplyBase role can do here. Brand accounts have no access.
+var PERMS = {
+  superuser: ['view', 'edit', 'checkout', 'maintain', 'issue', 'resolve', 'audit', 'complete_audit', 'dispose'],
+  user:      ['view', 'edit', 'checkout', 'maintain', 'issue', 'resolve', 'audit', 'complete_audit'],
+  requestor: ['view', 'checkout', 'issue', 'audit'],
+  viewer:    ['view'],
+};
+
+var sb = null;
+var me = null; // { username, role }
+var S = { assets: [], checkouts: [], maint: [], issues: [], audits: [], scans: [], log: [], people: [] };
+
+function can(action) { return !!(me && PERMS[me.role] && PERMS[me.role].indexOf(action) !== -1); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+function nowIso() { return new Date().toISOString(); }
+function todayYmd(d) { d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function addDaysYmd(ymd, n) { var d = new Date(ymd + 'T00:00:00'); d.setDate(d.getDate() + n); return todayYmd(d); }
+function daysBetweenYmd(a, b) { return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000); }
+function fmtDate(ymd) { return ymd ? new Date(String(ymd).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'; }
+function fmtDT(iso) { return iso ? new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '—'; }
+function fmtPHP(n) { return '₱' + (Math.round((+n || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function hoursAgo(iso) { return (Date.now() - new Date(iso).getTime()) / 3600000; }
+function fmtDur(h) { h = Math.abs(h); return h < 1 ? Math.round(h * 60) + ' min' : (h < 48 ? Math.round(h * 10) / 10 + ' h' : Math.round(h / 24) + ' d'); }
+
+// ─── RULES (pure functions over S) ──────────────────────────────────────────
+function assetById(id) { var k = String(id || '').trim().toUpperCase(); return S.assets.find(function(a) { return a.id.toUpperCase() === k; }) || null; }
+
+// A scan may be the asset tag or, as a fallback, the manufacturer serial.
+function resolveScan(code) {
+  var c = String(code || '').trim();
+  if (!c) return null;
+  var a = assetById(c);
+  if (a) return a;
+  var k = c.toUpperCase();
+  return S.assets.find(function(x) { return x.serial && String(x.serial).trim().toUpperCase() === k; }) || null;
+}
+
+function nextAssetId(cat, taken) {
+  var re = new RegExp('^' + cat + '-(\\d+)$', 'i');
+  var max = 0;
+  S.assets.map(function(a) { return a.id; }).concat(taken || []).forEach(function(id) {
+    var m = String(id).match(re); if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return cat + '-' + String(max + 1).padStart(4, '0');
+}
+
+function openCheckout(assetId) { return S.checkouts.find(function(c) { return c.assetId === assetId && !c.returnedAt; }) || null; }
+function openIssues(assetId) { return S.issues.filter(function(i) { return i.assetId === assetId && i.status !== 'Resolved'; }); }
+function openOosIssues(assetId) { return openIssues(assetId).filter(function(i) { return i.outOfService; }); }
+function openMissingIssues(assetId) { return openIssues(assetId).filter(function(i) { return i.type === 'Missing'; }); }
+
+// The status an asset should settle on once a blocker is cleared.
+function settledStatus(asset, ignoreIssueId) {
+  if (asset.status === 'Disposed') return 'Disposed';
+  if (openCheckout(asset.id)) return 'Checked Out';
+  var oos = openOosIssues(asset.id).filter(function(i) { return i.id !== ignoreIssueId; });
+  if (oos.length) return 'Out of Service';
+  var missing = openMissingIssues(asset.id).filter(function(i) { return i.id !== ignoreIssueId; });
+  if (missing.length) return 'Missing';
+  return 'Available';
+}
+
+function checkoutBlocker(asset) {
+  if (!asset) return 'Not in the register.';
+  if (!asset.checkoutable) return asset.id + ' is not shared equipment (not set for check-out).';
+  if (asset.status !== 'Available') return asset.id + ' is ' + asset.status + (asset.status === 'Checked Out' && openCheckout(asset.id) ? ' (with ' + openCheckout(asset.id).borrower + ')' : '') + '.';
+  return '';
+}
+
+function isOverdue(c, now) { return !c.returnedAt && c.dueAt && new Date(c.dueAt).getTime() < (now || Date.now()); }
+
+// PM state for one asset: overdue, due within 7 days, ok, or no schedule.
+function pmState(asset, today) {
+  today = today || todayYmd();
+  if (!asset.pmIntervalDays || asset.status === 'Disposed') return { state: 'none' };
+  var due = asset.nextPmDue || (asset.lastPmAt ? addDaysYmd(String(asset.lastPmAt).slice(0, 10), asset.pmIntervalDays) : null);
+  if (!due) return { state: 'overdue', due: null, days: null, never: true };
+  var days = daysBetweenYmd(today, String(due).slice(0, 10));
+  return { state: days < 0 ? 'overdue' : (days <= 7 ? 'soon' : 'ok'), due: String(due).slice(0, 10), days: days };
+}
+
+// ─── AUDIT RULES ────────────────────────────────────────────────────────────
+function auditInScope(audit, asset) { return audit.scope === 'Whole site' || (asset.zone || '') === audit.scope; }
+
+// Assets the audit expects to find: in scope, not disposed, not signed out.
+function auditExpected(audit) {
+  return S.assets.filter(function(a) { return auditInScope(audit, a) && a.status !== 'Disposed' && a.status !== 'Checked Out'; });
+}
+
+function classifyScan(audit, code, scannedZone, priorScans) {
+  var asset = resolveScan(code);
+  if (!asset) return { assetId: null, result: 'Unknown Tag' };
+  if ((priorScans || []).some(function(s) { return s.assetId === asset.id && s.result !== 'Duplicate'; })) return { assetId: asset.id, result: 'Duplicate' };
+  if (asset.status === 'Disposed' || asset.status === 'Checked Out') return { assetId: asset.id, result: 'Extra' };
+  var zone = audit.scope === 'Whole site' ? (scannedZone || '') : audit.scope;
+  if (zone && (asset.zone || '') !== zone) return { assetId: asset.id, result: 'Wrong Location' };
+  return { assetId: asset.id, result: 'Found' };
+}
+
+// What completing an audit will change. Read-only — applied by completeAudit().
+function auditPlan(audit, scans) {
+  var expected = auditExpected(audit);
+  var seen = {};
+  scans.forEach(function(s) { if (s.assetId && s.result !== 'Duplicate') seen[s.assetId] = s; });
+  var found = expected.filter(function(a) { return seen[a.id]; });
+  var missing = expected.filter(function(a) { return !seen[a.id]; });
+  var relocate = scans.filter(function(s) { return s.result === 'Wrong Location' && s.assetId; }).map(function(s) {
+    return { id: s.assetId, zone: audit.scope === 'Whole site' ? s.scannedZone : audit.scope };
+  }).filter(function(r) { return r.zone; });
+  var recovered = Object.keys(seen).filter(function(id) { var a = assetById(id); return a && a.status === 'Missing'; });
+  var count = function(r) { return scans.filter(function(s) { return s.result === r; }).length; };
+  return {
+    expected: expected.length, found: found.length, missing: missing.map(function(a) { return a.id; }),
+    newlyMissing: missing.filter(function(a) { return a.status !== 'Missing'; }).map(function(a) { return a.id; }),
+    relocate: relocate, recovered: recovered,
+    wrongLocation: count('Wrong Location'), extra: count('Extra'), unknown: count('Unknown Tag'),
+    accuracy: expected.length ? Math.round(found.length / expected.length * 1000) / 10 : 100,
+  };
+}
+
+// ─── DATA ───────────────────────────────────────────────────────────────────
+function initSb() {
+  if (sb || typeof supabase === 'undefined') return;
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+}
+
+async function fetchAll(table, order) {
+  var out = [], size = 1000;
+  for (var from = 0; from < 100000; from += size) {
+    var q = sb.from(table).select('*');
+    if (order) q = q.order(order, { ascending: false });
+    var r = await q.range(from, from + size - 1);
+    if (r.error) throw new Error(table + ': ' + r.error.message);
+    out = out.concat(r.data || []);
+    if (!r.data || r.data.length < size) break;
+  }
+  return out;
+}
+
+var _setupMissing = false;
+async function reloadAll(showToast) {
+  if (!sb) return;
+  try {
+    var res = await Promise.all([
+      fetchAll('assets'), fetchAll('asset_checkouts', 'checkedOutAt'), fetchAll('asset_maintenance', 'date'),
+      fetchAll('asset_issues', 'reportedAt'), fetchAll('asset_audits', 'startedAt'),
+    ]);
+    S.assets = res[0].sort(function(a, b) { return a.id.localeCompare(b.id, undefined, { numeric: true }); });
+    S.checkouts = res[1]; S.maint = res[2]; S.issues = res[3]; S.audits = res[4];
+    var active = S.audits.find(function(a) { return a.status === 'In Progress'; });
+    S.scans = active ? (await sb.from('asset_audit_scans').select('*').eq('auditId', active.id).order('scannedAt', { ascending: true })).data || [] : [];
+    _setupMissing = false;
+    if (showToast) toast('Up to date');
+  } catch (e) {
+    console.error(e);
+    _setupMissing = /does not exist|schema cache|relation/i.test(String(e.message));
+    toast(_setupMissing ? 'Asset tables are not set up yet — run assets_setup.sql in Supabase.' : 'Could not load: ' + e.message, 6000);
+  }
+  renderAll();
+}
+
+async function loadPeople() {
+  try {
+    var r = await sb.from('accounts').select('username,role');
+    S.people = (r.data || []).filter(function(a) { return a.role !== 'brand'; }).map(function(a) { return a.username; }).sort();
+  } catch (e) { S.people = []; }
+  document.getElementById('people').innerHTML = S.people.map(function(p) { return '<option value="' + esc(p) + '">'; }).join('');
+}
+
+// Every write goes through these; a failure stops the workflow with a message.
+async function dbInsert(table, row) {
+  var r = await sb.from(table).insert([row]);
+  if (r.error) throw new Error('Could not save to ' + table + ': ' + r.error.message);
+  return row;
+}
+async function dbUpdate(table, id, patch) {
+  var r = await sb.from(table).update(patch).eq('id', id);
+  if (r.error) throw new Error('Could not update ' + table + ': ' + r.error.message);
+}
+async function logEvent(assetId, action, details) {
+  var row = { id: uid(), assetId: assetId, action: action, details: details || '', by: me.username, at: nowIso() };
+  try { await sb.from('asset_log').insert([row]); } catch (e) {}
+  S.log.unshift(row);
+}
+async function setAsset(asset, patch, action, details) {
+  patch = Object.assign({}, patch, { updatedAt: nowIso(), updatedBy: me.username });
+  await dbUpdate('assets', asset.id, patch);
+  Object.assign(asset, patch);
+  if (action) await logEvent(asset.id, action, details);
+}
+// Re-read one asset's status from the server right before acting on it, so
+// two devices can't sign out the same scanner at the same moment.
+async function freshAsset(id) {
+  var r = await sb.from('assets').select('*').eq('id', id).single();
+  if (r.data) { var a = assetById(id); if (a) Object.assign(a, r.data); return a || r.data; }
+  return assetById(id);
+}
+
+// ─── SESSION ────────────────────────────────────────────────────────────────
+function readSession() {
+  try {
+    var u = JSON.parse(localStorage.getItem(SESSION_USER_KEY) || 'null');
+    var role = localStorage.getItem(SESSION_ROLE_KEY);
+    if (u && u.username && role) return { username: u.username, role: role };
+  } catch (e) {}
+  return null;
+}
+
+async function doLogin() {
+  var user = document.getElementById('li-user').value.trim();
+  var pass = document.getElementById('li-pass').value;
+  var err = document.getElementById('li-err');
+  err.classList.remove('show');
+  if (!user) { err.textContent = 'Enter your username.'; err.classList.add('show'); return; }
+  try {
+    var r = await sb.from('accounts').select('username,password,role').ilike('username', user).limit(1);
+    var acct = r.data && r.data[0];
+    if (!acct || acct.password !== pass) { err.textContent = 'Account not found or incorrect password.'; err.classList.add('show'); return; }
+    if (!PERMS[acct.role]) { err.textContent = 'Your account type does not have access to Asset Management.'; err.classList.add('show'); return; }
+    me = { username: acct.username, role: acct.role };
+    localStorage.setItem(SESSION_ROLE_KEY, acct.role);
+    localStorage.setItem(SESSION_USER_KEY, JSON.stringify({ username: acct.username, role: acct.role, brand: '' }));
+    document.getElementById('login').style.display = 'none';
+    startApp();
+  } catch (e) { err.textContent = 'Could not sign in: ' + e.message; err.classList.add('show'); }
+}
+
+function logout() {
+  localStorage.removeItem(SESSION_ROLE_KEY);
+  localStorage.removeItem(SESSION_USER_KEY);
+  location.reload();
+}
+
+// ─── SHELL ──────────────────────────────────────────────────────────────────
+var currentView = 'dashboard';
+function go(v) {
+  currentView = v;
+  document.querySelectorAll('.view').forEach(function(s) { s.classList.toggle('active', s.id === 'v-' + v); });
+  document.querySelectorAll('#nav button').forEach(function(b) { b.classList.toggle('active', b.dataset.v === v); });
+  renderView(v);
+  var focus = { checkout: 'co-scan', register: 'reg-q' }[v];
+  if (focus && window.innerWidth > 760) setTimeout(function() { var el = document.getElementById(focus); if (el) el.focus(); }, 50);
+}
+function renderView(v) {
+  ({ dashboard: renderDashboard, register: renderRegister, checkout: renderCheckout, maintenance: renderMaintenance, issues: renderIssues, audits: renderAudits }[v] || function() {})();
+}
+function renderAll() {
+  renderNavCounts();
+  fillFilterOptions();
+  renderView(currentView);
+  var m = document.getElementById('m-asset');
+  if (m.classList.contains('open') && _detailId) renderAssetDetail(_detailId);
+}
+function renderNavCounts() {
+  var set = function(id, n) { var el = document.getElementById(id); el.style.display = n ? '' : 'none'; el.textContent = n; };
+  set('nav-overdue', S.checkouts.filter(function(c) { return isOverdue(c); }).length);
+  set('nav-pm', S.assets.filter(function(a) { return pmState(a).state === 'overdue'; }).length);
+  set('nav-issues', S.issues.filter(function(i) { return i.status !== 'Resolved' && (i.severity === 'High' || i.severity === 'Critical'); }).length);
+}
+function applyPerms() {
+  [['perm-edit', 'edit'], ['perm-maintain', 'maintain'], ['perm-issue', 'issue']].forEach(function(p) {
+    document.querySelectorAll('.' + p[0]).forEach(function(el) { el.style.display = can(p[1]) ? '' : 'none'; });
+  });
+  document.getElementById('who').textContent = me.username + ' · ' + me.role;
+}
+
+function openM(id) { document.getElementById(id).classList.add('open'); }
+function closeM(id) { document.getElementById(id).classList.remove('open'); if (id === 'm-asset') _detailId = null; }
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  var open = Array.prototype.slice.call(document.querySelectorAll('.modal-bg.open'));
+  if (open.length) closeM(open[open.length - 1].id);
+});
+document.addEventListener('click', function(e) { if (e.target.classList && e.target.classList.contains('modal-bg')) closeM(e.target.id); });
+
+var _toastT = null;
+function toast(msg, ms) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(_toastT); _toastT = setTimeout(function() { t.style.display = 'none'; }, ms || 2500);
+}
+function showMsg(id, text, kind) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'msg' + (text ? ' show ' + (kind || 'err') : '');
+  el.textContent = text || '';
+}
+
+// Small promise-based confirm / prompt (works the same on phones).
+var _askResolve = null;
+function ask(title, body, opts) {
+  opts = opts || {};
+  document.getElementById('ask-title').textContent = title;
+  document.getElementById('ask-body').textContent = body || '';
+  var inp = document.getElementById('ask-input');
+  inp.style.display = opts.input ? '' : 'none';
+  inp.value = opts.value || ''; inp.placeholder = opts.placeholder || '';
+  document.getElementById('ask-ok').textContent = opts.ok || 'OK';
+  document.getElementById('ask-ok').className = 'btn ' + (opts.danger ? 'btn-danger' : 'btn-primary');
+  openM('m-ask');
+  if (opts.input) setTimeout(function() { inp.focus(); }, 50);
+  return new Promise(function(res) { _askResolve = res; });
+}
+function askDone(ok) {
+  var v = document.getElementById('ask-input').value;
+  closeM('m-ask');
+  if (_askResolve) { var r = _askResolve; _askResolve = null; r(ok ? (document.getElementById('ask-input').style.display === 'none' ? true : v) : false); }
+}
+
+// Wraps an async action: busy button, error message, no double taps.
+var _busy = {};
+async function busy(key, btnId, fn) {
+  if (_busy[key]) return;
+  _busy[key] = true;
+  var btn = btnId && document.getElementById(btnId), label = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try { await fn(); }
+  catch (e) { console.error(e); toast(e.message || String(e), 6000); }
+  finally { _busy[key] = false; if (btn) { btn.disabled = false; btn.textContent = label; } }
+}
+
+function statusBadge(s) {
+  var cls = { 'Available': 'b-ok', 'Checked Out': 'b-info', 'Under Maintenance': 'b-warn', 'Out of Service': 'b-danger', 'Missing': 'b-danger', 'Disposed': 'b-muted' }[s] || 'b-muted';
+  return '<span class="badge ' + cls + '">' + esc(s) + '</span>';
+}
+function sevBadge(s) { return '<span class="badge ' + ({ Low: 'b-muted', Medium: 'b-info', High: 'b-warn', Critical: 'b-danger' }[s] || 'b-muted') + '">' + esc(s) + '</span>'; }
+function pmBadge(p) {
+  if (p.state === 'none') return '<span class="muted">—</span>';
+  if (p.never) return '<span class="badge b-danger">No PM logged</span>';
+  if (p.state === 'overdue') return '<span class="badge b-danger">' + fmtDate(p.due) + ' · ' + (-p.days) + 'd overdue</span>';
+  if (p.state === 'soon') return '<span class="badge b-warn">' + fmtDate(p.due) + (p.days === 0 ? ' · today' : ' · in ' + p.days + 'd') + '</span>';
+  return '<span class="small">' + fmtDate(p.due) + '</span>';
+}
+function assetLink(id) { var a = assetById(id); return '<span class="link" onclick="event.stopPropagation();openAsset(\'' + esc(id) + '\')">' + esc(id) + '</span>' + (a ? ' <span class="small muted">' + esc(a.name) + '</span>' : ''); }
+function zones() {
+  var z = {}; S.assets.forEach(function(a) { if (a.zone) z[a.zone] = 1; });
+  return Object.keys(z).sort();
+}
+function fillFilterOptions() {
+  var keep = function(id, opts, first) {
+    var el = document.getElementById(id); if (!el) return;
+    var v = el.value;
+    el.innerHTML = '<option value="">' + first + '</option>' + opts.map(function(o) { return '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>'; }).join('');
+    el.value = v;
+  };
+  keep('reg-cat', Object.keys(CATEGORIES).map(function(k) { return [k, CATEGORIES[k]]; }), 'All categories');
+  keep('reg-status', STATUSES.map(function(s) { return [s, s]; }), 'All statuses');
+  keep('reg-zone', zones().map(function(z) { return [z, z]; }), 'All zones');
+  document.getElementById('zones').innerHTML = zones().map(function(z) { return '<option value="' + esc(z) + '">'; }).join('');
+  var types = {}; S.assets.forEach(function(a) { if (a.type) types[a.type] = 1; });
+  document.getElementById('types').innerHTML = Object.keys(types).sort().map(function(t) { return '<option value="' + esc(t) + '">'; }).join('');
+}
+
+// ─── DASHBOARD ──────────────────────────────────────────────────────────────
+function renderDashboard() {
+  var el = document.getElementById('v-dashboard');
+  if (_setupMissing) {
+    el.innerHTML = '<div class="panel"><h2>Setup needed</h2><div class="small">The asset tables don\'t exist yet. Open Supabase → SQL Editor and run <code>assets_setup.sql</code>, then press ↻.</div></div>';
+    return;
+  }
+  var live = S.assets.filter(function(a) { return a.status !== 'Disposed'; });
+  var cnt = function(s) { return live.filter(function(a) { return a.status === s; }).length; };
+  var overdue = S.checkouts.filter(function(c) { return isOverdue(c); });
+  var pmOver = live.filter(function(a) { return pmState(a).state === 'overdue'; });
+  var pmSoon = live.filter(function(a) { return pmState(a).state === 'soon'; });
+  var openIss = S.issues.filter(function(i) { return i.status !== 'Resolved'; });
+  var urgent = openIss.filter(function(i) { return i.severity === 'High' || i.severity === 'Critical'; });
+  var missing = live.filter(function(a) { return a.status === 'Missing'; });
+  var card = function(label, val, cls, view) { return '<div class="card ' + cls + '"' + (view ? ' onclick="go(\'' + view + '\')"' : '') + '><div class="label">' + label + '</div><div class="value">' + val + '</div></div>'; };
+  var html = '<div class="cards">'
+    + card('Assets', live.length, '', 'register')
+    + card('Available', cnt('Available'), 'ok', 'register')
+    + card('Checked out', cnt('Checked Out'), 'info', 'checkout')
+    + card('Overdue returns', overdue.length, overdue.length ? 'danger' : '', 'checkout')
+    + card('PM overdue', pmOver.length, pmOver.length ? 'danger' : '', 'maintenance')
+    + card('Open issues', openIss.length + (urgent.length ? ' <span class="small">(' + urgent.length + ' urgent)</span>' : ''), urgent.length ? 'warn' : '', 'issues')
+    + card('Missing', missing.length, missing.length ? 'danger' : '', 'register')
+    + '</div>';
+  var section = function(title, rows, emptyTxt) {
+    return '<div class="panel"><h2>' + title + '</h2>' + (rows.length ? rows.slice(0, 8).join('') + (rows.length > 8 ? '<div class="small muted" style="padding-top:6px">+ ' + (rows.length - 8) + ' more</div>' : '') : '<div class="empty">' + emptyTxt + '</div>') + '</div>';
+  };
+  var row = function(main, side) { return '<div class="list-row"><div class="grow">' + main + '</div><div class="small nowrap">' + side + '</div></div>'; };
+  html += '<div class="grid2">'
+    + section('⏰ Overdue returns', overdue.sort(function(a, b) { return new Date(a.dueAt) - new Date(b.dueAt); }).map(function(c) {
+        return row(assetLink(c.assetId) + '<div class="small muted">' + esc(c.borrower) + ' · ' + esc(c.shift || '') + '</div>', '<span class="badge b-danger">' + fmtDur(hoursAgo(c.dueAt)) + ' late</span>');
+      }), 'Nothing overdue.')
+    + section('🛠 PM due', pmOver.concat(pmSoon).map(function(a) { return row(assetLink(a.id), pmBadge(pmState(a))); }), 'No PM due in the next 7 days.')
+    + section('⚠️ Urgent issues', urgent.map(function(i) {
+        return row(assetLink(i.assetId) + '<div class="small muted">' + esc(i.type) + ' · ' + esc((i.description || '').slice(0, 70)) + '</div>', sevBadge(i.severity) + ' <span class="small muted">' + fmtDur(hoursAgo(i.reportedAt)) + '</span>');
+      }), 'No high or critical issues open.')
+    + section('❓ Missing', missing.map(function(a) { return row(assetLink(a.id), '<span class="small muted">' + esc(a.zone || '') + '</span>'); }), 'Nothing missing.')
+    + '</div>';
+  // Status by category
+  html += '<div class="panel"><h2>Status by category</h2><div class="table-wrap"><table><thead><tr><th>Category</th>'
+    + STATUSES.map(function(s) { return '<th class="right">' + s + '</th>'; }).join('') + '<th class="right">Total</th></tr></thead><tbody>'
+    + Object.keys(CATEGORIES).map(function(k) {
+        var inCat = S.assets.filter(function(a) { return a.category === k; });
+        return '<tr><td><strong>' + CATEGORIES[k] + '</strong></td>' + STATUSES.map(function(s) {
+          var n = inCat.filter(function(a) { return a.status === s; }).length;
+          return '<td class="right">' + (n || '<span class="muted">0</span>') + '</td>';
+        }).join('') + '<td class="right"><strong>' + inCat.length + '</strong></td></tr>';
+      }).join('') + '</tbody></table></div></div>';
+  if (!S.assets.length) html = '<div class="panel"><h2>Welcome 👋</h2><div class="small">No assets yet. Go to <span class="link" onclick="go(\'register\')">Register</span> to add them one by one or import a CSV, then print labels.</div></div>' + html;
+  el.innerHTML = html;
+}
+
+// ─── REGISTER ───────────────────────────────────────────────────────────────
+var _regSel = {};
+function regRows() {
+  var q = document.getElementById('reg-q').value.trim().toLowerCase();
+  var cat = document.getElementById('reg-cat').value, st = document.getElementById('reg-status').value, zn = document.getElementById('reg-zone').value;
+  return S.assets.filter(function(a) {
+    if (cat && a.category !== cat) return false;
+    if (st && a.status !== st) return false;
+    if (!st && a.status === 'Disposed' && !q) return false; // hide disposed unless asked
+    if (zn && a.zone !== zn) return false;
+    if (q && [a.id, a.name, a.serial, a.type, a.brand, a.model, a.location, a.assignedTo].every(function(v) { return String(v || '').toLowerCase().indexOf(q) === -1; })) return false;
+    return true;
+  });
+}
+function renderRegister() {
+  var rows = regRows();
+  document.getElementById('reg-count').textContent = rows.length + ' asset' + (rows.length === 1 ? '' : 's') + (Object.keys(_regSel).length ? ' · ' + Object.keys(_regSel).length + ' selected' : '');
+  document.getElementById('reg-body').innerHTML = rows.length ? rows.map(function(a) {
+    var co = openCheckout(a.id);
+    var withTxt = co ? '<span class="badge b-info">' + esc(co.borrower) + '</span>' + (isOverdue(co) ? ' <span class="badge b-danger">overdue</span>' : '') : esc(a.assignedTo || '');
+    return '<tr class="click" onclick="openAsset(\'' + esc(a.id) + '\')">'
+      + '<td onclick="event.stopPropagation()"><input type="checkbox" ' + (_regSel[a.id] ? 'checked' : '') + ' onchange="regSel(\'' + esc(a.id) + '\',this.checked)"></td>'
+      + '<td class="nowrap"><strong>' + esc(a.id) + '</strong></td>'
+      + '<td>' + esc(a.name) + '<div class="small muted">' + esc([a.type, a.brand, a.model].filter(Boolean).join(' · ')) + '</div></td>'
+      + '<td class="small">' + esc(CATEGORIES[a.category] || a.category) + (a.checkoutable ? '<div class="small muted">shared</div>' : '') + '</td>'
+      + '<td class="small">' + esc(a.zone || '') + (a.location ? '<div class="muted">' + esc(a.location) + '</div>' : '') + '</td>'
+      + '<td>' + statusBadge(a.status) + '</td>'
+      + '<td class="small">' + withTxt + '</td>'
+      + '<td>' + pmBadge(pmState(a)) + '</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="empty">' + (S.assets.length ? 'No assets match.' : 'No assets yet — add one or import a CSV.') + '</td></tr>';
+}
+function regSel(id, on) { if (on) _regSel[id] = 1; else delete _regSel[id]; renderRegister(); }
+function regSelectAll(on) { _regSel = {}; if (on) regRows().forEach(function(a) { _regSel[a.id] = 1; }); renderRegister(); }
+function regEnter() {
+  var a = resolveScan(document.getElementById('reg-q').value);
+  if (a) { document.getElementById('reg-q').value = ''; renderRegister(); openAsset(a.id); }
+}
+
+function exportRegisterCSV() {
+  var cols = ['id', 'name', 'category', 'type', 'brand', 'model', 'serial', 'zone', 'location', 'status', 'checkoutable', 'assignedTo', 'pmIntervalDays', 'lastPmAt', 'nextPmDue', 'supplier', 'purchaseDate', 'purchaseCost', 'warrantyUntil', 'notes'];
+  var q = function(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+  var lines = [cols.join(',')].concat(regRows().map(function(a) { return cols.map(function(c) { return q(a[c]); }).join(','); }));
+  downloadText(lines.join('\n'), 'asset_register_' + todayYmd() + '.csv');
+}
+function downloadText(text, name) {
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+  a.download = name; a.click();
+}
+
+// ─── ASSET DETAIL ───────────────────────────────────────────────────────────
+var _detailId = null, _detailLog = [];
+async function openAsset(id) {
+  _detailId = id; _detailLog = [];
+  renderAssetDetail(id);
+  openM('m-asset');
+  try {
+    var r = await sb.from('asset_log').select('*').eq('assetId', id).order('at', { ascending: false }).limit(200);
+    if (_detailId === id) { _detailLog = r.data || []; renderAssetDetail(id); }
+  } catch (e) {}
+}
+function renderAssetDetail(id) {
+  var a = assetById(id);
+  var body = document.getElementById('m-asset-body');
+  if (!a) { body.innerHTML = '<div class="empty">Asset not found.</div>'; return; }
+  var co = openCheckout(a.id), iss = openIssues(a.id), pm = pmState(a);
+  var f = function(label, val) { return '<div><div class="small muted">' + label + '</div><div>' + (val || '<span class="muted">—</span>') + '</div></div>'; };
+  var acts = [];
+  if (can('edit') && a.status !== 'Disposed') acts.push('<button class="btn btn-secondary btn-sm" onclick="openAssetForm(\'' + esc(a.id) + '\')">✏️ Edit</button>');
+  if (can('checkout') && co) acts.push('<button class="btn btn-secondary btn-sm" onclick="closeM(\'m-asset\');go(\'checkout\');ciAdd(\'' + esc(a.id) + '\')">⬅️ Check in</button>');
+  if (can('checkout') && !co && !checkoutBlocker(a)) acts.push('<button class="btn btn-secondary btn-sm" onclick="closeM(\'m-asset\');go(\'checkout\');coAdd(\'' + esc(a.id) + '\')">➡️ Check out</button>');
+  if (can('issue') && a.status !== 'Disposed') acts.push('<button class="btn btn-secondary btn-sm" onclick="openIssueForm(\'' + esc(a.id) + '\')">⚠️ Report issue</button>');
+  if (can('maintain') && a.status !== 'Disposed') {
+    acts.push('<button class="btn btn-secondary btn-sm" onclick="openMaintForm(\'PM\',\'' + esc(a.id) + '\')">✅ Log PM</button>');
+    acts.push('<button class="btn btn-secondary btn-sm" onclick="openMaintForm(\'Repair\',\'' + esc(a.id) + '\')">🔧 Log repair</button>');
+    if (a.status === 'Available' || a.status === 'Out of Service') acts.push('<button class="btn btn-secondary btn-sm" onclick="sendToMaintenance(\'' + esc(a.id) + '\')">🛠 Send to maintenance</button>');
+  }
+  acts.push('<button class="btn btn-secondary btn-sm" onclick="_regSel={};_regSel[\'' + esc(a.id) + '\']=1;openLabels()">🏷 Label</button>');
+  if (can('dispose') && a.status !== 'Disposed' && !co) acts.push('<button class="btn btn-danger btn-sm" onclick="disposeAsset(\'' + esc(a.id) + '\')">Dispose</button>');
+
+  // History: log entries + check-outs + maintenance, newest first
+  var events = _detailLog.map(function(l) { return { at: l.at, txt: '<strong>' + esc(l.action) + '</strong>' + (l.details ? ' — ' + esc(l.details) : ''), by: l.by }; });
+  if (!events.length) {
+    S.checkouts.filter(function(c) { return c.assetId === a.id; }).forEach(function(c) {
+      events.push({ at: c.checkedOutAt, txt: '<strong>Checked out</strong> to ' + esc(c.borrower) + (c.shift ? ' (' + esc(c.shift) + ')' : ''), by: c.checkedOutBy });
+      if (c.returnedAt) events.push({ at: c.returnedAt, txt: '<strong>Checked in</strong> — ' + esc(c.returnCondition || 'Good'), by: c.returnedBy });
+    });
+    S.maint.filter(function(m) { return m.assetId === a.id; }).forEach(function(m) { events.push({ at: m.date + 'T12:00:00', txt: '<strong>' + esc(m.kind) + '</strong>' + (m.notes ? ' — ' + esc(m.notes) : ''), by: m.createdBy }); });
+    events.sort(function(x, y) { return String(y.at).localeCompare(String(x.at)); });
+  }
+  body.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">'
+    + '<div><h2 style="margin-bottom:2px">' + esc(a.id) + ' · ' + esc(a.name) + '</h2><div class="small muted">' + esc(CATEGORIES[a.category] || a.category) + (a.type ? ' · ' + esc(a.type) : '') + (a.checkoutable ? ' · shared equipment' : '') + '</div></div>'
+    + '<div>' + statusBadge(a.status) + '</div></div>'
+    + (co ? '<div class="msg show ' + (isOverdue(co) ? 'err' : 'wrn') + '">With <strong>' + esc(co.borrower) + '</strong> since ' + fmtDT(co.checkedOutAt) + ' · due ' + fmtDT(co.dueAt) + (isOverdue(co) ? ' (overdue)' : '') + '</div>' : '')
+    + (iss.length ? '<div class="msg show err">' + iss.length + ' open issue' + (iss.length === 1 ? '' : 's') + ': ' + iss.map(function(i) { return esc(i.type) + ' (' + esc(i.severity) + ')'; }).join(', ') + '</div>' : '')
+    + '<div class="form-grid" style="margin:14px 0">'
+    + f('Zone / location', esc([a.zone, a.location].filter(Boolean).join(' · '))) + f('Assigned to', esc(a.assignedTo))
+    + f('Brand / model', esc([a.brand, a.model].filter(Boolean).join(' '))) + f('Serial', esc(a.serial))
+    + f('PM', a.pmIntervalDays ? 'Every ' + a.pmIntervalDays + ' days · last ' + fmtDate(a.lastPmAt) + ' · ' + pmBadge(pm) : '')
+    + f('Supplier', esc(a.supplier))
+    + f('Purchased', a.purchaseDate ? fmtDate(a.purchaseDate) + (a.purchaseCost ? ' · ' + fmtPHP(a.purchaseCost) : '') : '')
+    + f('Warranty until', a.warrantyUntil ? fmtDate(a.warrantyUntil) + (a.warrantyUntil < todayYmd() ? ' <span class="badge b-muted">expired</span>' : '') : '')
+    + (a.notes ? '<div class="fg full">' + f('Notes', esc(a.notes)) + '</div>' : '')
+    + '</div>'
+    + '<div class="toolbar">' + acts.join('') + '</div>'
+    + '<h3>History</h3>'
+    + (events.length ? '<div class="timeline">' + events.slice(0, 60).map(function(e) { return '<div class="ev">' + e.txt + '<div class="small muted">' + fmtDT(e.at) + (e.by ? ' · ' + esc(e.by) : '') + '</div></div>'; }).join('') + '</div>' : '<div class="empty">No history yet.</div>')
+    + '<div class="modal-actions"><button class="btn btn-primary" onclick="closeM(\'m-asset\')">Close</button></div>';
+}
+
+async function disposeAsset(id) {
+  var a = assetById(id);
+  if (!a || !can('dispose')) return;
+  var reason = await ask('Dispose ' + a.id + '?', a.name + ' will be written off. Its history stays; it disappears from counts and audits.', { input: true, placeholder: 'Reason (required)', ok: 'Dispose', danger: true });
+  if (!reason || !String(reason).trim()) return;
+  await busy('dispose', null, async function() {
+    await setAsset(a, { status: 'Disposed', disposedAt: nowIso() }, 'Disposed', reason);
+    toast(a.id + ' disposed');
+    renderAll();
+  });
+}
+
+// ─── ADD / EDIT ASSET ───────────────────────────────────────────────────────
+var _editId = null;
+function openAssetForm(id) {
+  if (!can('edit')) return;
+  _editId = id || null;
+  var a = id ? assetById(id) : null;
+  document.getElementById('af-title').textContent = a ? 'Edit ' + a.id : 'Add asset';
+  var cat = document.getElementById('af-cat');
+  cat.innerHTML = Object.keys(CATEGORIES).map(function(k) { return '<option value="' + k + '">' + CATEGORIES[k] + ' (' + k + '-)</option>'; }).join('');
+  cat.value = a ? a.category : 'IT';
+  cat.disabled = !!a; // the ID prefix follows the category, so it's fixed once created
+  var set = function(f, v) { document.getElementById('af-' + f).value = v == null ? '' : v; };
+  set('id', a ? a.id : nextAssetId(cat.value));
+  set('name', a && a.name); set('type', a && a.type); set('serial', a && a.serial); set('brand', a && a.brand); set('model', a && a.model);
+  set('zone', a && a.zone); set('location', a && a.location); set('assigned', a && a.assignedTo);
+  set('checkout', a && a.checkoutable ? '1' : '0'); set('pm', a && a.pmIntervalDays); set('lastpm', a && a.lastPmAt ? String(a.lastPmAt).slice(0, 10) : '');
+  set('supplier', a && a.supplier); set('pdate', a && a.purchaseDate ? String(a.purchaseDate).slice(0, 10) : ''); set('pcost', a && a.purchaseCost);
+  set('warranty', a && a.warrantyUntil ? String(a.warrantyUntil).slice(0, 10) : ''); set('notes', a && a.notes);
+  showMsg('af-err', '');
+  openM('m-form');
+}
+function afCatChanged() { if (!_editId) document.getElementById('af-id').value = nextAssetId(document.getElementById('af-cat').value); }
+
+function _assetFromForm() {
+  var g = function(f) { return document.getElementById('af-' + f).value.trim(); };
+  var pm = parseInt(g('pm'), 10);
+  var row = {
+    category: document.getElementById('af-cat').value, name: g('name'), type: g('type') || null, serial: g('serial') || null,
+    brand: g('brand') || null, model: g('model') || null, zone: g('zone') || null, location: g('location') || null,
+    assignedTo: g('assigned') || null, checkoutable: g('checkout') === '1', pmIntervalDays: pm > 0 ? pm : null,
+    lastPmAt: g('lastpm') || null, supplier: g('supplier') || null, purchaseDate: g('pdate') || null,
+    purchaseCost: g('pcost') ? parseFloat(g('pcost')) : null, warrantyUntil: g('warranty') || null, notes: g('notes') || null,
+  };
+  row.nextPmDue = row.pmIntervalDays && row.lastPmAt ? addDaysYmd(row.lastPmAt, row.pmIntervalDays) : null;
+  return row;
+}
+function validateAsset(row, editingId) {
+  if (!row.name) return 'Enter a name.';
+  if (!row.zone) return 'Enter the zone so audits know where to find it.';
+  if (row.serial) {
+    var dup = S.assets.find(function(x) { return x.id !== editingId && x.serial && String(x.serial).trim().toUpperCase() === String(row.serial).trim().toUpperCase(); });
+    if (dup) return 'Serial ' + row.serial + ' is already on ' + dup.id + '.';
+  }
+  return '';
+}
+async function saveAsset() {
+  var row = _assetFromForm();
+  var err = validateAsset(row, _editId);
+  if (err) { showMsg('af-err', err); return; }
+  await busy('asset', 'af-save', async function() {
+    if (_editId) {
+      var a = assetById(_editId);
+      var changed = Object.keys(row).filter(function(k) { return String(a[k] == null ? '' : a[k]).slice(0, 10) !== String(row[k] == null ? '' : row[k]).slice(0, 10) && k !== 'category'; });
+      delete row.category;
+      await setAsset(a, row, 'Edited', changed.length ? 'Changed: ' + changed.join(', ') : 'No changes');
+      toast(a.id + ' saved');
+    } else {
+      // Re-number against the server in case someone else just added one
+      var fresh = await sb.from('assets').select('id').ilike('id', row.category + '-%');
+      var id = nextAssetId(row.category, (fresh.data || []).map(function(x) { return x.id; }));
+      var full = Object.assign({ id: id, status: 'Available', createdAt: nowIso(), createdBy: me.username, updatedAt: nowIso(), updatedBy: me.username }, row);
+      await dbInsert('assets', full);
+      S.assets.push(full);
+      S.assets.sort(function(a, b) { return a.id.localeCompare(b.id, undefined, { numeric: true }); });
+      await logEvent(id, 'Registered', [full.name, full.zone].filter(Boolean).join(' · '));
+      toast(id + ' added — print its label from the Register');
+    }
+    closeM('m-form');
+    renderAll();
+  });
+}
+
+// ─── IMPORT CSV ─────────────────────────────────────────────────────────────
+var IMPORT_COLS = ['name', 'category', 'type', 'brand', 'model', 'serial', 'zone', 'location', 'checkoutable', 'pmIntervalDays', 'lastPmAt', 'assignedTo', 'supplier', 'purchaseDate', 'purchaseCost', 'warrantyUntil', 'notes', 'id'];
+var _importRows = [];
+function openImport() { if (!can('edit')) return; _importRows = []; document.getElementById('im-file').value = ''; document.getElementById('im-preview').innerHTML = ''; document.getElementById('im-save').disabled = true; showMsg('im-err', ''); openM('m-import'); }
+function downloadImportTemplate() {
+  downloadText(IMPORT_COLS.join(',') + '\nZebra RF scanner #1,IT,RF scanner,Zebra,MC3300,S123456,Inbound,Desk 1,yes,90,2026-10-01,,Supplier Inc.,2025-06-01,45000,2027-06-01,,\n', 'asset_import_template.csv');
+}
+function parseCSV(text) {
+  var rows = [], row = [], field = '', inQ = false;
+  for (var i = 0; i < text.length; i++) {
+    var c = text[i];
+    if (inQ) { if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; } else field += c; }
+    else if (c === '"') inQ = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(field); rows.push(row); row = []; field = ''; }
+    else field += c;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(function(r) { return r.some(function(v) { return String(v).trim() !== ''; }); });
+}
+// Turns CSV rows into asset records + per-row errors. Pure (testable).
+function buildImport(rows) {
+  if (!rows.length) return { items: [], errors: ['The file is empty.'] };
+  var head = rows[0].map(function(h) { return String(h).trim(); });
+  var idx = {}; head.forEach(function(h, i) { var k = IMPORT_COLS.find(function(c) { return c.toLowerCase() === h.toLowerCase(); }); if (k) idx[k] = i; });
+  if (idx.name === undefined || idx.category === undefined) return { items: [], errors: ['The header row needs at least "name" and "category".'] };
+  var items = [], errors = [], taken = [];
+  var dateOk = function(v) { return !v || /^\d{4}-\d{2}-\d{2}$/.test(v); };
+  rows.slice(1).forEach(function(r, n) {
+    var g = function(k) { return idx[k] === undefined ? '' : String(r[idx[k]] || '').trim(); };
+    var line = n + 2;
+    var cat = g('category').toUpperCase().replace(/[^A-Z]/g, '');
+    if (cat === 'TOOLS' || cat === 'TOOLSFIXTURES') cat = 'TF';
+    if (!CATEGORIES[cat]) { errors.push('Row ' + line + ': category must be IT, MHE or TF.'); return; }
+    if (!g('name')) { errors.push('Row ' + line + ': name is missing.'); return; }
+    if (!g('zone')) { errors.push('Row ' + line + ': zone is missing.'); return; }
+    var bad = ['lastPmAt', 'purchaseDate', 'warrantyUntil'].filter(function(k) { return !dateOk(g(k)); });
+    if (bad.length) { errors.push('Row ' + line + ': use YYYY-MM-DD for ' + bad.join(', ') + '.'); return; }
+    var id = g('id').toUpperCase();
+    if (id && (assetById(id) || taken.indexOf(id) !== -1)) { errors.push('Row ' + line + ': ' + id + ' already exists.'); return; }
+    if (!id) id = nextAssetId(cat, taken);
+    taken.push(id);
+    var pm = parseInt(g('pmIntervalDays'), 10);
+    var rec = {
+      id: id, category: cat, name: g('name'), type: g('type') || null, brand: g('brand') || null, model: g('model') || null,
+      serial: g('serial') || null, zone: g('zone'), location: g('location') || null,
+      checkoutable: /^(y|yes|true|1)$/i.test(g('checkoutable')), pmIntervalDays: pm > 0 ? pm : null,
+      lastPmAt: g('lastPmAt') || null, assignedTo: g('assignedTo') || null, supplier: g('supplier') || null,
+      purchaseDate: g('purchaseDate') || null, purchaseCost: g('purchaseCost') ? parseFloat(g('purchaseCost').replace(/[₱,]/g, '')) : null,
+      warrantyUntil: g('warrantyUntil') || null, notes: g('notes') || null, status: 'Available',
+    };
+    rec.nextPmDue = rec.pmIntervalDays && rec.lastPmAt ? addDaysYmd(rec.lastPmAt, rec.pmIntervalDays) : null;
+    var dupSerial = rec.serial && (S.assets.concat(items).find(function(x) { return x.serial && x.serial.toUpperCase() === rec.serial.toUpperCase(); }));
+    if (dupSerial) { errors.push('Row ' + line + ': serial ' + rec.serial + ' is already on ' + dupSerial.id + '.'); taken.pop(); return; }
+    items.push(rec);
+  });
+  return { items: items, errors: errors };
+}
+function importFileChosen(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function() {
+    var res = buildImport(parseCSV(String(reader.result)));
+    _importRows = res.items;
+    showMsg('im-err', res.errors.length ? res.errors.slice(0, 12).join('\n') + (res.errors.length > 12 ? '\n…' : '') : '');
+    document.getElementById('im-err').style.whiteSpace = 'pre-wrap';
+    document.getElementById('im-preview').innerHTML = res.items.length
+      ? '<div class="small" style="margin-bottom:6px"><strong>' + res.items.length + '</strong> asset(s) ready' + (res.errors.length ? ' · ' + res.errors.length + ' row(s) skipped' : '') + '</div><div class="table-wrap" style="max-height:40vh"><table><thead><tr><th>ID</th><th>Name</th><th>Zone</th><th>Shared</th><th>PM</th></tr></thead><tbody>'
+        + res.items.slice(0, 100).map(function(r) { return '<tr><td>' + esc(r.id) + '</td><td>' + esc(r.name) + '</td><td>' + esc(r.zone) + '</td><td>' + (r.checkoutable ? 'yes' : '') + '</td><td>' + (r.pmIntervalDays ? r.pmIntervalDays + 'd' : '') + '</td></tr>'; }).join('') + '</tbody></table></div>'
+      : '';
+    document.getElementById('im-save').disabled = !res.items.length;
+  };
+  reader.readAsText(file);
+}
+async function confirmImport() {
+  if (!_importRows.length) return;
+  await busy('import', 'im-save', async function() {
+    var stamp = { createdAt: nowIso(), createdBy: me.username, updatedAt: nowIso(), updatedBy: me.username };
+    var rows = _importRows.map(function(r) { return Object.assign({}, r, stamp); });
+    for (var i = 0; i < rows.length; i += 200) {
+      var r = await sb.from('assets').insert(rows.slice(i, i + 200));
+      if (r.error) throw new Error('Import stopped at row ' + (i + 1) + ': ' + r.error.message + (i ? ' (earlier rows were saved)' : ''));
+    }
+    try { await sb.from('asset_log').insert(rows.map(function(r) { return { id: uid(), assetId: r.id, action: 'Registered', details: 'Imported from CSV', by: me.username, at: nowIso() }; })); } catch (e) {}
+    toast(rows.length + ' assets imported');
+    closeM('m-import');
+    await reloadAll();
+  });
+}
+
+// ─── CHECK-OUT / CHECK-IN ───────────────────────────────────────────────────
+var _coCart = [], _ciCart = [];
+function renderCheckout() {
+  var shift = document.getElementById('co-shift');
+  if (!shift.options.length) shift.innerHTML = SHIFTS.map(function(s) { return '<option>' + s + '</option>'; }).join('');
+  document.getElementById('co-cart').innerHTML = _coCart.length ? _coCart.map(function(id, i) {
+    var a = assetById(id);
+    return '<div class="list-row"><div class="grow"><strong>' + esc(id) + '</strong> <span class="small muted">' + esc(a ? a.name : '') + '</span></div><button class="btn btn-secondary btn-sm" onclick="_coCart.splice(' + i + ',1);renderCheckout()">✕</button></div>';
+  }).join('') : '<div class="empty">Scan assets to sign them out.</div>';
+  document.getElementById('co-btn').textContent = 'Check out' + (_coCart.length ? ' ' + _coCart.length : '');
+  document.getElementById('co-btn').disabled = !_coCart.length || !can('checkout');
+  document.getElementById('ci-cart').innerHTML = _ciCart.length ? _ciCart.map(function(r, i) {
+    var c = S.checkouts.find(function(x) { return x.id === r.checkoutId; });
+    var a = assetById(c ? c.assetId : '');
+    return '<div class="list-row" style="flex-wrap:wrap"><div class="grow"><strong>' + esc(c.assetId) + '</strong> <span class="small muted">' + esc(a ? a.name : '') + '</span>'
+      + '<div class="small muted">' + esc(c.borrower) + ' · out ' + fmtDur(hoursAgo(c.checkedOutAt)) + (isOverdue(c) ? ' · <span style="color:var(--danger)">overdue</span>' : '') + '</div></div>'
+      + '<select style="width:auto" onchange="_ciCart[' + i + '].condition=this.value;renderCheckout()"><option' + (r.condition === 'Good' ? ' selected' : '') + '>Good</option><option' + (r.condition === 'Damaged' ? ' selected' : '') + '>Damaged</option></select>'
+      + '<button class="btn btn-secondary btn-sm" onclick="_ciCart.splice(' + i + ',1);renderCheckout()">✕</button>'
+      + (r.condition === 'Damaged' ? '<input style="flex-basis:100%;margin-top:6px" placeholder="What is damaged? (opens an issue)" value="' + esc(r.note || '') + '" oninput="_ciCart[' + i + '].note=this.value">' : '')
+      + '</div>';
+  }).join('') : '<div class="empty">Scan returned assets.</div>';
+  document.getElementById('ci-btn').textContent = 'Check in' + (_ciCart.length ? ' ' + _ciCart.length : '');
+  document.getElementById('ci-btn').disabled = !_ciCart.length || !can('checkout');
+  var out = S.checkouts.filter(function(c) { return !c.returnedAt; }).sort(function(a, b) { return new Date(a.dueAt) - new Date(b.dueAt); });
+  document.getElementById('co-out').innerHTML = out.length ? out.map(function(c) {
+    var od = isOverdue(c);
+    return '<tr class="' + (od ? 'overdue' : '') + '"><td>' + assetLink(c.assetId) + '</td><td>' + esc(c.borrower) + '</td><td class="small">' + esc(c.shift || '') + '</td>'
+      + '<td class="small nowrap">' + fmtDT(c.checkedOutAt) + '</td><td class="small nowrap">' + fmtDT(c.dueAt) + (od ? ' <span class="badge b-danger">' + fmtDur(hoursAgo(c.dueAt)) + ' late</span>' : '') + '</td>'
+      + '<td>' + (can('checkout') ? '<button class="btn btn-secondary btn-sm" onclick="ciAdd(\'' + esc(c.assetId) + '\')">Check in</button>' : '') + '</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="empty">Nothing is checked out.</td></tr>';
+}
+function coAdd(code) {
+  if (!String(code || '').trim()) return;
+  var a = resolveScan(code);
+  if (!a) { showMsg('co-msg', '"' + code + '" is not in the register.'); return; }
+  if (_coCart.indexOf(a.id) !== -1) { showMsg('co-msg', a.id + ' is already in the list.', 'wrn'); return; }
+  var why = checkoutBlocker(a);
+  if (why) { showMsg('co-msg', why); return; }
+  _coCart.push(a.id);
+  showMsg('co-msg', '');
+  renderCheckout();
+}
+async function confirmCheckout() {
+  if (!can('checkout') || !_coCart.length) return;
+  var borrower = document.getElementById('co-borrower').value.trim();
+  var shift = document.getElementById('co-shift').value;
+  var hours = parseFloat(document.getElementById('co-hours').value) || DEFAULT_DUE_HOURS;
+  var notes = document.getElementById('co-notes').value.trim();
+  if (!borrower) { showMsg('co-msg', 'Enter who is taking the equipment.'); return; }
+  await busy('checkout', 'co-btn', async function() {
+    var done = [], skipped = [];
+    var due = new Date(Date.now() + hours * 3600000).toISOString();
+    for (var i = 0; i < _coCart.length; i++) {
+      var a = await freshAsset(_coCart[i]);
+      var why = checkoutBlocker(a);
+      if (why) { skipped.push(why); continue; }
+      var c = { id: uid(), assetId: a.id, borrower: borrower, shift: shift, checkedOutAt: nowIso(), checkedOutBy: me.username, dueAt: due, notes: notes || null };
+      await dbInsert('asset_checkouts', c);
+      S.checkouts.unshift(c);
+      await setAsset(a, { status: 'Checked Out' }, 'Checked out', 'To ' + borrower + ' (' + shift + '), due ' + fmtDT(due));
+      done.push(a.id);
+    }
+    _coCart = [];
+    document.getElementById('co-notes').value = '';
+    showMsg('co-msg', (done.length ? '✓ ' + done.length + ' checked out to ' + borrower + '. ' : '') + (skipped.length ? 'Skipped: ' + skipped.join(' ') : ''), skipped.length ? 'wrn' : 'okm');
+    renderAll();
+  });
+}
+function ciAdd(code) {
+  if (!String(code || '').trim()) return;
+  var a = resolveScan(code);
+  if (!a) { showMsg('ci-msg', '"' + code + '" is not in the register.'); return; }
+  var c = openCheckout(a.id);
+  if (!c) { showMsg('ci-msg', a.id + ' is not checked out (' + a.status + ').', 'wrn'); return; }
+  if (_ciCart.some(function(r) { return r.checkoutId === c.id; })) { showMsg('ci-msg', a.id + ' is already in the list.', 'wrn'); return; }
+  _ciCart.push({ checkoutId: c.id, condition: 'Good', note: '' });
+  showMsg('ci-msg', '');
+  renderCheckout();
+}
+// Status after a return: Damaged → Out of Service (+ issue); otherwise
+// whatever still applies (an out-of-service issue reported while it was out
+// keeps it out of use).
+function statusAfterReturn(asset, condition) { return condition === 'Damaged' ? 'Out of Service' : settledStatus(Object.assign({}, asset), null); }
+async function confirmCheckin() {
+  if (!can('checkout') || !_ciCart.length) return;
+  var missingNote = _ciCart.find(function(r) { return r.condition === 'Damaged' && !String(r.note || '').trim(); });
+  if (missingNote) { showMsg('ci-msg', 'Describe the damage for each Damaged item.'); return; }
+  await busy('checkin', 'ci-btn', async function() {
+    var n = 0, damaged = 0;
+    for (var i = 0; i < _ciCart.length; i++) {
+      var r = _ciCart[i];
+      var c = S.checkouts.find(function(x) { return x.id === r.checkoutId; });
+      if (!c || c.returnedAt) continue;
+      var patch = { returnedAt: nowIso(), returnedBy: me.username, returnCondition: r.condition };
+      await dbUpdate('asset_checkouts', c.id, patch);
+      Object.assign(c, patch);
+      var a = await freshAsset(c.assetId);
+      if (r.condition === 'Damaged') {
+        var iss = { id: uid(), assetId: a.id, type: 'Damaged', severity: 'High', description: r.note + ' (returned by ' + c.borrower + ')', outOfService: true, status: 'Open', reportedBy: me.username, reportedAt: nowIso() };
+        await dbInsert('asset_issues', iss);
+        S.issues.unshift(iss);
+        damaged++;
+      }
+      await setAsset(a, { status: statusAfterReturn(a, r.condition) }, 'Checked in', 'From ' + c.borrower + ' · ' + r.condition + (r.note ? ' — ' + r.note : ''));
+      n++;
+    }
+    _ciCart = [];
+    showMsg('ci-msg', '✓ ' + n + ' checked in' + (damaged ? ' · ' + damaged + ' taken out of service with an issue opened' : '') + '.', damaged ? 'wrn' : 'okm');
+    renderAll();
+  });
+}
+
+// ─── MAINTENANCE ────────────────────────────────────────────────────────────
+function renderMaintenance() {
+  var f = document.getElementById('pm-filter').value;
+  var list = S.assets.filter(function(a) {
+    if (a.status === 'Disposed') return false;
+    if (f === 'maint') return a.status === 'Under Maintenance';
+    var p = pmState(a);
+    if (p.state === 'none') return false;
+    return f === 'all' || p.state === 'overdue' || p.state === 'soon';
+  }).sort(function(a, b) { return String(pmState(a).due || '0').localeCompare(String(pmState(b).due || '0')); });
+  document.getElementById('pm-body').innerHTML = list.length ? list.map(function(a) {
+    var p = pmState(a);
+    return '<tr><td>' + assetLink(a.id) + '</td><td class="small">' + (a.pmIntervalDays ? 'every ' + a.pmIntervalDays + 'd' : '—') + '</td><td class="small">' + fmtDate(a.lastPmAt) + '</td><td>' + pmBadge(p) + '</td><td>' + statusBadge(a.status) + '</td>'
+      + '<td>' + (can('maintain') ? '<button class="btn btn-secondary btn-sm" onclick="openMaintForm(\'PM\',\'' + esc(a.id) + '\')">Log PM</button>' : '') + '</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="empty">' + (f === 'due' ? 'Nothing overdue or due in the next 7 days.' : 'None.') + '</td></tr>';
+  var month = todayYmd().slice(0, 7);
+  var thisMonth = S.maint.filter(function(m) { return String(m.date).slice(0, 7) === month; });
+  document.getElementById('mh-sum').textContent = 'This month: ' + thisMonth.length + ' job(s) · ' + fmtPHP(thisMonth.reduce(function(s, m) { return s + (+m.cost || 0); }, 0)) + ' · ' + thisMonth.reduce(function(s, m) { return s + (+m.downtimeHours || 0); }, 0) + ' h downtime';
+  document.getElementById('mh-body').innerHTML = S.maint.length ? S.maint.slice(0, 100).map(function(m) {
+    return '<tr><td class="small nowrap">' + fmtDate(m.date) + '</td><td>' + assetLink(m.assetId) + '</td><td><span class="badge ' + (m.kind === 'PM' ? 'b-ok' : 'b-warn') + '">' + esc(m.kind) + '</span></td><td class="small">' + esc(m.performedBy || '') + '</td>'
+      + '<td class="right small">' + (m.cost ? fmtPHP(m.cost) : '—') + '</td><td class="right small">' + (m.downtimeHours ? m.downtimeHours + ' h' : '—') + '</td><td class="small">' + esc(m.notes || '') + '</td></tr>';
+  }).join('') : '<tr><td colspan="7" class="empty">No maintenance logged yet.</td></tr>';
+}
+
+function openMaintForm(kind, assetId) {
+  if (!can('maintain')) return;
+  document.getElementById('mf-kind').value = kind || 'PM';
+  document.getElementById('mf-asset').value = assetId || '';
+  document.getElementById('mf-date').value = todayYmd();
+  ['mf-by', 'mf-notes'].forEach(function(id) { document.getElementById(id).value = ''; });
+  document.getElementById('mf-cost').value = 0; document.getElementById('mf-down').value = 0;
+  document.getElementById('mf-return').checked = true;
+  showMsg('mf-err', '');
+  mfKindChanged(); mfAssetChanged();
+  openM('m-maint');
+  if (!assetId) setTimeout(function() { document.getElementById('mf-asset').focus(); }, 50);
+}
+function mfKindChanged() { document.getElementById('mf-title').textContent = document.getElementById('mf-kind').value === 'PM' ? 'Log PM' : 'Log repair'; }
+function mfAssetChanged() {
+  var a = resolveScan(document.getElementById('mf-asset').value);
+  var info = document.getElementById('mf-asset-info');
+  var sel = document.getElementById('mf-issue');
+  if (!a) { info.textContent = document.getElementById('mf-asset').value ? 'Not in the register.' : ''; sel.innerHTML = '<option value="">— none —</option>'; return; }
+  document.getElementById('mf-asset').value = a.id;
+  var p = pmState(a);
+  info.innerHTML = esc(a.name) + ' · ' + statusBadge(a.status) + (a.pmIntervalDays ? ' · PM every ' + a.pmIntervalDays + 'd, next ' + pmBadge(p) : ' · no PM schedule');
+  var iss = openIssues(a.id);
+  sel.innerHTML = '<option value="">— none —</option>' + iss.map(function(i) { return '<option value="' + esc(i.id) + '">' + esc(i.type + ' · ' + i.severity + ' · ' + (i.description || '').slice(0, 40)) + '</option>'; }).join('');
+  if (iss.length === 1 && document.getElementById('mf-kind').value === 'Repair') sel.value = iss[0].id;
+}
+async function saveMaint() {
+  var a = resolveScan(document.getElementById('mf-asset').value);
+  var kind = document.getElementById('mf-kind').value;
+  var date = document.getElementById('mf-date').value;
+  if (!a) { showMsg('mf-err', 'Scan or type a valid asset ID.'); return; }
+  if (!date) { showMsg('mf-err', 'Enter the date.'); return; }
+  if (date > todayYmd()) { showMsg('mf-err', 'The date can\'t be in the future.'); return; }
+  await busy('maint', 'mf-save', async function() {
+    var issueId = document.getElementById('mf-issue').value || null;
+    var m = { id: uid(), assetId: a.id, kind: kind, date: date, performedBy: document.getElementById('mf-by').value.trim() || null,
+      cost: parseFloat(document.getElementById('mf-cost').value) || 0, downtimeHours: parseFloat(document.getElementById('mf-down').value) || 0,
+      notes: document.getElementById('mf-notes').value.trim() || null, issueId: issueId, createdBy: me.username, createdAt: nowIso() };
+    await dbInsert('asset_maintenance', m);
+    S.maint.unshift(m);
+    S.maint.sort(function(x, y) { return String(y.date).localeCompare(String(x.date)); });
+    var patch = {};
+    if (kind === 'PM') {
+      // Only move the schedule forward (a backdated PM older than the last one doesn't reset it)
+      if (!a.lastPmAt || date >= String(a.lastPmAt).slice(0, 10)) {
+        patch.lastPmAt = date;
+        patch.nextPmDue = a.pmIntervalDays ? addDaysYmd(date, a.pmIntervalDays) : null;
+      }
+    }
+    if (issueId) {
+      var iss = S.issues.find(function(i) { return i.id === issueId; });
+      if (iss && iss.status !== 'Resolved') {
+        var ip = { status: 'Resolved', resolvedBy: me.username, resolvedAt: nowIso(), resolution: kind + ' on ' + date + (m.notes ? ': ' + m.notes : '') };
+        await dbUpdate('asset_issues', iss.id, ip);
+        Object.assign(iss, ip);
+      }
+    }
+    if (document.getElementById('mf-return').checked && ['Under Maintenance', 'Out of Service'].indexOf(a.status) !== -1) patch.status = settledStatus(a, issueId);
+    await setAsset(a, patch, kind === 'PM' ? 'PM logged' : 'Repair logged', [date, m.performedBy, m.cost ? fmtPHP(m.cost) : '', m.notes].filter(Boolean).join(' · ') + (patch.status ? ' → ' + patch.status : ''));
+    toast(kind + ' saved for ' + a.id);
+    closeM('m-maint');
+    renderAll();
+  });
+}
+async function sendToMaintenance(id) {
+  var a = assetById(id);
+  if (!a || !can('maintain')) return;
+  var note = await ask('Send ' + a.id + ' to maintenance?', 'It will be unavailable for check-out until a PM or repair is logged.', { input: true, placeholder: 'Reason / vendor (optional)', ok: 'Send' });
+  if (note === false) return;
+  await busy('tomaint', null, async function() {
+    await setAsset(a, { status: 'Under Maintenance' }, 'Sent to maintenance', note || '');
+    renderAll();
+  });
+}
+
+// ─── ISSUES ─────────────────────────────────────────────────────────────────
+function renderIssues() {
+  var f = document.getElementById('is-filter').value;
+  var sevRank = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+  var list = S.issues.filter(function(i) { return f === 'all' || (f === 'resolved' ? i.status === 'Resolved' : i.status !== 'Resolved'); })
+    .sort(function(a, b) { return f === 'resolved' ? String(b.resolvedAt).localeCompare(String(a.resolvedAt)) : (sevRank[a.severity] - sevRank[b.severity]) || String(a.reportedAt).localeCompare(String(b.reportedAt)); });
+  document.getElementById('is-body').innerHTML = list.length ? list.map(function(i) {
+    var acts = '';
+    if (i.status !== 'Resolved' && can('resolve')) {
+      acts = (i.status === 'Open' ? '<button class="btn btn-secondary btn-sm" onclick="assignIssue(\'' + i.id + '\')">Assign</button> ' : '')
+        + '<button class="btn btn-primary btn-sm" onclick="openResolve(\'' + i.id + '\')">Resolve</button>';
+    }
+    return '<tr><td class="small nowrap">' + fmtDT(i.reportedAt) + '<div class="muted">' + esc(i.reportedBy || '') + '</div></td><td>' + assetLink(i.assetId) + '</td><td class="small">' + esc(i.type) + (i.outOfService ? '<div><span class="badge b-danger">out of service</span></div>' : '') + '</td>'
+      + '<td>' + sevBadge(i.severity) + '</td><td class="small">' + esc(i.status) + (i.status === 'Resolved' ? '<div class="muted">' + fmtDT(i.resolvedAt) + '</div>' : '') + '</td>'
+      + '<td class="small">' + esc(i.assignedTo || '') + '</td><td class="small" style="max-width:300px">' + esc(i.description || '') + (i.resolution ? '<div class="muted">→ ' + esc(i.resolution) + '</div>' : '') + '</td><td class="nowrap">' + acts + '</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="empty">' + (f === 'open' ? 'No open issues. 🎉' : 'None.') + '</td></tr>';
+}
+function openIssueForm(assetId) {
+  if (!can('issue')) return;
+  document.getElementById('if-asset').value = assetId || '';
+  document.getElementById('if-type').value = 'Broken';
+  document.getElementById('if-sev').value = 'Medium';
+  document.getElementById('if-desc').value = '';
+  showMsg('if-err', '');
+  ifAssetChanged(); ifTypeChanged();
+  openM('m-issue');
+  setTimeout(function() { document.getElementById(assetId ? 'if-desc' : 'if-asset').focus(); }, 50);
+}
+function ifAssetChanged() {
+  var a = resolveScan(document.getElementById('if-asset').value);
+  var info = document.getElementById('if-asset-info');
+  if (!a) { info.textContent = document.getElementById('if-asset').value ? 'Not in the register.' : ''; return; }
+  document.getElementById('if-asset').value = a.id;
+  var co = openCheckout(a.id);
+  info.innerHTML = esc(a.name) + ' · ' + statusBadge(a.status) + (co ? ' · with ' + esc(co.borrower) : '');
+}
+function ifTypeChanged() {
+  var t = document.getElementById('if-type').value, s = document.getElementById('if-sev').value;
+  var oos = document.getElementById('if-oos');
+  oos.disabled = t === 'Missing';
+  oos.checked = t !== 'Missing' && (t === 'Broken' || s === 'High' || s === 'Critical');
+}
+// Status after reporting: Missing → Missing; out-of-service → Out of Service,
+// unless it's signed out right now (then it goes out of service on return).
+function statusAfterIssue(asset, type, oos) {
+  if (asset.status === 'Disposed') return 'Disposed';
+  if (type === 'Missing') return 'Missing';
+  if (oos && asset.status !== 'Checked Out') return 'Out of Service';
+  return asset.status;
+}
+async function saveIssue() {
+  var a = resolveScan(document.getElementById('if-asset').value);
+  var type = document.getElementById('if-type').value, sev = document.getElementById('if-sev').value;
+  var desc = document.getElementById('if-desc').value.trim(), oos = document.getElementById('if-oos').checked && type !== 'Missing';
+  if (!a) { showMsg('if-err', 'Scan or type a valid asset ID.'); return; }
+  if (a.status === 'Disposed') { showMsg('if-err', a.id + ' is disposed.'); return; }
+  if (!desc) { showMsg('if-err', 'Describe what happened.'); return; }
+  await busy('issue', 'if-save', async function() {
+    var iss = { id: uid(), assetId: a.id, type: type, severity: sev, description: desc, outOfService: oos, status: 'Open', reportedBy: me.username, reportedAt: nowIso() };
+    await dbInsert('asset_issues', iss);
+    S.issues.unshift(iss);
+    var st = statusAfterIssue(a, type, oos);
+    await setAsset(a, st !== a.status ? { status: st } : {}, 'Issue reported', type + ' (' + sev + ')' + (oos ? ', out of service' : '') + ' — ' + desc);
+    toast('Issue reported for ' + a.id + (st !== a.status ? ' · now ' + st : ''));
+    closeM('m-issue');
+    renderAll();
+  });
+}
+async function assignIssue(id) {
+  var i = S.issues.find(function(x) { return x.id === id; });
+  if (!i) return;
+  var who = await ask('Assign issue', 'Who is handling this? (person, vendor, or the park facilities officer)', { input: true, value: i.assignedTo || '', ok: 'Assign' });
+  if (!who || !String(who).trim()) return;
+  await busy('assign', null, async function() {
+    var p = { assignedTo: String(who).trim(), status: 'In Progress' };
+    await dbUpdate('asset_issues', id, p);
+    Object.assign(i, p);
+    await logEvent(i.assetId, 'Issue assigned', i.type + ' → ' + p.assignedTo);
+    renderAll();
+  });
+}
+var _resolveId = null;
+function openResolve(id) {
+  var i = S.issues.find(function(x) { return x.id === id; });
+  if (!i) return;
+  _resolveId = id;
+  var a = assetById(i.assetId);
+  document.getElementById('rs-info').innerHTML = assetLink(i.assetId) + ' · ' + esc(i.type) + ' · ' + sevBadge(i.severity) + '<div style="margin-top:4px">' + esc(i.description || '') + '</div>';
+  document.getElementById('rs-text').value = '';
+  var out = document.getElementById('rs-outcome');
+  out.querySelector('option[value="dispose"]').disabled = !can('dispose');
+  out.querySelector('option[value="service"]').textContent = i.type === 'Missing' ? 'Found — back in service' : 'Back in service';
+  out.value = 'service';
+  showMsg('rs-err', '');
+  openM('m-resolve');
+}
+async function saveResolve() {
+  var i = S.issues.find(function(x) { return x.id === _resolveId; });
+  var text = document.getElementById('rs-text').value.trim(), outcome = document.getElementById('rs-outcome').value;
+  if (!i) return;
+  if (!text) { showMsg('rs-err', 'Describe the resolution.'); return; }
+  if (outcome === 'dispose' && !can('dispose')) { showMsg('rs-err', 'Only a superuser can dispose assets.'); return; }
+  await busy('resolve', 'rs-save', async function() {
+    var p = { status: 'Resolved', resolvedBy: me.username, resolvedAt: nowIso(), resolution: text };
+    await dbUpdate('asset_issues', i.id, p);
+    Object.assign(i, p);
+    var a = assetById(i.assetId);
+    var patch = {};
+    if (outcome === 'dispose') patch = { status: 'Disposed', disposedAt: nowIso() };
+    else if (outcome === 'service' && a.status !== 'Under Maintenance') patch = { status: settledStatus(a, i.id) };
+    await setAsset(a, patch, 'Issue resolved', i.type + ' — ' + text + (patch.status && patch.status !== a.status ? '' : ''));
+    toast('Issue resolved' + (patch.status ? ' · ' + a.id + ' is ' + a.status : ''));
+    closeM('m-resolve');
+    renderAll();
+  });
+}
+
+// ─── AUDITS ─────────────────────────────────────────────────────────────────
+var _scanQueue = [], _scanFlushing = false, _auZone = '';
+function activeAudit() { return S.audits.find(function(a) { return a.status === 'In Progress'; }) || null; }
+function renderAudits() {
+  var el = document.getElementById('v-audits');
+  var au = activeAudit();
+  var html = '';
+  if (au) {
+    var plan = auditPlan(au, S.scans);
+    var seen = {}; S.scans.forEach(function(s) { if (s.assetId) seen[s.assetId] = 1; });
+    var remaining = auditExpected(au).filter(function(a) { return !seen[a.id]; });
+    var c = function(label, n, cls) { return '<div class="card ' + (cls || '') + '"><div class="label">' + label + '</div><div class="value">' + n + '</div></div>'; };
+    html += '<div class="panel"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><h2 style="margin-bottom:2px">📋 Audit in progress · ' + esc(au.scope) + '</h2><div class="small muted">Started ' + fmtDT(au.startedAt) + ' by ' + esc(au.startedBy || '') + '</div></div>'
+      + '<div class="toolbar" style="margin:0">' + (can('complete_audit') ? '<button class="btn btn-secondary btn-sm" onclick="cancelAudit()">Cancel audit</button><button class="btn btn-primary btn-sm" id="au-complete" onclick="completeAudit()">Complete audit</button>' : '') + '</div></div>'
+      + '<div class="cards" style="margin-top:12px">' + c('Expected', plan.expected) + c('Found', plan.found, 'ok') + c('Not yet scanned', remaining.length, remaining.length ? 'warn' : 'ok')
+      + c('Wrong location', plan.wrongLocation, plan.wrongLocation ? 'warn' : '') + c('Extra', plan.extra, plan.extra ? 'info' : '') + c('Unknown tags', plan.unknown, plan.unknown ? 'danger' : '') + '</div>'
+      + '<div class="form-grid"><div class="fg"><label>Scan tags</label><input class="scan" id="au-scan" placeholder="Scan each tag you find…" onkeydown="if(event.key===\'Enter\'){auScan(this.value);this.value=\'\';}"></div>'
+      + (au.scope === 'Whole site' ? '<div class="fg"><label>Zone you are scanning in</label><select id="au-zone" onchange="_auZone=this.value"><option value="">(don\'t check location)</option>' + zones().map(function(z) { return '<option' + (z === _auZone ? ' selected' : '') + '>' + esc(z) + '</option>'; }).join('') + '</select></div>' : '<div class="fg"><label>Zone</label><input value="' + esc(au.scope) + '" readonly style="background:var(--surface2)"></div>')
+      + '</div><div class="msg" id="au-msg"></div>'
+      + (_scanQueue.length ? '<div class="small muted" style="margin-top:6px">Saving ' + _scanQueue.length + ' scan(s)…</div>' : '')
+      + '<div class="grid2" style="margin-top:12px"><div><h3>Recent scans</h3>' + (S.scans.length ? S.scans.slice(-15).reverse().map(function(s) {
+          var cls = { 'Found': 'b-ok', 'Wrong Location': 'b-warn', 'Extra': 'b-info', 'Unknown Tag': 'b-danger', 'Duplicate': 'b-muted' }[s.result];
+          return '<div class="list-row"><div class="grow"><strong>' + esc(s.assetId || s.code) + '</strong> <span class="small muted">' + esc(s.assetId && assetById(s.assetId) ? assetById(s.assetId).name : '') + '</span></div><span class="badge ' + cls + '">' + esc(s.result) + '</span></div>';
+        }).join('') : '<div class="empty">No scans yet.</div>') + '</div>'
+      + '<div><h3>Not yet scanned (' + remaining.length + ')</h3>' + (remaining.length ? remaining.slice(0, 40).map(function(a) { return '<div class="list-row"><div class="grow">' + assetLink(a.id) + '</div><span class="small muted">' + esc(a.location || a.zone || '') + '</span></div>'; }).join('') + (remaining.length > 40 ? '<div class="small muted">+ ' + (remaining.length - 40) + ' more</div>' : '') : '<div class="empty">Everything expected has been scanned.</div>') + '</div></div>'
+      + '</div>';
+  } else {
+    html += '<div class="panel"><h2>Start an audit</h2><div class="small muted" style="margin-bottom:10px">Scan every tag you can find. Completing the audit marks anything expected but not scanned as Missing, and corrects locations. Checked-out assets are not expected.</div>'
+      + (can('audit') ? '<div class="toolbar"><select id="au-scope"><option>Whole site</option>' + zones().map(function(z) { return '<option>' + esc(z) + '</option>'; }).join('') + '</select><button class="btn btn-primary" onclick="startAudit()">Start audit</button></div>' : '<div class="small muted">You can view audits but not start one.</div>')
+      + '</div>';
+  }
+  var past = S.audits.filter(function(a) { return a.status !== 'In Progress'; });
+  html += '<h3>Past audits</h3><div class="table-wrap"><table><thead><tr><th>Completed</th><th>Scope</th><th>By</th><th class="right">Expected</th><th class="right">Found</th><th class="right">Missing</th><th class="right">Wrong loc.</th><th class="right">Accuracy</th></tr></thead><tbody>'
+    + (past.length ? past.map(function(a) {
+        var s = a.summary || {};
+        if (typeof s === 'string') { try { s = JSON.parse(s); } catch (e) { s = {}; } }
+        return '<tr><td class="small nowrap">' + (a.status === 'Cancelled' ? '<span class="badge b-muted">cancelled</span> ' : '') + fmtDT(a.completedAt || a.startedAt) + '</td><td>' + esc(a.scope) + '</td><td class="small">' + esc(a.completedBy || a.startedBy || '') + '</td>'
+          + '<td class="right">' + (s.expected != null ? s.expected : '—') + '</td><td class="right">' + (s.found != null ? s.found : '—') + '</td><td class="right">' + (s.missing ? s.missing.length : '—') + '</td><td class="right">' + (s.wrongLocation != null ? s.wrongLocation : '—') + '</td>'
+          + '<td class="right">' + (s.accuracy != null ? '<span class="badge ' + (s.accuracy >= 98 ? 'b-ok' : s.accuracy >= 90 ? 'b-warn' : 'b-danger') + '">' + s.accuracy + '%</span>' : '—') + '</td></tr>';
+      }).join('') : '<tr><td colspan="8" class="empty">No audits yet.</td></tr>') + '</tbody></table></div>';
+  el.innerHTML = html;
+  var scan = document.getElementById('au-scan');
+  if (scan && window.innerWidth > 760) scan.focus();
+}
+async function startAudit() {
+  if (!can('audit') || activeAudit()) return;
+  var scope = document.getElementById('au-scope').value;
+  await busy('audit', null, async function() {
+    var fresh = await sb.from('asset_audits').select('id').eq('status', 'In Progress');
+    if (fresh.data && fresh.data.length) { toast('Someone already started an audit — loading it.'); await reloadAll(); return; }
+    var au = { id: uid(), scope: scope, status: 'In Progress', startedBy: me.username, startedAt: nowIso() };
+    await dbInsert('asset_audits', au);
+    S.audits.unshift(au); S.scans = [];
+    renderAudits();
+  });
+}
+// Scans are classified and shown immediately, then saved in the background
+// in order, so the scanner never waits on the network.
+function auScan(code) {
+  var au = activeAudit();
+  code = String(code || '').trim();
+  if (!au || !code) return;
+  var zoneSel = document.getElementById('au-zone');
+  var zone = zoneSel ? zoneSel.value : au.scope;
+  var cls = classifyScan(au, code, zone, S.scans);
+  var row = { id: uid(), auditId: au.id, code: code, assetId: cls.assetId, result: cls.result, scannedZone: zone || null, scannedBy: me.username, scannedAt: nowIso() };
+  S.scans.push(row);
+  _scanQueue.push(row);
+  var a = cls.assetId && assetById(cls.assetId);
+  var txt = { 'Found': '✓ ' + cls.assetId + ' found', 'Wrong Location': '⚠ ' + cls.assetId + ' is registered in ' + (a && a.zone || 'another zone'), 'Extra': 'ℹ ' + cls.assetId + ' is ' + (a && a.status), 'Unknown Tag': '✕ "' + code + '" is not in the register', 'Duplicate': cls.assetId + ' was already scanned' }[cls.result];
+  renderAudits();
+  showMsg('au-msg', txt, { 'Found': 'okm', 'Unknown Tag': 'err' }[cls.result] || 'wrn');
+  flushScans();
+}
+async function flushScans() {
+  if (_scanFlushing) return;
+  _scanFlushing = true;
+  try {
+    while (_scanQueue.length) {
+      var batch = _scanQueue.slice(0, 20);
+      var r = await sb.from('asset_audit_scans').insert(batch);
+      if (r.error) { toast('Scans not saved yet (' + r.error.message + ') — retrying…', 4000); await new Promise(function(res) { setTimeout(res, 3000); }); continue; }
+      _scanQueue.splice(0, batch.length);
+    }
+  } finally { _scanFlushing = false; }
+}
+async function completeAudit() {
+  var au = activeAudit();
+  if (!au || !can('complete_audit')) return;
+  if (_scanQueue.length) { toast('Still saving scans — try again in a moment.'); flushScans(); return; }
+  var plan = auditPlan(au, S.scans);
+  var ok = await ask('Complete audit · ' + au.scope, 'Accuracy ' + plan.accuracy + '% (' + plan.found + ' of ' + plan.expected + ' found).\n\n'
+    + '• ' + plan.newlyMissing.length + ' asset(s) will be marked Missing' + (plan.newlyMissing.length ? ': ' + plan.newlyMissing.slice(0, 10).join(', ') + (plan.newlyMissing.length > 10 ? '…' : '') : '') + '\n'
+    + '• ' + plan.relocate.length + ' location(s) corrected\n'
+    + '• ' + plan.recovered.length + ' missing asset(s) found and returned to service\n'
+    + (plan.unknown ? '• ' + plan.unknown + ' unknown tag(s) — check and register them\n' : ''), { ok: 'Complete audit' });
+  if (!ok) return;
+  await busy('complete', 'au-complete', async function() {
+    for (var i = 0; i < plan.newlyMissing.length; i++) {
+      var a = assetById(plan.newlyMissing[i]);
+      var iss = { id: uid(), assetId: a.id, type: 'Missing', severity: 'High', description: 'Not found in ' + au.scope + ' audit on ' + fmtDate(todayYmd()), outOfService: false, status: 'Open', reportedBy: me.username, reportedAt: nowIso() };
+      await dbInsert('asset_issues', iss);
+      S.issues.unshift(iss);
+      await setAsset(a, { status: 'Missing' }, 'Marked missing', 'Not found in ' + au.scope + ' audit');
+    }
+    for (var j = 0; j < plan.relocate.length; j++) {
+      var r = plan.relocate[j], b = assetById(r.id);
+      if (b && b.zone !== r.zone) await setAsset(b, { zone: r.zone }, 'Location corrected', (b.zone || '—') + ' → ' + r.zone + ' (audit)');
+    }
+    for (var k = 0; k < plan.recovered.length; k++) {
+      var c = assetById(plan.recovered[k]);
+      var openMiss = openMissingIssues(c.id);
+      for (var m = 0; m < openMiss.length; m++) {
+        var p = { status: 'Resolved', resolvedBy: me.username, resolvedAt: nowIso(), resolution: 'Found in ' + au.scope + ' audit' };
+        await dbUpdate('asset_issues', openMiss[m].id, p);
+        Object.assign(openMiss[m], p);
+      }
+      await setAsset(c, { status: settledStatus(c, null) }, 'Found', 'Scanned in ' + au.scope + ' audit');
+    }
+    var summary = { expected: plan.expected, found: plan.found, missing: plan.missing, wrongLocation: plan.wrongLocation, extra: plan.extra, unknown: plan.unknown, accuracy: plan.accuracy,
+      unknownTags: S.scans.filter(function(s) { return s.result === 'Unknown Tag'; }).map(function(s) { return s.code; }) };
+    var ap = { status: 'Completed', completedBy: me.username, completedAt: nowIso(), summary: summary };
+    await dbUpdate('asset_audits', au.id, ap);
+    Object.assign(au, ap);
+    S.scans = [];
+    toast('Audit completed · accuracy ' + plan.accuracy + '%');
+    renderAll();
+  });
+}
+async function cancelAudit() {
+  var au = activeAudit();
+  if (!au) return;
+  var ok = await ask('Cancel this audit?', 'Scans are kept for reference but nothing in the register changes.', { ok: 'Cancel audit', danger: true });
+  if (!ok) return;
+  await busy('cancel', null, async function() {
+    var p = { status: 'Cancelled', completedBy: me.username, completedAt: nowIso() };
+    await dbUpdate('asset_audits', au.id, p);
+    Object.assign(au, p);
+    S.scans = [];
+    renderAll();
+  });
+}
+
+// ─── LABELS ─────────────────────────────────────────────────────────────────
+function openLabels() {
+  var ids = Object.keys(_regSel);
+  if (!ids.length) ids = regRows().map(function(a) { return a.id; });
+  document.getElementById('lb-info').textContent = ids.length + ' label(s): ' + ids.slice(0, 8).join(', ') + (ids.length > 8 ? '…' : '') + (Object.keys(_regSel).length ? '' : ' (everything currently shown — tick rows to print fewer)');
+  _labelIds = ids;
+  openM('m-labels');
+}
+var _labelIds = [];
+function qrSvg(text) {
+  if (typeof qrcode === 'undefined') return '';
+  var q = qrcode(0, 'M'); q.addData(text); q.make();
+  return q.createSvgTag({ cellSize: 2, margin: 0, scalable: true });
+}
+function c128Svg(text) {
+  if (typeof JsBarcode === 'undefined') return '';
+  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  JsBarcode(svg, text, { format: 'CODE128', displayValue: false, margin: 0, height: 40, width: 1.6 });
+  svg.setAttribute('preserveAspectRatio', 'none');
+  return svg.outerHTML;
+}
+function printLabels() {
+  if (!_labelIds.length) return;
+  var stock = document.getElementById('lb-stock').value, code = document.getElementById('lb-code').value;
+  var labels = _labelIds.map(function(id) {
+    var a = assetById(id);
+    var name = a ? a.name : '';
+    return '<div class="lb">'
+      + (code !== 'c128' ? '<div class="qr">' + qrSvg(id) + '</div>' : '')
+      + '<div class="tx"><div class="id">' + esc(id) + '</div><div class="nm">' + esc(name) + '</div>'
+      + (code !== 'qr' ? '<div class="bc">' + c128Svg(id) + '</div>' : '') + '<div class="own">LOCAD · Cabuyao FC</div></div></div>';
+  }).join('');
+  var css = stock === 'roll'
+    ? '@page{size:50mm 25mm;margin:0}.lb{width:50mm;height:25mm;page-break-after:always;padding:1.5mm 2mm}'
+    : '@page{size:A4;margin:8mm 6mm}.sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:0}.lb{height:35mm;border:0.2mm dashed #bbb;padding:2.5mm}';
+  var w = window.open('', '_blank');
+  if (!w) { toast('Allow pop-ups to print labels.'); return; }
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Asset labels</title><style>'
+    + '*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,Helvetica,sans-serif;color:#000}' + css
+    + '.lb{display:flex;gap:2mm;align-items:center;overflow:hidden}.qr{width:19mm;height:19mm;flex:0 0 19mm}.qr svg{width:100%;height:100%}'
+    + '.tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:.6mm}.id{font-weight:700;font-size:11pt;letter-spacing:.03em}.nm{font-size:6.5pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+    + '.bc{height:7mm}.bc svg{width:100%;height:100%}.own{font-size:5.5pt;color:#444}'
+    + '@media screen{body{padding:10px;background:#eee}.lb{background:#fff;margin:4px}}'
+    + '</style></head><body><div class="sheet">' + labels + '</div><script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script></body></html>');
+  w.document.close();
+  closeM('m-labels');
+}
+
+// ─── BETA NOTICE ────────────────────────────────────────────────────────────
+// Remove this banner and the BETA badges once the Cabuyao pilot is signed off.
+var BETA_DISMISS_KEY = 'sb_assetsBetaHidden';
+function dismissBeta() {
+  try { localStorage.setItem(BETA_DISMISS_KEY, todayYmd()); } catch (e) {}
+  document.getElementById('beta-bar').style.display = 'none';
+}
+(function() {
+  try { if (localStorage.getItem(BETA_DISMISS_KEY) === todayYmd()) document.getElementById('beta-bar').style.display = 'none'; } catch (e) {}
+})();
+
+// ─── STARTUP ────────────────────────────────────────────────────────────────
+var _rtTimer = null;
+function startRealtime() {
+  try {
+    var ch = sb.channel('assets-live');
+    ['assets', 'asset_checkouts', 'asset_issues'].forEach(function(t) {
+      ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, function() {
+        clearTimeout(_rtTimer);
+        _rtTimer = setTimeout(function() { if (!Object.keys(_busy).some(function(k) { return _busy[k]; })) reloadAll(); }, 1200);
+      });
+    });
+    ch.subscribe();
+  } catch (e) { console.warn('Realtime unavailable', e); }
+}
+async function startApp() {
+  applyPerms();
+  await Promise.all([reloadAll(), loadPeople()]);
+  startRealtime();
+  // Reload when the tab comes back into view (phones sleep the page)
+  document.addEventListener('visibilitychange', function() { if (!document.hidden) reloadAll(); });
+}
+window.addEventListener('load', function() {
+  initSb();
+  if (!sb) { document.body.innerHTML = '<div style="padding:30px">Could not load the database library. Check the internet connection and reload.</div>'; return; }
+  var s = readSession();
+  if (s && PERMS[s.role]) { me = s; startApp(); }
+  else {
+    document.getElementById('login').style.display = 'flex';
+    if (s && !PERMS[s.role]) showMsg('li-err', 'Your account type does not have access to Asset Management.');
+  }
+});
+</script>
+</body>
+</html>
