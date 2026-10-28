@@ -5839,8 +5839,8 @@ function reorderRowHtml(r) {
   if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm" onclick="openReorderModal(\'' + r.id + '\')">✏️</button>';
   if (r.status !== 'received' && can('mark_received')) rAct += '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Receive delivery" onclick="openReceiveModal(\'' + r.id + '\')">📥</button>';
   const closedShort = _isClosedShort(r);
-  if (currentRole === 'superuser' && r.status === 'ordered') rAct += '<button class="btn btn-icon btn-sm" title="Close line short (supplier can\'t deliver the rest)" onclick="closeReorderShort(\'' + r.id + '\')">⏹</button>';
-  if (currentRole === 'superuser' && closedShort) rAct += '<button class="btn btn-icon btn-sm" title="Reopen line" onclick="reopenReorderLine(\'' + r.id + '\')">↺</button>';
+  if (_canCloseShort() && r.status === 'ordered') rAct += '<button class="btn btn-icon btn-sm" title="Close line short (supplier can\'t deliver the rest)" onclick="closeReorderShort(\'' + r.id + '\')">⏹</button>';
+  if (_canCloseShort() && closedShort) rAct += '<button class="btn btn-icon btn-sm" title="Reopen line" onclick="reopenReorderLine(\'' + r.id + '\')">↺</button>';
   if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteReorder(\'' + r.id + '\')">🗑</button>';
   rAct += '</div>';
   return `
@@ -6171,8 +6171,11 @@ var CLOSED_SHORT_RE = /^⛔ Closed short:[^\n]*\n?/;
 
 function _isClosedShort(r) { return CLOSED_SHORT_RE.test((r && r.notes) || ''); }
 
+// Users and superusers can close a line short (supplier can't deliver the rest) and reopen it.
+function _canCloseShort() { return currentRole === 'superuser' || currentRole === 'user'; }
+
 function closeReorderShort(id) {
-  if (currentRole !== 'superuser') return;
+  if (!_canCloseShort()) return;
   var r = db.reorders.find(function(x) { return x.id === id; });
   if (!r || r.status === 'received') return;
   var item = db.items.find(function(i) { return i.id === r.itemId; });
@@ -6202,7 +6205,7 @@ function closeReorderShort(id) {
 }
 
 function reopenReorderLine(id) {
-  if (currentRole !== 'superuser') return;
+  if (!_canCloseShort()) return;
   var r = db.reorders.find(function(x) { return x.id === id; });
   if (!r || !_isClosedShort(r)) return;
   var item = db.items.find(function(i) { return i.id === r.itemId; });
