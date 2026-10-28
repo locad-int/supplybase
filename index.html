@@ -58,6 +58,16 @@
   .sidebar-header { padding: 20px 18px 16px; border-bottom: 1px solid var(--sidebar-border); }
   .sidebar-app-name { color: rgba(255,255,255,0.5); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; margin-top: 4px; }
   .sidebar-nav { padding: 10px 0; flex: 1; }
+  /* Two collapsible groups: Consumables (this app) and Assets (assets.html) */
+  .nav-groups { flex: 1; padding: 8px 0 10px; }
+  .nav-groups .sidebar-nav { padding: 2px 0 6px; flex: none; }
+  .nav-group-hdr { display: flex; align-items: center; justify-content: space-between; width: calc(100% - 20px); margin: 6px 10px 2px; padding: 8px 10px; background: none; border: none; border-radius: 6px; color: #e2e8f0; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; font-family: inherit; cursor: pointer; }
+  .nav-group-hdr:hover { background: var(--sidebar-hover); }
+  .nav-group-hdr .ng-chev { color: var(--sidebar-muted); transition: transform .15s; font-size: 11px; }
+  .nav-group-hdr[aria-expanded="false"] .ng-chev { transform: rotate(-90deg); }
+  .nav-group-hdr[aria-expanded="false"] + .sidebar-nav { display: none; }
+  .ng-beta { background: #f59e0b; color: #1c1917; font-size: 9px; font-weight: 800; letter-spacing: .06em; padding: 1px 6px; border-radius: 99px; margin-left: 4px; vertical-align: 1px; }
+  a.nav-item { text-decoration: none; }
   .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; color: var(--sidebar-muted); cursor: pointer; font-size: 14px; font-weight: 500; border-radius: 6px; margin: 2px 10px; transition: .15s; user-select: none; position: relative; }
   .nav-item:hover { background: var(--sidebar-hover); color: #e2e8f0; }
   .nav-item.active { background: var(--sidebar-active-bg); color: var(--sidebar-active-text); font-weight: 600; }
@@ -685,6 +695,10 @@
     <img src="https://www.golocad.com/images/LOCAD-LOGO-WHITE.svg" alt="Locad" style="height:20px;display:block;margin-bottom:6px" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Empty.png/1px-Empty.png'">
     <div class="sidebar-app-name">SupplyBase</div>
   </div>
+  <div class="nav-groups">
+  <button type="button" class="nav-group-hdr" id="ng-hdr-cons" onclick="toggleNavGroup('cons')" aria-expanded="true">
+    <span>📦 Consumables</span><span class="ng-chev">▾</span>
+  </button>
   <nav class="sidebar-nav" id="sidebar-nav">
     <div id="nav-inventory" class="nav-item active" data-tab="inventory" draggable="true" onclick="switchTab('inventory')">📋 <span>Inventory</span><span class="nav-drag-handle">⠿</span></div>
     <div id="nav-usage" class="nav-item" data-tab="usage" draggable="true" onclick="switchTab('usage')">📝 <span>Usage Log</span><span class="nav-drag-handle">⠿</span></div>
@@ -695,6 +709,20 @@
     <div id="nav-audit" class="nav-item" data-tab="audit" draggable="true" onclick="switchTab('audit')">📋 <span>Audit Log</span><span class="nav-drag-handle">⠿</span></div>
     <div class="reorder-hint" id="reorder-hint" style="display:none">Drag to reorder</div>
   </nav>
+  <div id="ng-assets" style="display:none">
+    <button type="button" class="nav-group-hdr" id="ng-hdr-assets" onclick="toggleNavGroup('assets')" aria-expanded="true">
+      <span>🧰 Assets <span class="ng-beta">BETA</span></span><span class="ng-chev">▾</span>
+    </button>
+    <nav class="sidebar-nav" id="sidebar-nav-assets">
+      <a class="nav-item" href="./assets.html#dashboard">📊 <span>Dashboard</span></a>
+      <a class="nav-item" href="./assets.html#register">🗂 <span>Register</span></a>
+      <a class="nav-item" href="./assets.html#checkout">🔁 <span>Check-out / in</span></a>
+      <a class="nav-item" href="./assets.html#maintenance">🛠 <span>Maintenance</span></a>
+      <a class="nav-item" href="./assets.html#issues">⚠️ <span>Issues</span></a>
+      <a class="nav-item" href="./assets.html#audits">📋 <span>Audits</span></a>
+    </nav>
+  </div>
+  </div>
   <div class="sidebar-bottom">
     <div id="role-badge" class="sidebar-role-badge"></div>
     <div class="sidebar-actions">
@@ -705,7 +733,6 @@
       <button id="btn-refresh" class="sidebar-action-btn" onclick="refreshData()">↻ Refresh</button>
       <button id="btn-stocktake-lock" class="sidebar-action-btn" onclick="toggleStocktakeLock()" style="display:none">🔒 Lock for Stocktake</button>
       <button id="btn-count-sheet" class="sidebar-action-btn" onclick="openCountSheet()" style="display:none">📋 Count Sheet</button>
-      <button id="btn-assets" class="sidebar-action-btn" onclick="location.href='./assets.html'" style="display:none">🧰 Assets <span style="background:#f59e0b;color:#1c1917;font-size:9px;font-weight:800;letter-spacing:.06em;padding:1px 6px;border-radius:99px;margin-left:4px">BETA</span></button>
       <button id="btn-health" class="sidebar-action-btn" onclick="openHealthCheck()" style="display:none">🩺 System Health <span id="health-badge" style="display:none;margin-left:6px;background:#dc2626;color:#fff;border-radius:99px;font-size:11px;padding:0 7px"></span></button>
       <button id="btn-testmode-settings" class="sidebar-action-btn" onclick="openSettings()" style="display:none">🧪 Test Mode</button>
       <button id="btn-reset" class="sidebar-action-btn sidebar-action-danger" onclick="confirmReset()">↺ Reset</button>
@@ -4235,7 +4262,7 @@ async function load() {
         if (currentUser.role === 'admin') { currentUser.role = 'superuser'; localStorage.setItem(SESSION_USER_KEY, JSON.stringify(currentUser)); }
         currentRole = currentUser.role;
         applyRoleUI();
-        switchTab('inventory');
+        switchTab(_initialTab());
         renderLogs(); renderReorder(); updateSummary();
         resetSessionTimer();
         loadGlobalSettings().then(function() { startAutoRefresh(); });
@@ -4247,7 +4274,7 @@ async function load() {
       currentRole = savedRole;
       currentUser = { username: savedRole, role: savedRole };
       applyRoleUI();
-      switchTab('inventory');
+      switchTab(_initialTab());
       renderLogs(); renderReorder(); updateSummary();
       resetSessionTimer();
       loadGlobalSettings().then(function() { startAutoRefresh(); });
@@ -10858,7 +10885,7 @@ function doLogin() {
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('login-error').textContent = '';
   applyRoleUI();
-  switchTab('inventory');
+  switchTab(_initialTab());
   renderLogs(); renderReorder(); updateSummary();
   resetSessionTimer();
   loadGlobalSettings().then(function() { startAutoRefresh(); });
@@ -11010,7 +11037,7 @@ function performLoginForUser(username) {
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('login-error').textContent = '';
   applyRoleUI();
-  switchTab('inventory');
+  switchTab(_initialTab());
   renderLogs(); renderReorder(); updateSummary();
   resetSessionTimer();
   loadGlobalSettings().then(function() { startAutoRefresh(); });
@@ -11168,6 +11195,30 @@ function logout() {
 }
 
 
+// ─── NAV GROUPS (Consumables / Assets) ─────────────────────────────────────────
+// Collapsed state is remembered per device.
+var NAV_GROUPS_KEY = 'sb_navGroupsCollapsed';
+function _navGroupsCollapsed() { try { return JSON.parse(localStorage.getItem(NAV_GROUPS_KEY) || '{}'); } catch(e) { return {}; } }
+function applyNavGroups() {
+  var c = _navGroupsCollapsed();
+  ['cons', 'assets'].forEach(function(g) {
+    var h = document.getElementById('ng-hdr-' + g);
+    if (h) h.setAttribute('aria-expanded', c[g] ? 'false' : 'true');
+  });
+}
+function toggleNavGroup(g) {
+  var c = _navGroupsCollapsed();
+  c[g] = !c[g];
+  try { localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify(c)); } catch(e) {}
+  applyNavGroups();
+}
+// Opening SupplyBase with #report, #requests … (e.g. from the Assets page)
+// lands on that tab instead of Inventory.
+function _initialTab() {
+  var h = (location.hash || '').replace('#', '');
+  return (h && document.getElementById('tab-' + h)) ? h : 'inventory';
+}
+
 // ─── NAV REORDER ────────────────────────────────────────────────────────────────
 (function initNavDrag() {
   const NAV_ORDER_KEY = 'sb_nav_order';
@@ -11241,7 +11292,9 @@ function applyRoleUI() {
   show('btn-import-suppliers', currentRole === 'superuser');
   show('btn-supplier-dir', currentRole === 'superuser' || currentRole === 'user');
   show('btn-health', currentRole === 'superuser');
-  show('btn-assets', !!currentRole && currentRole !== 'brand');
+  var ngAssets = document.getElementById('ng-assets');
+  if (ngAssets) ngAssets.style.display = (currentRole && currentRole !== 'brand') ? '' : 'none';
+  applyNavGroups();
   if (typeof scheduleAutoHealthCheck === 'function') scheduleAutoHealthCheck();
   if (typeof renderOpsReminders === 'function') renderOpsReminders();
   // Test Mode banner is superuser-only, so re-check it whenever the role UI

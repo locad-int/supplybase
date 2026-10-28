@@ -37,6 +37,11 @@
   .who { font-size: 12px; color: #94a3b8; background: #1a1a1a; padding: 5px 10px; border-radius: 6px; }
   .top-btn { background: #1a1a1a; color: #cbd5e1; border: none; border-radius: 6px; padding: 6px 10px; font-size: 12px; text-decoration: none; }
   .top-btn:hover { background: #252525; color: #fff; }
+  .cons-wrap { position: relative; }
+  .cons-menu { display: none; position: absolute; right: 0; top: calc(100% + 6px); background: #111; border: 1px solid #222; border-radius: 10px; padding: 4px; min-width: 190px; z-index: 60; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+  .cons-menu.open { display: block; }
+  .cons-menu a { display: block; color: #cbd5e1; text-decoration: none; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+  .cons-menu a:hover { background: #1f1f1f; color: #fff; }
   .nav { display: flex; gap: 2px; padding: 0 14px; overflow-x: auto; scrollbar-width: none; }
   .nav::-webkit-scrollbar { display: none; }
   .nav button { background: none; border: none; color: #94a3b8; padding: 10px 12px; font-size: 13px; font-weight: 600; border-bottom: 2px solid transparent; white-space: nowrap; }
@@ -140,7 +145,18 @@
     <div class="brand">LOCAD SUPPLYBASE <span class="beta" title="Beta: still being tested at Cabuyao FC">BETA</span><small>FC Asset Management · Cabuyao</small></div>
     <div class="top-right">
       <span class="who" id="who"></span>
-      <a class="top-btn" href="./index.html" title="Back to consumables">← Consumables</a>
+      <div class="cons-wrap">
+        <button class="top-btn" onclick="toggleConsMenu(event)" aria-haspopup="true">📦 Consumables ▾</button>
+        <div class="cons-menu" id="cons-menu">
+          <a href="./index.html#inventory">📋 Inventory</a>
+          <a href="./index.html#usage">📝 Usage Log</a>
+          <a href="./index.html#reorder">🔄 Reorder</a>
+          <a href="./index.html#report">💰 Cost Report</a>
+          <a href="./index.html#dashboard">📊 Dashboard</a>
+          <a href="./index.html#requests">🛒 Requests</a>
+          <a href="./index.html#audit">📋 Audit Log</a>
+        </div>
+      </div>
       <button class="top-btn" onclick="reloadAll(true)" title="Reload from the server">↻</button>
       <button class="top-btn" onclick="logout()">Sign out</button>
     </div>
@@ -658,8 +674,12 @@ function logout() {
 
 // ─── SHELL ──────────────────────────────────────────────────────────────────
 var currentView = 'dashboard';
+var VIEWS = ['dashboard', 'register', 'checkout', 'maintenance', 'issues', 'audits'];
 function go(v) {
+  if (VIEWS.indexOf(v) === -1) v = 'dashboard';
   currentView = v;
+  // Keep the address in step so SupplyBase's sidebar links and bookmarks open the same view
+  if (location.hash !== '#' + v) { try { history.replaceState(null, '', '#' + v); } catch (e) {} }
   document.querySelectorAll('.view').forEach(function(s) { s.classList.toggle('active', s.id === 'v-' + v); });
   document.querySelectorAll('#nav button').forEach(function(b) { b.classList.toggle('active', b.dataset.v === v); });
   renderView(v);
@@ -688,6 +708,9 @@ function applyPerms() {
   });
   document.getElementById('who').textContent = me.username + ' · ' + me.role;
 }
+
+function toggleConsMenu(e) { if (e) e.stopPropagation(); document.getElementById('cons-menu').classList.toggle('open'); }
+document.addEventListener('click', function(e) { var m = document.getElementById('cons-menu'); if (m && !e.target.closest('.cons-wrap')) m.classList.remove('open'); });
 
 function openM(id) { document.getElementById(id).classList.add('open'); }
 function closeM(id) { document.getElementById(id).classList.remove('open'); if (id === 'm-asset') _detailId = null; }
@@ -1660,6 +1683,9 @@ function startRealtime() {
 }
 async function startApp() {
   applyPerms();
+  var hv = (location.hash || '').replace('#', '');
+  if (VIEWS.indexOf(hv) !== -1) go(hv);
+  window.addEventListener('hashchange', function() { var h = location.hash.replace('#', ''); if (h !== currentView && VIEWS.indexOf(h) !== -1) go(h); });
   await Promise.all([reloadAll(), loadPeople()]);
   startRealtime();
   // Reload when the tab comes back into view (phones sleep the page)
