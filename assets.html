@@ -402,6 +402,25 @@
   </div>
 </div></div>
 
+<!-- Beta reset (superuser) -->
+<div class="modal-bg" id="m-reset"><div class="modal">
+  <h2>↺ Reset asset data (beta)</h2>
+  <div class="small muted" style="margin-bottom:12px">For clearing test data during the beta. Consumables are not touched. This can't be undone, so keep the backup.</div>
+  <div class="fg" style="margin-bottom:10px">
+    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;color:var(--text);font-size:13px"><input type="radio" name="rs-mode" value="activity" checked style="margin-top:3px"> <span><strong>Clear activity only</strong><br><span class="muted small">Deletes check-outs, issues, maintenance, audits and history. Keeps the register and labels; every asset goes back to Available.</span></span></label>
+  </div>
+  <div class="fg" style="margin-bottom:10px">
+    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:500;color:var(--text);font-size:13px"><input type="radio" name="rs-mode" value="all" style="margin-top:3px"> <span><strong>Delete everything</strong><br><span class="muted small">Also deletes every asset in the register. Printed labels stop working; IDs restart at IT-0001, MHE-0001, TF-0001.</span></span></label>
+  </div>
+  <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:6px 0 12px"><input type="checkbox" id="rs-backup" checked> Download a backup file first</label>
+  <div class="fg"><label>Type RESET to confirm</label><input id="rs-confirm" autocomplete="off" placeholder="RESET"></div>
+  <div class="msg err" id="rs-err2"></div>
+  <div class="modal-actions">
+    <button class="btn btn-secondary" onclick="closeM('m-reset')">Cancel</button>
+    <button class="btn btn-danger" id="rs-go" onclick="doResetAssets()">Reset</button>
+  </div>
+</div></div>
+
 <!-- Generic confirm / prompt -->
 <div class="modal-bg" id="m-ask"><div class="modal">
   <h2 id="ask-title"></h2>
@@ -868,6 +887,7 @@ function renderDashboard() {
           return '<td class="right">' + (n || '<span class="muted">0</span>') + '</td>';
         }).join('') + '<td class="right"><strong>' + inCat.length + '</strong></td></tr>';
       }).join('') + '</tbody></table></div></div>';
+  if (can('dispose')) html += '<div class="panel" style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><div><h2 style="margin:0">🧪 Beta tools</h2><div class="small muted">Superuser only. Clears test data so the pilot can start clean.</div></div><button class="btn btn-danger btn-sm" onclick="openResetAssets()">↺ Reset asset data</button></div>';
   if (!S.assets.length) html = '<div class="panel"><h2>Welcome 👋</h2><div class="small">No assets yet. Go to <span class="link" onclick="go(\'register\')">Register</span> to add them one by one or import a CSV, then print labels.</div></div>' + html;
   el.innerHTML = html;
 }
@@ -888,7 +908,11 @@ function regRows() {
 }
 function renderRegister() {
   var rows = regRows();
-  document.getElementById('reg-count').textContent = rows.length + ' asset' + (rows.length === 1 ? '' : 's') + (Object.keys(_regSel).length ? ' · ' + Object.keys(_regSel).length + ' selected' : '');
+  var stSel = document.getElementById('reg-status').value;
+  var nDisposed = S.assets.filter(function(a) { return a.status === 'Disposed'; }).length;
+  document.getElementById('reg-count').innerHTML = rows.length + ' asset' + (rows.length === 1 ? '' : 's') + (Object.keys(_regSel).length ? ' · ' + Object.keys(_regSel).length + ' selected' : '')
+    + (nDisposed && !stSel ? ' · <span class="link" onclick="document.getElementById(\'reg-status\').value=\'Disposed\';renderRegister()">' + nDisposed + ' disposed (hidden) — show</span>' : '')
+    + (stSel === 'Disposed' ? ' · <span class="link" onclick="document.getElementById(\'reg-status\').value=\'\';renderRegister()">back to active assets</span>' : '');
   document.getElementById('reg-body').innerHTML = rows.length ? rows.map(function(a) {
     var co = openCheckout(a.id);
     var withTxt = co ? '<span class="badge b-info">' + esc(co.borrower) + '</span>' + (isOverdue(co) ? ' <span class="badge b-danger">overdue</span>' : '') : esc(a.assignedTo || '');
@@ -1675,6 +1699,52 @@ function printLabels() {
     + '</style></head><body><div class="sheet">' + labels + '</div><script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script></body></html>');
   w.document.close();
   closeM('m-labels');
+}
+
+// ─── BETA RESET (superuser) ─────────────────────────────────────────────────
+// Clears asset test data. Remove with the beta banner once the pilot is live.
+var ASSET_ACTIVITY_TABLES = ['asset_audit_scans', 'asset_audits', 'asset_checkouts', 'asset_maintenance', 'asset_issues', 'asset_log']; // children first
+function openResetAssets() {
+  if (!can('dispose')) return;
+  document.getElementById('rs-confirm').value = '';
+  document.querySelector('input[name="rs-mode"][value="activity"]').checked = true;
+  document.getElementById('rs-backup').checked = true;
+  showMsg('rs-err2', '');
+  openM('m-reset');
+}
+async function _backupAssets() {
+  var out = { exportedAt: nowIso(), by: me.username };
+  var tables = ['assets'].concat(ASSET_ACTIVITY_TABLES);
+  for (var i = 0; i < tables.length; i++) out[tables[i]] = await fetchAll(tables[i]);
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' }));
+  a.download = 'asset_backup_' + todayYmd() + '.json';
+  a.click();
+  return out;
+}
+async function doResetAssets() {
+  if (!can('dispose')) return;
+  if (document.getElementById('rs-confirm').value.trim() !== 'RESET') { showMsg('rs-err2', 'Type RESET (capital letters) to confirm.'); return; }
+  var mode = document.querySelector('input[name="rs-mode"]:checked').value;
+  await busy('reset', 'rs-go', async function() {
+    if (document.getElementById('rs-backup').checked) await _backupAssets();
+    // Activity tables (children before parents so references never break)
+    for (var i = 0; i < ASSET_ACTIVITY_TABLES.length; i++) {
+      var r = await sb.from(ASSET_ACTIVITY_TABLES[i]).delete().neq('id', '');
+      if (r.error) throw _dbErr('clear', ASSET_ACTIVITY_TABLES[i], r.error);
+    }
+    if (mode === 'all') {
+      var r2 = await sb.from('assets').delete().neq('id', '');
+      if (r2.error) throw _dbErr('clear', 'assets', r2.error);
+    } else {
+      var r3 = await sb.from('assets').update({ status: 'Available', disposedAt: null, lastPmAt: null, nextPmDue: null, updatedAt: nowIso(), updatedBy: me.username }).neq('id', '');
+      if (r3.error) throw _dbErr('update', 'assets', r3.error);
+    }
+    await logEvent(null, 'Asset data reset', mode === 'all' ? 'Everything deleted (beta reset)' : 'Activity cleared, register kept (beta reset)');
+    closeM('m-reset');
+    toast(mode === 'all' ? 'All asset data deleted' : 'Activity cleared — every asset is Available again', 4000);
+    await reloadAll();
+  });
 }
 
 // ─── BETA NOTICE ────────────────────────────────────────────────────────────
