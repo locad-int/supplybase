@@ -616,14 +616,19 @@ async function loadPeople() {
 }
 
 // Every write goes through these; a failure stops the workflow with a message.
+function _dbErr(verb, table, err) {
+  var msg = String(err && err.message || err);
+  if (/row-level security/i.test(msg)) return new Error('Supabase is blocking saves to ' + table + ' (row-level security is on). A superuser needs to run assets_access_fix.sql in Supabase → SQL Editor once. Nothing was saved.');
+  return new Error('Could not ' + verb + ' ' + table + ': ' + msg);
+}
 async function dbInsert(table, row) {
   var r = await sb.from(table).insert([row]);
-  if (r.error) throw new Error('Could not save to ' + table + ': ' + r.error.message);
+  if (r.error) throw _dbErr('save to', table, r.error);
   return row;
 }
 async function dbUpdate(table, id, patch) {
   var r = await sb.from(table).update(patch).eq('id', id);
-  if (r.error) throw new Error('Could not update ' + table + ': ' + r.error.message);
+  if (r.error) throw _dbErr('update', table, r.error);
 }
 async function logEvent(assetId, action, details) {
   var row = { id: uid(), assetId: assetId, action: action, details: details || '', by: me.username, at: nowIso() };

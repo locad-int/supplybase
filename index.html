@@ -15154,7 +15154,7 @@ var aiPanelOpen = false; // Shelfie is a floating corner widget, not a tab
 // Tools that never write anything (a chat answer or a local file download),
 // so they run the instant they're seen instead of going through the
 // Confirm/Cancel card the three write actions use.
-var AI_READONLY_TOOLS = ['get_cost_report', 'export_cost_report_csv', 'lookup_history', 'get_monthly_summary'];
+var AI_READONLY_TOOLS = ['get_cost_report', 'export_cost_report_csv', 'lookup_history', 'get_monthly_summary', 'lookup_asset'];
 
 // Computes and applies an exact pixel height for the floating panel and its
 // scrollable message list, in JS rather than CSS. A min()/calc()+flex
@@ -15374,10 +15374,275 @@ function aiPoPreviewHtml(input) {
   };
 }
 
+// ─── SHELFIE × ASSETS ──────────────────────────────────────────────────────────
+// Shelfie answers asset questions from a snapshot of the asset tables and can
+// propose five asset actions. The executors follow the same status rules as
+// assets.html (check-out only when Available and shared; a Damaged return goes
+// Out of Service with an issue; an out-of-service issue reported while an
+// asset is signed out takes effect on return; a repair can close the issue it
+// fixes). Same role permissions as the Assets pages.
+var AI_ASSET_ACTIONS = ['checkout_assets', 'checkin_assets', 'report_asset_issue', 'log_asset_maintenance', 'resolve_asset_issue'];
+var ASSET_PERMS = {
+  superuser: ['view', 'edit', 'checkout', 'maintain', 'issue', 'resolve', 'audit', 'complete_audit', 'dispose'],
+  user:      ['view', 'edit', 'checkout', 'maintain', 'issue', 'resolve', 'audit', 'complete_audit'],
+  requestor: ['view', 'checkout', 'issue', 'audit'],
+  viewer:    ['view'],
+};
+function assetCan(action) { return !!(ASSET_PERMS[currentRole] && ASSET_PERMS[currentRole].indexOf(action) !== -1); }
+var _aiAssets = null; // { at, assets, checkouts (open), issues (open) } or { unavailable: true }
+var AI_ASSET_CACHE_MS = 30000;
+
+async function aiLoadAssetData(force) {
+  if (!sb || !ASSET_PERMS[currentRole]) return null;
+  if (!force && _aiAssets && Date.now() - _aiAssets.at < AI_ASSET_CACHE_MS) return _aiAssets.unavailable ? null : _aiAssets;
+  try {
+    var r = await Promise.all([
+      sb.from('assets').select('*').neq('status', 'Disposed').limit(5000),
+      sb.from('asset_checkouts').select('*').is('returnedAt', null).limit(5000),
+      sb.from('asset_issues').select('*').neq('status', 'Resolved').limit(5000),
+    ]);
+    if (r[0].error || r[1].error || r[2].error) throw new Error((r[0].error || r[1].error || r[2].error).message);
+    _aiAssets = { at: Date.now(), assets: r[0].data || [], checkouts: r[1].data || [], issues: r[2].data || [] };
+    return _aiAssets;
+  } catch (e) {
+    _aiAssets = { at: Date.now(), unavailable: true };
+    return null;
+  }
+}
+function _aYmd(d) { d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function _aAddDays(ymd, n) { var d = new Date(ymd + 'T00:00:00'); d.setDate(d.getDate() + n); return _aYmd(d); }
+function _aPmState(a) {
+  if (!a.pmIntervalDays) return { state: 'none', due: null };
+  var due = a.nextPmDue || (a.lastPmAt ? _aAddDays(String(a.lastPmAt).slice(0, 10), a.pmIntervalDays) : null);
+  if (!due) return { state: 'overdue', due: null };
+  var days = Math.round((new Date(String(due).slice(0, 10) + 'T00:00:00') - new Date(_aYmd() + 'T00:00:00')) / 86400000);
+  return { state: days < 0 ? 'overdue' : (days <= 7 ? 'soon' : 'ok'), due: String(due).slice(0, 10) };
+}
+function _aFind(D, id) { var k = String(id || '').trim().toUpperCase(); return D.assets.find(function(a) { return a.id.toUpperCase() === k || (a.serial && String(a.serial).toUpperCase() === k); }) || null; }
+function _aOpenCo(D, id) { return D.checkouts.find(function(c) { return c.assetId === id && !c.returnedAt; }) || null; }
+function _aOpenIssues(D, id) { return D.issues.filter(function(i) { return i.assetId === id && i.status !== 'Resolved'; }); }
+function _aSettled(D, a, ignoreIssueId) {
+  if (a.status === 'Disposed') return 'Disposed';
+  if (_aOpenCo(D, a.id)) return 'Checked Out';
+  var open = _aOpenIssues(D, a.id).filter(function(i) { return i.id !== ignoreIssueId; });
+  if (open.some(function(i) { return i.outOfService; })) return 'Out of Service';
+  if (open.some(function(i) { return i.type === 'Missing'; })) return 'Missing';
+  return 'Available';
+}
+
+// Snapshot sent to Shelfie (compact; disposed assets are left out)
+function aiBuildContextAssets(D) {
+  if (!D) return null;
+  var now = Date.now();
+  return D.assets.map(function(a) {
+    var co = _aOpenCo(D, a.id), pm = _aPmState(a);
+    return {
+      id: a.id, name: a.name, category: a.category, type: a.type || undefined, zone: a.zone || undefined, location: a.location || undefined,
+      status: a.status, checkoutable: !!a.checkoutable, with: co ? co.borrower : undefined, due: co ? co.dueAt : undefined,
+      overdue: co && co.dueAt ? new Date(co.dueAt).getTime() < now : undefined,
+      pm_next_due: pm.due || undefined, pm_state: pm.state,
+      open_issues: _aOpenIssues(D, a.id).map(function(i) { return { id: i.id, type: i.type, severity: i.severity, out_of_service: !!i.outOfService, description: (i.description || '').slice(0, 120) }; }),
+    };
+  });
+}
+function aiBuildAssetSummary(D) {
+  if (!D) return null;
+  var c = function(s) { return D.assets.filter(function(a) { return a.status === s; }).length; };
+  return {
+    total: D.assets.length, available: c('Available'), checked_out: c('Checked Out'), under_maintenance: c('Under Maintenance'),
+    out_of_service: c('Out of Service'), missing: c('Missing'),
+    overdue_returns: D.checkouts.filter(function(x) { return x.dueAt && new Date(x.dueAt).getTime() < Date.now(); }).length,
+    pm_overdue: D.assets.filter(function(a) { return _aPmState(a).state === 'overdue'; }).length,
+    open_issues: D.issues.length,
+  };
+}
+
+async function _aWrite(table, op, row, id) {
+  var q = op === 'insert' ? sb.from(table).insert([row]) : sb.from(table).update(row).eq('id', id);
+  var r = await q;
+  if (r && r.error) throw new Error('Could not save to ' + table + ': ' + r.error.message);
+}
+async function _aSetAsset(a, patch, action, details) {
+  var by = (currentUser && currentUser.username) || '';
+  patch = Object.assign({}, patch, { updatedAt: new Date().toISOString(), updatedBy: by });
+  await _aWrite('assets', 'update', patch, a.id);
+  Object.assign(a, patch);
+  try { await sb.from('asset_log').insert([{ id: uid(), assetId: a.id, action: action, details: (details || '') + ' (via Shelfie)', by: by, at: new Date().toISOString() }]); } catch (e) {}
+}
+// Re-read the asset right before acting (another device may have just changed it)
+async function _aFresh(D, a) {
+  try { var r = await sb.from('assets').select('*').eq('id', a.id).single(); if (r.data) Object.assign(a, r.data); } catch (e) {}
+  return a;
+}
+
+async function aiRunAssetAction(action) {
+  var input = action.input || {};
+  var D = await aiLoadAssetData(true);
+  if (!D) return { ok: false, message: 'Asset Management isn\'t available (asset tables not set up, or your role has no access). Nothing was saved.' };
+  var by = (currentUser && currentUser.username) || '';
+  var nowIso = new Date().toISOString();
+  var res;
+  if (action.name === 'checkout_assets') {
+    if (!assetCan('checkout')) return { ok: false, message: 'Your role can\'t check out assets.' };
+    var borrower = String(input.borrower || '').trim(), shift = String(input.shift || '').trim();
+    if (!borrower || !shift) return { ok: false, message: 'A borrower and shift are needed. Nothing was saved.' };
+    var hours = parseFloat(input.due_hours) > 0 ? parseFloat(input.due_hours) : 12;
+    var due = new Date(Date.now() + hours * 3600000).toISOString();
+    var done = [], skipped = [];
+    for (var i = 0; i < (input.asset_ids || []).length; i++) {
+      var a = _aFind(D, input.asset_ids[i]);
+      if (!a) { skipped.push(input.asset_ids[i] + ' (not in the register)'); continue; }
+      await _aFresh(D, a);
+      if (!a.checkoutable) { skipped.push(a.id + ' (not shared equipment)'); continue; }
+      if (a.status !== 'Available') { skipped.push(a.id + ' (' + a.status + ')'); continue; }
+      var co = { id: uid(), assetId: a.id, borrower: borrower, shift: shift, checkedOutAt: nowIso, checkedOutBy: by, dueAt: due, notes: input.notes || null };
+      await _aWrite('asset_checkouts', 'insert', co);
+      D.checkouts.push(co);
+      await _aSetAsset(a, { status: 'Checked Out' }, 'Checked out', 'To ' + borrower + ' (' + shift + ')');
+      done.push(a.id);
+    }
+    res = { ok: done.length > 0, message: (done.length ? 'Checked out ' + done.join(', ') + ' to ' + borrower + ' (' + shift + '), due ' + new Date(due).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + '.' : 'Nothing was checked out.') + (skipped.length ? ' Skipped: ' + skipped.join(', ') + '.' : '') };
+  } else if (action.name === 'checkin_assets') {
+    if (!assetCan('checkout')) return { ok: false, message: 'Your role can\'t check in assets.' };
+    var damaged = String(input.condition || 'Good').toLowerCase() === 'damaged';
+    if (damaged && !String(input.damage_note || '').trim()) return { ok: false, message: 'Say what is damaged before checking it in as Damaged. Nothing was saved.' };
+    var back = [], skip2 = [];
+    for (var j = 0; j < (input.asset_ids || []).length; j++) {
+      var b = _aFind(D, input.asset_ids[j]);
+      var c = b && _aOpenCo(D, b.id);
+      if (!b || !c) { skip2.push((b ? b.id : input.asset_ids[j]) + ' (not checked out)'); continue; }
+      var cp = { returnedAt: nowIso, returnedBy: by, returnCondition: damaged ? 'Damaged' : 'Good' };
+      await _aWrite('asset_checkouts', 'update', cp, c.id);
+      Object.assign(c, cp);
+      if (damaged) {
+        var iss = { id: uid(), assetId: b.id, type: 'Damaged', severity: 'High', description: input.damage_note + ' (returned by ' + c.borrower + ')', outOfService: true, status: 'Open', reportedBy: by, reportedAt: nowIso };
+        await _aWrite('asset_issues', 'insert', iss);
+        D.issues.push(iss);
+      }
+      await _aSetAsset(b, { status: damaged ? 'Out of Service' : _aSettled(D, b, null) }, 'Checked in', 'From ' + c.borrower + ' · ' + (damaged ? 'Damaged — ' + input.damage_note : 'Good'));
+      back.push(b.id + (b.status !== 'Available' ? ' (now ' + b.status + ')' : ''));
+    }
+    res = { ok: back.length > 0, message: (back.length ? 'Checked in ' + back.join(', ') + '.' : 'Nothing was checked in.') + (damaged && back.length ? ' An issue was opened for the damage.' : '') + (skip2.length ? ' Skipped: ' + skip2.join(', ') + '.' : '') };
+  } else if (action.name === 'report_asset_issue') {
+    if (!assetCan('issue')) return { ok: false, message: 'Your role can\'t report asset issues.' };
+    var x = _aFind(D, input.asset_id);
+    if (!x) return { ok: false, message: 'Asset ' + input.asset_id + ' isn\'t in the register.' };
+    var type = ['Broken', 'Damaged', 'Missing', 'Other'].indexOf(input.type) !== -1 ? input.type : 'Other';
+    var sev = ['Low', 'Medium', 'High', 'Critical'].indexOf(input.severity) !== -1 ? input.severity : 'Medium';
+    var oos = type !== 'Missing' && (input.out_of_service !== undefined ? !!input.out_of_service : (type === 'Broken' || sev === 'High' || sev === 'Critical'));
+    if (!String(input.description || '').trim()) return { ok: false, message: 'Describe what happened. Nothing was saved.' };
+    await _aFresh(D, x);
+    var is2 = { id: uid(), assetId: x.id, type: type, severity: sev, description: input.description, outOfService: oos, status: 'Open', reportedBy: by, reportedAt: nowIso };
+    await _aWrite('asset_issues', 'insert', is2);
+    D.issues.push(is2);
+    var st = type === 'Missing' ? 'Missing' : (oos && x.status !== 'Checked Out' ? 'Out of Service' : x.status);
+    await _aSetAsset(x, st !== x.status ? { status: st } : {}, 'Issue reported', type + ' (' + sev + ')' + (oos ? ', out of service' : '') + ' — ' + input.description);
+    res = { ok: true, message: 'Reported a ' + sev.toLowerCase() + ' ' + type.toLowerCase() + ' issue on ' + x.id + '.' + (x.status === 'Checked Out' && oos ? ' It\'s signed out now, so it goes out of service when it\'s returned.' : (st !== 'Available' ? ' ' + x.id + ' is now ' + x.status + '.' : '')) };
+  } else if (action.name === 'log_asset_maintenance') {
+    if (!assetCan('maintain')) return { ok: false, message: 'Your role can\'t log maintenance.' };
+    var m = _aFind(D, input.asset_id);
+    if (!m) return { ok: false, message: 'Asset ' + input.asset_id + ' isn\'t in the register.' };
+    var kind = String(input.kind || '').toLowerCase() === 'repair' ? 'Repair' : 'PM';
+    var date = /^\d{4}-\d{2}-\d{2}$/.test(input.date || '') ? input.date : _aYmd();
+    if (date > _aYmd()) return { ok: false, message: 'The maintenance date can\'t be in the future. Nothing was saved.' };
+    await _aFresh(D, m);
+    var fixes = input.fixes_issue_id ? D.issues.find(function(i) { return i.id === input.fixes_issue_id && i.assetId === m.id; }) : null;
+    var row = { id: uid(), assetId: m.id, kind: kind, date: date, performedBy: input.performed_by || null, cost: parseFloat(input.cost) || 0, downtimeHours: parseFloat(input.downtime_hours) || 0, notes: input.notes || null, issueId: fixes ? fixes.id : null, createdBy: by, createdAt: nowIso };
+    await _aWrite('asset_maintenance', 'insert', row);
+    var patch = {};
+    if (kind === 'PM' && (!m.lastPmAt || date >= String(m.lastPmAt).slice(0, 10))) { patch.lastPmAt = date; patch.nextPmDue = m.pmIntervalDays ? _aAddDays(date, m.pmIntervalDays) : null; }
+    if (fixes) {
+      var ip = { status: 'Resolved', resolvedBy: by, resolvedAt: nowIso, resolution: kind + ' on ' + date + (row.notes ? ': ' + row.notes : '') };
+      await _aWrite('asset_issues', 'update', ip, fixes.id);
+      Object.assign(fixes, ip);
+    }
+    if (['Under Maintenance', 'Out of Service'].indexOf(m.status) !== -1) patch.status = _aSettled(D, m, fixes ? fixes.id : null);
+    await _aSetAsset(m, patch, kind === 'PM' ? 'PM logged' : 'Repair logged', [date, row.performedBy, row.cost ? fmtPHP(row.cost) : '', row.notes].filter(Boolean).join(' · '));
+    res = { ok: true, message: kind + ' logged for ' + m.id + ' on ' + date + '.' + (patch.nextPmDue ? ' Next PM due ' + patch.nextPmDue + '.' : '') + (fixes ? ' Its ' + fixes.type.toLowerCase() + ' issue is resolved.' : '') + (patch.status ? ' Status: ' + m.status + '.' : '') };
+  } else if (action.name === 'resolve_asset_issue') {
+    if (!assetCan('resolve')) return { ok: false, message: 'Your role can\'t resolve asset issues.' };
+    var is3 = D.issues.find(function(i) { return i.id === input.issue_id; });
+    if (!is3) return { ok: false, message: 'That issue isn\'t open anymore. Nothing was changed.' };
+    if (!String(input.resolution || '').trim()) return { ok: false, message: 'Say how it was resolved. Nothing was saved.' };
+    var ip3 = { status: 'Resolved', resolvedBy: by, resolvedAt: nowIso, resolution: input.resolution };
+    await _aWrite('asset_issues', 'update', ip3, is3.id);
+    Object.assign(is3, ip3);
+    var ra = _aFind(D, is3.assetId);
+    if (ra) {
+      await _aFresh(D, ra);
+      var p3 = (input.outcome !== 'keep' && ra.status !== 'Under Maintenance') ? { status: _aSettled(D, ra, is3.id) } : {};
+      await _aSetAsset(ra, p3, 'Issue resolved', is3.type + ' — ' + input.resolution);
+    }
+    res = { ok: true, message: 'Resolved the ' + is3.type.toLowerCase() + ' issue on ' + is3.assetId + '.' + (ra ? ' ' + ra.id + ' is ' + ra.status + '.' : '') };
+  } else {
+    res = { ok: false, message: 'Unknown asset action.' };
+  }
+  _aiAssets = null; // next question re-reads the tables
+  // Refresh the Assets pages if they're open inside SupplyBase
+  try { var f = document.getElementById('assets-frame'); if (f && f.contentWindow && f.contentWindow.reloadAll) f.contentWindow.reloadAll(); } catch (e) {}
+  return res;
+}
+
+// Read-only: one asset's full history
+async function aiLookupAsset(input) {
+  var D = await aiLoadAssetData();
+  if (!D) return { ok: false, message: 'Asset Management isn\'t available in this session.' };
+  var a = _aFind(D, input.asset);
+  if (!a) {
+    // disposed assets aren't in the snapshot — look them up directly
+    try { var r0 = await sb.from('assets').select('*').ilike('id', String(input.asset || '').trim()).limit(1); a = r0.data && r0.data[0]; } catch (e) {}
+  }
+  if (!a) return { ok: false, message: 'No asset matches "' + input.asset + '".' };
+  var r = await Promise.all([
+    sb.from('asset_log').select('*').eq('assetId', a.id).order('at', { ascending: false }).limit(40),
+    sb.from('asset_maintenance').select('*').eq('assetId', a.id).order('date', { ascending: false }).limit(20),
+  ]);
+  var lines = (r[0].data || []).map(function(l) { return String(l.at).slice(0, 16).replace('T', ' ') + ' · ' + l.action + (l.details ? ' — ' + l.details : '') + (l.by ? ' (' + l.by + ')' : ''); });
+  var maint = r[1].data || [];
+  var cost = maint.reduce(function(s, x) { return s + (+x.cost || 0); }, 0);
+  return { ok: true, message: a.id + ' · ' + a.name + ' · status ' + a.status + (a.zone ? ' · zone ' + a.zone : '') + '\n'
+    + 'Maintenance: ' + maint.length + ' job(s), total ' + fmtPHP(cost) + '\n'
+    + 'History (newest first):\n' + (lines.length ? lines.join('\n') : 'No history recorded.') };
+}
+
+// Confirmation cards for the asset actions
+function aiAssetActionCard(action) {
+  if (AI_ASSET_ACTIONS.indexOf(action.name) === -1) return null;
+  var input = action.input || {};
+  var D = _aiAssets && !_aiAssets.unavailable ? _aiAssets : null;
+  var nameOf = function(id) { var a = D && _aFind(D, id); return a ? a.id + ' · ' + a.name : String(id || ''); };
+  var list = function(ids) { return (ids || []).map(nameOf).join(', '); };
+  if (action.name === 'checkout_assets') {
+    return { title: 'Check out ' + (input.asset_ids || []).length + ' asset' + ((input.asset_ids || []).length === 1 ? '' : 's'), confirm: 'Check out',
+      body: aiFieldGridHtml([['Assets', list(input.asset_ids)], ['Borrower', input.borrower], ['Shift', input.shift], ['Due back in', (input.due_hours || 12) + ' hours']].concat(input.notes ? [['Notes', input.notes]] : [])) };
+  }
+  if (action.name === 'checkin_assets') {
+    var dmg = String(input.condition || 'Good').toLowerCase() === 'damaged';
+    return { title: 'Check in ' + (input.asset_ids || []).length + ' asset' + ((input.asset_ids || []).length === 1 ? '' : 's'), confirm: 'Check in',
+      body: aiFieldGridHtml([['Assets', list(input.asset_ids)], ['Condition', dmg ? 'Damaged' : 'Good']].concat(dmg ? [['Damage', input.damage_note]] : []))
+        + (dmg ? '<div style="font-size:11.5px;color:var(--danger)">Goes out of service and an issue is opened.</div>' : '') };
+  }
+  if (action.name === 'report_asset_issue') {
+    return { title: 'Report asset issue', confirm: 'Report issue',
+      body: aiFieldGridHtml([['Asset', nameOf(input.asset_id)], ['Type', input.type], ['Severity', input.severity], ['Out of service', input.type === 'Missing' ? 'Marked Missing' : (input.out_of_service === false ? 'No' : (input.out_of_service ? 'Yes' : 'If Broken / High / Critical'))], ['What happened', input.description]]) };
+  }
+  if (action.name === 'log_asset_maintenance') {
+    var fx = input.fixes_issue_id && D ? D.issues.find(function(i) { return i.id === input.fixes_issue_id; }) : null;
+    return { title: 'Log ' + (String(input.kind || '').toLowerCase() === 'repair' ? 'repair' : 'PM'), confirm: 'Log it',
+      body: aiFieldGridHtml([['Asset', nameOf(input.asset_id)], ['Date', input.date || _aYmd()], ['Done by', input.performed_by || '—'], ['Cost', input.cost ? fmtPHP(input.cost) : '—'], ['Downtime', input.downtime_hours ? input.downtime_hours + ' h' : '—'], ['Fixes issue', fx ? fx.type + ' · ' + (fx.description || '').slice(0, 40) : '—']].concat(input.notes ? [['Notes', input.notes]] : [])) };
+  }
+  var ri = input.issue_id && D ? D.issues.find(function(i) { return i.id === input.issue_id; }) : null;
+  return { title: 'Resolve asset issue', confirm: 'Resolve',
+    body: aiFieldGridHtml([['Asset', ri ? nameOf(ri.assetId) : 'Unknown'], ['Issue', ri ? ri.type + ' · ' + ri.severity : (input.issue_id || '')], ['Resolution', input.resolution], ['Afterwards', input.outcome === 'keep' ? 'Leave status as is' : 'Back in service']])
+      + (ri ? '' : '<div style="font-size:11.5px;color:var(--danger)">Issue not found — it may already be resolved.</div>') };
+}
+
 // Builds the {title, confirm, body} description of a pending action once,
 // shared by the scrollable review card (aiActionCardHtml) and the sticky
 // Confirm/Cancel bar (aiActionBarHtml) so they never disagree.
 function aiBuildActionCard(action) {
+  var assetCard = aiAssetActionCard(action);
+  if (assetCard) return assetCard;
   var input = action.input || {};
   var item = input.item_id ? db.items.find(function(i){ return i.id === input.item_id; }) : null;
   var itemName = item ? item.name : (input.item_id || 'Unknown item');
@@ -15704,6 +15969,9 @@ async function aiCallAssistant() {
   var streamError = null;
   renderAiChat();
   try {
+    // Asset snapshot for this turn (cached 30 s; null when unavailable)
+    var _aiAssetCtx = null;
+    try { _aiAssetCtx = await aiLoadAssetData(); } catch (e) {}
     var res = await fetch(HARDCODED_SUPABASE_URL + '/functions/v1/ai-assistant', {
       method: 'POST',
       headers: {
@@ -15711,7 +15979,8 @@ async function aiCallAssistant() {
         'Authorization': 'Bearer ' + HARDCODED_SUPABASE_KEY,
         'apikey': HARDCODED_SUPABASE_KEY
       },
-      body: JSON.stringify({ messages: aiTrimmedHistoryForSend(), context: { items: aiBuildContextItems(), suppliers: aiBuildContextSuppliers(), openReorders: aiBuildContextReorders(), pendingRequests: aiBuildContextPendingRequests(), today: new Date().toISOString().slice(0, 10), poSignatories: poSignatories } })
+      body: JSON.stringify({ messages: aiTrimmedHistoryForSend(), context: { items: aiBuildContextItems(), suppliers: aiBuildContextSuppliers(), openReorders: aiBuildContextReorders(), pendingRequests: aiBuildContextPendingRequests(), today: new Date().toISOString().slice(0, 10), poSignatories: poSignatories,
+        assets: aiBuildContextAssets(_aiAssetCtx), assetSummary: aiBuildAssetSummary(_aiAssetCtx), assetPerms: ASSET_PERMS[currentRole] || [] } })
     });
 
     if (!res.ok || !res.body) {
@@ -15838,6 +16107,7 @@ async function aiRunReadOnlyTool(block) {
     else if (block.name === 'export_cost_report_csv') result = aiExportCostReportCsv(block.input || {});
     else if (block.name === 'lookup_history') result = aiLookupHistory(block.input || {});
     else if (block.name === 'get_monthly_summary') result = aiGetMonthlySummary(block.input || {});
+    else if (block.name === 'lookup_asset') result = await aiLookupAsset(block.input || {});
     else result = { ok: false, message: 'Unknown query: ' + block.name };
   } catch (e) {
     result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
@@ -15989,6 +16259,7 @@ async function aiConfirmAction() {
     else if (action.name === 'cancel_reorder') result = await aiCancelReorder(action.input);
     else if (action.name === 'withdraw_supply_request') result = await aiWithdrawSupplyRequest(action.input);
     else if (action.name === 'save_supplier') result = await aiSaveSupplier(action.input);
+    else if (AI_ASSET_ACTIONS.indexOf(action.name) !== -1) result = await aiRunAssetAction(action);
     else result = { ok: false, message: 'Unknown action: ' + action.name };
   } catch (e) {
     result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
