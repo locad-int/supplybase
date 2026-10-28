@@ -446,7 +446,9 @@ var SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
 // What each SupplyBase role can do here. Brand accounts have no access.
 var PERMS = {
   superuser: ['view', 'edit', 'checkout', 'maintain', 'issue', 'resolve', 'audit', 'complete_audit', 'dispose'],
-  user:      ['view', 'edit', 'checkout', 'maintain', 'issue', 'resolve', 'audit', 'complete_audit'],
+  // Users run the day-to-day; adding/editing the register and completing or
+  // cancelling audits (which mark unscanned assets Missing) are superuser-only.
+  user:      ['view', 'checkout', 'maintain', 'issue', 'resolve', 'audit'],
   requestor: ['view', 'checkout', 'issue', 'audit'],
   viewer:    ['view'],
 };
@@ -1038,6 +1040,7 @@ function validateAsset(row, editingId) {
   return '';
 }
 async function saveAsset() {
+  if (!can('edit')) return;
   var row = _assetFromForm();
   var err = validateAsset(row, _editId);
   if (err) { showMsg('af-err', err); return; }
@@ -1140,7 +1143,7 @@ function importFileChosen(input) {
   reader.readAsText(file);
 }
 async function confirmImport() {
-  if (!_importRows.length) return;
+  if (!_importRows.length || !can('edit')) return;
   await busy('import', 'im-save', async function() {
     var stamp = { createdAt: nowIso(), createdBy: me.username, updatedAt: nowIso(), updatedBy: me.username };
     var rows = _importRows.map(function(r) { return Object.assign({}, r, stamp); });
@@ -1496,7 +1499,7 @@ function renderAudits() {
     var remaining = auditExpected(au).filter(function(a) { return !seen[a.id]; });
     var c = function(label, n, cls) { return '<div class="card ' + (cls || '') + '"><div class="label">' + label + '</div><div class="value">' + n + '</div></div>'; };
     html += '<div class="panel"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><h2 style="margin-bottom:2px">📋 Audit in progress · ' + esc(au.scope) + '</h2><div class="small muted">Started ' + fmtDT(au.startedAt) + ' by ' + esc(au.startedBy || '') + '</div></div>'
-      + '<div class="toolbar" style="margin:0">' + (can('complete_audit') ? '<button class="btn btn-secondary btn-sm" onclick="cancelAudit()">Cancel audit</button><button class="btn btn-primary btn-sm" id="au-complete" onclick="completeAudit()">Complete audit</button>' : '') + '</div></div>'
+      + '<div class="toolbar" style="margin:0">' + (can('complete_audit') ? '<button class="btn btn-secondary btn-sm" onclick="cancelAudit()">Cancel audit</button><button class="btn btn-primary btn-sm" id="au-complete" onclick="completeAudit()">Complete audit</button>' : '<span class="small muted">Keep scanning — a superuser completes the audit.</span>') + '</div></div>'
       + '<div class="cards" style="margin-top:12px">' + c('Expected', plan.expected) + c('Found', plan.found, 'ok') + c('Not yet scanned', remaining.length, remaining.length ? 'warn' : 'ok')
       + c('Wrong location', plan.wrongLocation, plan.wrongLocation ? 'warn' : '') + c('Extra', plan.extra, plan.extra ? 'info' : '') + c('Unknown tags', plan.unknown, plan.unknown ? 'danger' : '') + '</div>'
       + '<div class="form-grid"><div class="fg"><label>Scan tags</label><input class="scan" id="au-scan" placeholder="Scan each tag you find…" onkeydown="if(event.key===\'Enter\'){auScan(this.value);this.value=\'\';}"></div>'
@@ -1614,7 +1617,7 @@ async function completeAudit() {
 }
 async function cancelAudit() {
   var au = activeAudit();
-  if (!au) return;
+  if (!au || !can('complete_audit')) return;
   var ok = await ask('Cancel this audit?', 'Scans are kept for reference but nothing in the register changes.', { ok: 'Cancel audit', danger: true });
   if (!ok) return;
   await busy('cancel', null, async function() {

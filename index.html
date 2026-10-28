@@ -15384,7 +15384,7 @@ function aiPoPreviewHtml(input) {
 var AI_ASSET_ACTIONS = ['checkout_assets', 'checkin_assets', 'report_asset_issue', 'log_asset_maintenance', 'resolve_asset_issue'];
 var ASSET_PERMS = {
   superuser: ['view', 'edit', 'checkout', 'maintain', 'issue', 'resolve', 'audit', 'complete_audit', 'dispose'],
-  user:      ['view', 'edit', 'checkout', 'maintain', 'issue', 'resolve', 'audit', 'complete_audit'],
+  user:      ['view', 'checkout', 'maintain', 'issue', 'resolve', 'audit'],
   requestor: ['view', 'checkout', 'issue', 'audit'],
   viewer:    ['view'],
 };
