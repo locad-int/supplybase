@@ -678,6 +678,7 @@
       <button id="btn-refresh" class="sidebar-action-btn" onclick="refreshData()">↻ Refresh</button>
       <button id="btn-stocktake-lock" class="sidebar-action-btn" onclick="toggleStocktakeLock()" style="display:none">🔒 Lock for Stocktake</button>
       <button id="btn-count-sheet" class="sidebar-action-btn" onclick="openCountSheet()" style="display:none">📋 Count Sheet</button>
+      <button id="btn-health" class="sidebar-action-btn" onclick="openHealthCheck()" style="display:none">🩺 System Health <span id="health-badge" style="display:none;margin-left:6px;background:#dc2626;color:#fff;border-radius:99px;font-size:11px;padding:0 7px"></span></button>
       <button id="btn-testmode-settings" class="sidebar-action-btn" onclick="openSettings()" style="display:none">🧪 Test Mode</button>
       <button id="btn-reset" class="sidebar-action-btn sidebar-action-danger" onclick="confirmReset()">↺ Reset</button>
       <button id="btn-install-app" class="sidebar-action-btn" onclick="openInstallModal()" style="display:none;color:#38bdf8">📲 Install App</button>
@@ -2227,6 +2228,18 @@
 <div class="modal-bg" id="count-sheet-modal">
   <div class="modal" style="max-width:760px">
     <div id="cs-body"></div>
+  </div>
+</div>
+
+<!-- SYSTEM HEALTH MODAL (superuser) -->
+<div class="modal-bg" id="health-modal">
+  <div class="modal" style="max-width:860px">
+    <div id="health-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="copyHealthReport()">📋 Copy report</button>
+      <button class="btn btn-secondary" id="health-run-btn" onclick="runHealthCheck(true)">↻ Run again</button>
+      <button class="btn btn-primary" onclick="closeModal('health-modal')">Close</button>
+    </div>
   </div>
 </div>
 
@@ -8967,32 +8980,82 @@ var REQ_TABLE_OK = null; // null=unknown, true=exists, false=missing
 const REQ_LS_KEY = 'supplybase_supply_requests';
 
 function getReqsLocal()  { try { return JSON.parse(localStorage.getItem(REQ_LS_KEY)||'[]'); } catch(e){ return []; } }
-function saveReqsLocal() { localStorage.setItem(REQ_LS_KEY, JSON.stringify(db_reqs)); }
+function saveReqsLocal() { try { localStorage.setItem(REQ_LS_KEY, JSON.stringify(db_reqs)); } catch(e) {} }
+
+// Requests window: everything from the last 90 days plus every pending
+// request regardless of age, fetched page by page. Previously one query
+// returned only the newest 1,000 rows and every device merged in whatever it
+// had cached locally — so requests withdrawn/removed elsewhere lived on as
+// "pending" ghosts on some phones, and each device showed a different list.
+var REQ_HISTORY_DAYS = 90;
+function _stripReqLocalFlags(r) { var c = Object.assign({}, r); delete c._unsynced; return c; }
+
+// Next REQ-YYYYMM-#### number: one past the highest number already used this
+// month (was "how many requests this device has cached + 1", which differed
+// per device and produced clashing or jumping numbers).
+function _nextReqSeq(yyyymm) {
+  var re = new RegExp('^REQ-' + yyyymm + '-(\\d+)$');
+  var max = 0;
+  db_reqs.forEach(function(r) { var m = String(r.reqNumber || '').match(re); if (m) max = Math.max(max, parseInt(m[1], 10)); });
+  return max + 1;
+}
+
+// A .single() lookup that found no row (PostgREST code PGRST116) means the
+// request was deleted on the server — withdrawn or removed on another device.
+function _reqGoneOnServer(res) {
+  return !!(res && !res.data && res.error && (res.error.code === 'PGRST116' || /0 rows|no rows/i.test(res.error.message || '')));
+}
+function _dropLocalReq(id) {
+  db_reqs = db_reqs.filter(function(r) { return r.id !== id; });
+  saveReqsLocal();
+  updateRequestBadge();
+}
+
+async function _fetchAllReqPages(build) {
+  var out = [], size = 1000;
+  for (var from = 0; from < 50000; from += size) {
+    var res = await build().order('createdAt', { ascending: false }).range(from, from + size - 1);
+    if (res.error) return { error: res.error };
+    out = out.concat(res.data || []);
+    if (!res.data || res.data.length < size) break;
+  }
+  return { data: out };
+}
 
 async function loadRequests() {
   if (!sb) { db_reqs = getReqsLocal(); updateRequestBadge(); return; }
   try {
-    var r = await sb.from('supply_requests').select('*').order('createdAt', { ascending: false });
+    var since = new Date(Date.now() - REQ_HISTORY_DAYS * 86400000).toISOString();
+    var recent = await _fetchAllReqPages(function() { return sb.from('supply_requests').select('*').gte('createdAt', since); });
+    var oldPending = recent.error ? null : await _fetchAllReqPages(function() { return sb.from('supply_requests').select('*').lt('createdAt', since).eq('status', 'pending'); });
+    var r = recent.error ? recent : (oldPending && oldPending.error ? oldPending : { data: recent.data.concat(oldPending ? oldPending.data : []) });
     if (r.error) { db_reqs = getReqsLocal(); REQ_TABLE_OK = false; }
     else {
       REQ_TABLE_OK = true;
       var sbData = r.data || [];
-      // Merge: Supabase is primary, but keep any localStorage-only items
-      // (requests that failed to sync due to schema differences are preserved)
+      // Server is the source of truth. The only local-only requests kept are
+      // ones this device created but couldn't upload (flagged _unsynced);
+      // they're retried here. Anything else missing from the server was
+      // withdrawn or removed elsewhere and is dropped.
       var sbIds = new Set(sbData.map(function(x){ return x.id; }));
-      var localReqs = getReqsLocal();
-      var localOnly = localReqs.filter(function(x){ return !sbIds.has(x.id); });
-      db_reqs = sbData.concat(localOnly).sort(function(a,b){ return new Date(b.createdAt) - new Date(a.createdAt); });
+      var unsynced = getReqsLocal().filter(function(x){ return x._unsynced && !sbIds.has(x.id); });
+      for (var u = 0; u < unsynced.length; u++) {
+        try {
+          var up = await sb.from('supply_requests').upsert([_stripReqLocalFlags(unsynced[u])], { onConflict: 'id' });
+          if (!up.error) { delete unsynced[u]._unsynced; }
+        } catch(e) {}
+      }
+      db_reqs = sbData.concat(unsynced).sort(function(a,b){ return new Date(b.createdAt) - new Date(a.createdAt); });
       // Backfill missing reqNumbers (requests created before the column was added)
       var needsBackfill = db_reqs.filter(function(r) { return !r.reqNumber; });
       if (needsBackfill.length) {
         // Sort oldest-first so sequence numbers are chronologically consistent
         var sorted = db_reqs.slice().sort(function(a,b){ return new Date(a.createdAt) - new Date(b.createdAt); });
-        sorted.forEach(function(r, idx) {
+        sorted.forEach(function(r) {
           if (!r.reqNumber) {
             var d = new Date(r.createdAt);
             var yyyymm = d.getFullYear() + String(d.getMonth()+1).padStart(2,'0');
-            r.reqNumber = 'REQ-' + yyyymm + '-' + String(idx + 1).padStart(4, '0');
+            r.reqNumber = 'REQ-' + yyyymm + '-' + String(_nextReqSeq(yyyymm)).padStart(4, '0');
             // Patch back to Supabase silently
             sb.from('supply_requests').update({ reqNumber: r.reqNumber }).eq('id', r.id).then(function(){}).catch(function(){});
           }
@@ -9309,8 +9372,9 @@ async function _submitRequestImpl() {
   var yyyymm = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0');
   var newReqs = [];
 
+  var seqBase = _nextReqSeq(yyyymm);
   reqCart.forEach(function(cartItem, idx) {
-    var seq = String(db_reqs.length + newReqs.length + 1).padStart(4, '0');
+    var seq = String(seqBase + newReqs.length).padStart(4, '0');
     var req = {
       id:          'req_' + Date.now() + '_' + Math.random().toString(36).slice(2,7) + '_' + idx,
       reqNumber:   'REQ-' + yyyymm + '-' + seq,
@@ -9359,11 +9423,14 @@ async function _submitRequestImpl() {
             if (two && two.error) throw two.error;
             REQ_TABLE_OK = true;
             sb.from('supply_requests').update({ reqNumber: req.reqNumber, batchId: req.batchId, station: req.station }).eq('id', req.id).then(function(){}).catch(function(){});
-          } catch(e2) { REQ_TABLE_OK = false; }
+          } catch(e2) { REQ_TABLE_OK = false; req._unsynced = true; }
         }
       }
     }
+  } else {
+    newReqs.forEach(function(r) { r._unsynced = true; });
   }
+  saveReqsLocal(); // persists any _unsynced flags so the next load retries them
 
   reqCart = [];
   renderReqCart();
@@ -9487,6 +9554,7 @@ async function confirmBatchIssuance() {
           req.status = freshReqStatus.data.status;
           continue;
         }
+        if (_reqGoneOnServer(freshReqStatus)) { _dropLocalReq(req.id); continue; } // withdrawn/removed elsewhere
       } catch(e) {}
     }
     var issueEl = document.getElementById('batch-crm-qty-' + req.id);
@@ -9714,6 +9782,13 @@ async function confirmIssuance() {
         renderRequests();
         return;
       }
+      if (_reqGoneOnServer(freshReqStatus2)) {
+        _dropLocalReq(req.id);
+        closeModal('confirm-request-modal');
+        alert('This request was withdrawn or removed on another device, so nothing was issued.');
+        renderRequests();
+        return;
+      }
     } catch(e) {}
   }
   var issueQty = Math.max(1, parseInt(document.getElementById('crm-issue-qty').value) || req.qty);
@@ -9877,6 +9952,15 @@ async function massConfirmRequests() {
       for (var i = 0; i < ids.length; i++) {
         var req = db_reqs.find(function(x) { return x.id === ids[i]; });
         if (!req || req.status !== 'pending') continue;
+        // Same server re-check the single/batch confirm paths do: skip lines
+        // already handled on another device, or withdrawn/removed there.
+        if (sb && REQ_TABLE_OK !== false) {
+          try {
+            var freshMS = await sb.from('supply_requests').select('status').eq('id', req.id).single();
+            if (freshMS.data && freshMS.data.status && freshMS.data.status !== 'pending') { req.status = freshMS.data.status; continue; }
+            if (_reqGoneOnServer(freshMS)) { _dropLocalReq(req.id); continue; }
+          } catch(e) {}
+        }
 
         var issued = req.qty;
         var item = db.items.find(function(it) { return it.id === req.itemId; });
@@ -11115,6 +11199,8 @@ function applyRoleUI() {
   show('btn-po-history',     can('reorder'));
   show('btn-import-suppliers', currentRole === 'superuser');
   show('btn-supplier-dir', currentRole === 'superuser' || currentRole === 'user');
+  show('btn-health', currentRole === 'superuser');
+  if (typeof scheduleAutoHealthCheck === 'function') scheduleAutoHealthCheck();
   if (typeof renderOpsReminders === 'function') renderOpsReminders();
   // Test Mode banner is superuser-only, so re-check it whenever the role UI
   // is applied (login / account switch), not just when settings load. Only
@@ -11711,6 +11797,294 @@ function _csDoneHtml() {
     + '<button class="btn btn-secondary" onclick="closeModal(\'count-sheet-modal\');switchTab(\'report\');setRptPreset(\'' + _csWeekPreset(r.date) + '\')">View in Cost Report</button>'
     + (stocktakeLock ? '<button class="btn btn-secondary" onclick="closeModal(\'count-sheet-modal\');toggleStocktakeLock()">🔓 Unlock stocktake</button>' : '')
     + '<button class="btn btn-primary" onclick="closeModal(\'count-sheet-modal\')">Done</button></div>';
+}
+
+// ─── SYSTEM HEALTH CHECK (superuser) ───────────────────────────────────────
+// One button that runs the same checks done by hand when something looks
+// off: data integrity (stock, FIFO batches, duplicate entries), sync between
+// this device and the server (missing rows, ghost requests), operational
+// loose ends (overdue POs, stale requests, a forgotten lock) and setup gaps
+// (missing database columns, credentials stored in settings). Read-only —
+// it never changes data; each finding says what to do. Runs automatically
+// a few seconds after a superuser signs in and puts a count on the button.
+var HEALTH_LAST_KEY = 'sb_healthLast';
+var _healthResults = null, _healthRunAt = null, _healthRunning = false, _healthAutoDone = false;
+var HEALTH_SEV = { critical: { icon: '🔴', label: 'Critical', rank: 0 }, warning: { icon: '🟠', label: 'Warning', rank: 1 }, info: { icon: '🔵', label: 'Info', rank: 2 }, ok: { icon: '✅', label: 'OK', rank: 3 } };
+
+function scheduleAutoHealthCheck() {
+  if (currentRole !== 'superuser' || _healthAutoDone) return;
+  _healthAutoDone = true;
+  setTimeout(function() { if (currentRole === 'superuser') runHealthCheck(false); }, 8000);
+}
+
+function openHealthCheck() {
+  if (currentRole !== 'superuser') return;
+  openModal('health-modal');
+  if (!_healthResults) runHealthCheck(true); else renderHealthCheck();
+}
+
+function _hItemName(id) { var i = db.items.find(function(x) { return x.id === id; }); return i ? i.name : '(deleted item ' + id + ')'; }
+function _hDT(d) { return d ? new Date(d).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : '—'; }
+
+// Pure checks over loaded data (+ optional server facts). Returns findings.
+function _healthLocalChecks(server) {
+  server = server || {};
+  var out = [];
+  var add = function(id, sev, title, summary, details, fix) { out.push({ id: id, sev: sev, title: title, summary: summary, details: details || [], fix: fix || '' }); };
+  var now = Date.now();
+
+  // ── Data integrity ──
+  var neg = db.items.filter(function(i) { return (i.qty || 0) < 0; });
+  add('negative', neg.length ? 'critical' : 'ok', 'Negative stock', neg.length ? neg.length + ' item(s) below zero' : 'No item is below zero',
+    neg.map(function(i) { return i.name + ': ' + fmt(i.qty) + ' ' + (i.unit || ''); }),
+    'Stock was issued beyond what the system had. Count the item and enter the counted quantity (Count Sheet or inline qty).');
+
+  var drift = db.items.filter(function(i) {
+    var L = i.costLayers;
+    if (typeof L === 'string') { try { L = JSON.parse(L); } catch(e) { L = null; } }
+    if (!Array.isArray(L)) return false;
+    var q = L.reduce(function(s, l) { return s + (+l.qty || 0); }, 0);
+    return Math.abs(q - (i.qty || 0)) > 0.001;
+  });
+  add('fifo', drift.length ? 'warning' : 'ok', 'FIFO cost batches match stock', drift.length ? drift.length + ' item(s) where batches ≠ quantity' : 'Batches match quantity on every item',
+    drift.map(function(i) { return i.name + ': qty ' + fmt(i.qty); }),
+    'Costs for these items may be off. Re-entering the counted quantity re-syncs the batches.');
+
+  var ids = new Set(db.items.map(function(i) { return i.id; }));
+  var orphans = db.logs.filter(function(l) { return !ids.has(l.itemId); });
+  add('orphans', orphans.length ? 'warning' : 'ok', 'Log entries for deleted items', orphans.length ? orphans.length + ' entr' + (orphans.length === 1 ? 'y' : 'ies') + ' point to an item that no longer exists' : 'Every log entry has its item',
+    orphans.slice(0, 20).map(function(l) { return _hDT(l.date) + ' · ' + l.type + ' ' + fmt(l.qty) + ' · ' + (l.by || ''); }),
+    'Usually from deleting an item that had history. Reports show these as "Deleted Item".');
+
+  // Same item, type, qty, person (and PO for deliveries) within 2 minutes —
+  // the signature of a double tap.
+  var since14 = now - 14 * 86400000, groups = {}, dups = [];
+  db.logs.forEach(function(l) {
+    if (l.type === 'adjust' || new Date(l.date).getTime() < since14) return;
+    var k = [l.itemId, l.type, l.qty, l.by || '', l.type === 'restock' ? (String(l.ref || '').match(PO_NUMBER_RE) || [''])[0] : ''].join('|');
+    (groups[k] = groups[k] || []).push(l);
+  });
+  Object.keys(groups).forEach(function(k) {
+    var a = groups[k].sort(function(x, y) { return new Date(x.date) - new Date(y.date); });
+    for (var i = 1; i < a.length; i++) {
+      var gap = (new Date(a[i].date) - new Date(a[i - 1].date)) / 1000;
+      if (gap <= 120) dups.push({ l: a[i], gap: gap });
+    }
+  });
+  dups.sort(function(a, b) { return String(b.l.date).localeCompare(String(a.l.date)); });
+  add('dup-logs', dups.length ? 'critical' : 'ok', 'Possible double entries (last 14 days)', dups.length ? dups.length + ' entr' + (dups.length === 1 ? 'y' : 'ies') + ' repeated within 2 minutes' : 'No repeated entries found',
+    dups.slice(0, 25).map(function(d) { var l = d.l; return _hDT(l.date) + ' · ' + _hItemName(l.itemId) + ' · ' + l.type + ' ' + fmt(l.qty) + ' by ' + (l.by || '?') + (l.ref ? ' · ' + l.ref : '') + ' (' + Math.round(d.gap) + 's after the previous one)'; }),
+    'Check each against the DR / request. If it really happened once, delete or reverse the extra entry in the Usage Log.');
+
+  var since30 = now - 30 * 86400000;
+  var noCost = db.logs.filter(function(l) { return l.type === 'restock' && (l.costAmount === null || l.costAmount === undefined) && new Date(l.date).getTime() >= since30 && l.by !== 'Initial'; });
+  add('no-cost', noCost.length ? 'warning' : 'ok', 'Deliveries without a cost (last 30 days)', noCost.length ? noCost.length + ' deliver' + (noCost.length === 1 ? 'y' : 'ies') + ' saved with no cost' : 'Every delivery has a cost',
+    noCost.slice(0, 20).map(function(l) { return _hDT(l.date) + ' · ' + _hItemName(l.itemId) + ' · ' + fmt(l.qty) + ' by ' + (l.by || '?'); }),
+    'These are valued at the item\'s cost on record. If the invoice price differed, the cost report is slightly off.');
+
+  var zeroCost = db.items.filter(function(i) { return (i.qty || 0) > 0 && !(i.cost > 0); });
+  add('zero-cost', zeroCost.length ? 'info' : 'ok', 'In-stock items with ₱0 cost', zeroCost.length ? zeroCost.length + ' item(s) — their usage costs ₱0' : 'Every in-stock item has a cost',
+    zeroCost.slice(0, 30).map(function(i) { return i.name; }),
+    'Fine for client-supplied packaging. If Locad buys any of these, set their cost.');
+
+  // ── Sync: this device vs the server ──
+  if (server.counts) {
+    var loaded = { items: db.items.length, logs: db.logs.length, reorders: db.reorders.length, purchase_orders: (db.purchaseOrders || []).length };
+    var short = Object.keys(loaded).filter(function(t) { return typeof server.counts[t] === 'number' && server.counts[t] > loaded[t]; });
+    add('load', short.length ? 'critical' : 'ok', 'All data loaded on this device', short.length ? 'Some tables did not fully load' : 'Items, logs, reorders and POs fully loaded',
+      short.map(function(t) { return t + ': ' + loaded[t] + ' loaded of ' + server.counts[t] + ' on the server'; }),
+      'Refresh. If it persists, reports on this device are missing data — tell your developer (likely a 1,000-row limit).');
+  }
+  if (server.pendingIds) {
+    var srv = new Set(server.pendingIds);
+    var localPending = db_reqs.filter(function(r) { return r.status === 'pending' && !r._unsynced; });
+    var ghosts = localPending.filter(function(r) { return !srv.has(r.id); });
+    var localIds = new Set(db_reqs.map(function(r) { return r.id; }));
+    var missing = server.pendingIds.filter(function(id) { return !localIds.has(id); });
+    var bad = ghosts.length + missing.length;
+    add('req-sync', bad ? 'critical' : 'ok', 'Requests match the server', bad ? (ghosts.length ? ghosts.length + ' pending here but not on the server' : '') + (ghosts.length && missing.length ? '; ' : '') + (missing.length ? missing.length + ' pending on the server but missing here' : '') : 'Pending requests on this device match the server',
+      ghosts.map(function(r) { return 'Not on server: ' + (r.reqNumber || r.id) + ' · ' + r.itemName + ' × ' + fmtInt(r.qty) + ' · ' + r.requestedBy + ' · ' + _hDT(r.createdAt); })
+        .concat(missing.map(function(id) { return 'Missing here: ' + id; })),
+      'Refresh this page. If it stays, other approvers may see a different list — tell your developer.');
+  }
+  var unsynced = (typeof db_reqs !== 'undefined' ? db_reqs : []).filter(function(r) { return r._unsynced; });
+  add('unsynced', unsynced.length ? 'warning' : 'ok', 'Requests waiting to upload (this device)', unsynced.length ? unsynced.length + ' request(s) saved here but not on the server yet' : 'Nothing waiting to upload',
+    unsynced.map(function(r) { return (r.reqNumber || r.id) + ' · ' + r.itemName + ' × ' + fmtInt(r.qty); }),
+    'They retry on every refresh. If they stay, check the internet connection.');
+
+  var dot = document.getElementById('realtime-dot');
+  var rt = dot ? String(dot.title || '') : '';
+  if (rt) add('realtime', /SUBSCRIBED/.test(rt) ? 'ok' : 'warning', 'Live updates', /SUBSCRIBED/.test(rt) ? 'Connected — changes from other devices appear instantly' : 'Not connected (' + rt.replace('Realtime: ', '') + ')', [],
+    'This device only sees others\' changes on refresh until it reconnects. Refresh the page.');
+
+  // ── Operations ──
+  if (stocktakeLock && stocktakeLockAt && now - new Date(stocktakeLockAt).getTime() > 4 * 3600000) {
+    add('lock', 'warning', 'Stocktake lock left on', 'Locked since ' + _hDT(stocktakeLockAt) + (stocktakeLockBy ? ' by ' + stocktakeLockBy : ''), [],
+      'Issuing and receiving are paused for everyone. Unlock if the count is finished.');
+  } else add('lock', 'ok', 'Stocktake lock', stocktakeLock ? 'Locked (under 4 hours)' : 'Not locked', [], '');
+
+  var today = _phYmd(new Date());
+  var overdue = [], noDate = [];
+  (db.purchaseOrders || []).forEach(function(po) {
+    var d = _poDetailData(po.poNumber);
+    if (!d.lines.length) return;
+    var open = d.lines.some(function(L) { return L.status !== 'received' && L.status !== 'closed short'; });
+    if (!open) return;
+    var due = _parsePromisedYmd(po.delivery);
+    if (!due) noDate.push(po.poNumber + ' · ' + (po.supplier || ''));
+    else if (due < today) overdue.push(po.poNumber + ' · ' + (po.supplier || '') + ' · due ' + _fmtYmd(due) + ' · ' + d.linesDone + '/' + d.lines.length + ' lines done');
+  });
+  add('po-overdue', overdue.length ? 'warning' : 'ok', 'Overdue purchase orders', overdue.length ? overdue.length + ' open PO(s) past their delivery date' : 'No open PO is past due', overdue,
+    'Follow up with the supplier, receive what arrived, or close lines short if the rest won\'t come.');
+  add('po-nodate', noDate.length ? 'info' : 'ok', 'Open POs without a delivery date', noDate.length ? noDate.length + ' open PO(s)' : 'Every open PO has a date', noDate,
+    'Edit the PO and add the expected delivery date so on-time tracking works.');
+
+  var fullOpen = db.reorders.filter(function(r) { return r.status === 'ordered' && r.qty > 0 && _reorderReceivedSoFar(r) >= r.qty; });
+  add('po-full-open', fullOpen.length ? 'warning' : 'ok', 'PO lines fully received but still open', fullOpen.length ? fullOpen.length + ' line(s)' : 'None',
+    fullOpen.map(function(r) { return (r.poNumber || 'no PO') + ' · ' + _hItemName(r.itemId) + ' · ' + fmt(_reorderReceivedSoFar(r)) + ' of ' + fmt(r.qty); }),
+    'Mark them received on the Reorder tab. If more arrived than ordered, check for a double receipt.');
+
+  var pend = (typeof db_reqs !== 'undefined' ? db_reqs : []).filter(function(r) { return r.status === 'pending'; });
+  var stale = pend.filter(function(r) { return now - new Date(r.createdAt).getTime() > 3 * 86400000; });
+  add('req-stale', stale.length ? 'warning' : 'ok', 'Requests pending over 3 days', stale.length ? stale.length + ' request(s)' : 'None',
+    stale.map(function(r) { return (r.reqNumber || '') + ' · ' + r.itemName + ' × ' + fmtInt(r.qty) + ' · ' + r.requestedBy + ' · ' + _hDT(r.createdAt); }),
+    'Confirm or reject them — old pending requests clutter the queue and can be approved by mistake later.');
+
+  var dupReq = typeof _findDuplicateReq === 'function' ? pend.filter(function(r) { return _findDuplicateReq(r.itemId, r.qty, { at: r.createdAt, excludeId: r.id, batchId: r.batchId }); }) : [];
+  add('req-dup', dupReq.length ? 'warning' : 'ok', 'Possible duplicate requests', dupReq.length ? dupReq.length + ' pending line(s) match another request' : 'None',
+    dupReq.map(function(r) { var d = _findDuplicateReq(r.itemId, r.qty, { at: r.createdAt, excludeId: r.id, batchId: r.batchId }); return (r.reqNumber || '') + ' ' + r.itemName + ' × ' + fmtInt(r.qty) + ' (' + r.requestedBy + ') ↔ ' + (d.reqNumber || '') + ' (' + d.requestedBy + ', ' + d.status + ')'; }),
+    'Check with the requesters and reject the extra one before confirming.');
+
+  // ── Setup ──
+  var schema = [];
+  if (typeof _fifoColsOK !== 'undefined' && _fifoColsOK === false) schema.push('FIFO columns missing on items/logs — run fifo_setup.sql (batch costing is not being saved)');
+  if (typeof _poRevColsOK !== 'undefined' && _poRevColsOK === false) schema.push('PO revision columns missing — run: ' + PO_REV_SQL.replace(/\n/g, ' '));
+  if (typeof _poVatColOK !== 'undefined' && _poVatColOK === false) schema.push('PO VAT column missing — run: ' + PO_VAT_SQL);
+  add('schema', schema.length ? (/FIFO/.test(schema.join()) ? 'critical' : 'warning') : 'ok', 'Database columns', schema.length ? schema.length + ' missing column set(s)' : 'No missing columns detected', schema,
+    'Run the SQL shown in Supabase → SQL Editor.');
+
+  if (server.settingsKeys) {
+    var risky = server.settingsKeys.filter(function(k) { return /pass|secret|credential|token|api[_-]?key/i.test(k); });
+    add('secrets', risky.length ? 'warning' : 'ok', 'Credentials stored in settings', risky.length ? risky.length + ' setting(s) look like credentials' : 'None found',
+      risky.map(function(k) { return 'settings → ' + k + ' (value not read)'; }),
+      'Anyone with app access can read the settings table. Move passwords out of it (e.g. Supabase Auth) and change any password that was stored there.');
+  }
+  return out;
+}
+
+async function _healthServerFacts() {
+  if (!sb) return {};
+  var facts = {};
+  try {
+    var tables = ['items', 'logs', 'reorders', 'purchase_orders'];
+    var res = await Promise.all(tables.map(function(t) { return sb.from(t).select('*', { count: 'exact', head: true }); }));
+    facts.counts = {};
+    res.forEach(function(r, i) { if (r && !r.error && typeof r.count === 'number') facts.counts[tables[i]] = r.count; });
+  } catch(e) {}
+  try {
+    var p = await sb.from('supply_requests').select('id').eq('status', 'pending').limit(5000);
+    if (p && !p.error) facts.pendingIds = (p.data || []).map(function(r) { return r.id; });
+  } catch(e) {}
+  try {
+    var s = await sb.from('settings').select('key');
+    if (s && !s.error) facts.settingsKeys = (s.data || []).map(function(r) { return r.key; });
+  } catch(e) {}
+  return facts;
+}
+
+async function runHealthCheck(show) {
+  if (currentRole !== 'superuser' || _healthRunning) return;
+  _healthRunning = true;
+  var btn = document.getElementById('health-run-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  if (show) { var b = document.getElementById('health-body'); if (b) b.innerHTML = '<h2>🩺 System Health</h2><div style="color:var(--muted);padding:20px 0">Running checks…</div>'; }
+  try {
+    var facts = await _healthServerFacts();
+    _healthResults = _healthLocalChecks(facts);
+    _healthRunAt = new Date();
+    var n = _healthCounts();
+    try { localStorage.setItem(HEALTH_LAST_KEY, JSON.stringify({ at: _healthRunAt.toISOString(), critical: n.critical, warning: n.warning })); } catch(e) {}
+  } catch(e) {
+    console.warn('Health check failed:', e);
+    _healthResults = [{ id: 'error', sev: 'warning', title: 'Health check could not finish', summary: String(e && e.message || e), details: [], fix: 'Refresh and try again.' }];
+    _healthRunAt = new Date();
+  } finally {
+    _healthRunning = false;
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Run again'; }
+  }
+  _updateHealthBadge();
+  if (show || document.getElementById('health-modal').classList.contains('open')) renderHealthCheck();
+}
+
+function _healthCounts() {
+  var n = { critical: 0, warning: 0, info: 0, ok: 0 };
+  (_healthResults || []).forEach(function(r) { n[r.sev]++; });
+  return n;
+}
+
+function _updateHealthBadge() {
+  var badge = document.getElementById('health-badge');
+  if (!badge) return;
+  var n = _healthCounts();
+  var issues = n.critical + n.warning;
+  badge.style.display = issues ? '' : 'none';
+  badge.style.background = n.critical ? '#dc2626' : '#d97706';
+  badge.textContent = issues;
+  badge.title = n.critical + ' critical, ' + n.warning + ' warning(s)';
+}
+
+function renderHealthCheck() {
+  var body = document.getElementById('health-body');
+  if (!body || !_healthResults) return;
+  var n = _healthCounts();
+  var rows = _healthResults.slice().sort(function(a, b) { return HEALTH_SEV[a.sev].rank - HEALTH_SEV[b.sev].rank; });
+  var chip = function(sev, count) {
+    var c = { critical: '#dc2626', warning: '#d97706', info: '#2563eb', ok: '#16a34a' }[sev];
+    return '<span style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;border:1px solid ' + c + ';color:' + c + '">' + HEALTH_SEV[sev].icon + ' ' + count + ' ' + HEALTH_SEV[sev].label + '</span>';
+  };
+  var headline = n.critical ? 'Needs attention now' : (n.warning ? 'Working, with some things to tidy up' : 'All good');
+  var html = '<h2 style="margin-bottom:4px">🩺 System Health</h2>'
+    + '<div style="font-size:13px;color:var(--muted);margin-bottom:10px">' + headline + ' · checked ' + _hDT(_healthRunAt) + ' on this device · read-only, nothing is changed</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' + chip('critical', n.critical) + chip('warning', n.warning) + chip('info', n.info) + chip('ok', n.ok) + '</div>'
+    + '<div style="max-height:60vh;overflow-y:auto">';
+  rows.forEach(function(r) {
+    var sev = HEALTH_SEV[r.sev];
+    var isIssue = r.sev !== 'ok';
+    html += '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px' + (r.sev === 'critical' ? ';border-color:rgba(220,38,38,.45);background:rgba(220,38,38,.04)' : '') + '">'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><strong>' + sev.icon + ' ' + esc(r.title) + '</strong>'
+      + '<span style="font-size:12px;color:var(--muted);text-align:right">' + esc(r.summary) + '</span></div>';
+    if (isIssue && r.details.length) {
+      html += '<details style="margin-top:6px"' + (r.sev === 'critical' ? ' open' : '') + '><summary style="font-size:12px;cursor:pointer;color:var(--accent)">Details (' + r.details.length + ')</summary>'
+        + '<ul style="font-size:12px;margin:6px 0 0 18px;padding:0;line-height:1.6">' + r.details.slice(0, 40).map(function(d) { return '<li>' + esc(d) + '</li>'; }).join('')
+        + (r.details.length > 40 ? '<li>… ' + (r.details.length - 40) + ' more</li>' : '') + '</ul></details>';
+    }
+    if (isIssue && r.fix) html += '<div style="font-size:12px;margin-top:6px"><strong>What to do:</strong> ' + esc(r.fix) + '</div>';
+    html += '</div>';
+  });
+  body.innerHTML = html + '</div>';
+}
+
+function _healthReportText() {
+  if (!_healthResults) return '';
+  var n = _healthCounts();
+  var lines = ['SupplyBase System Health — ' + _hDT(_healthRunAt) + ' (' + ((currentUser && currentUser.username) || '') + ')',
+    n.critical + ' critical · ' + n.warning + ' warning · ' + n.info + ' info · ' + n.ok + ' OK', ''];
+  _healthResults.slice().sort(function(a, b) { return HEALTH_SEV[a.sev].rank - HEALTH_SEV[b.sev].rank; }).forEach(function(r) {
+    lines.push('[' + HEALTH_SEV[r.sev].label.toUpperCase() + '] ' + r.title + ' — ' + r.summary);
+    if (r.sev !== 'ok') {
+      r.details.slice(0, 15).forEach(function(d) { lines.push('   • ' + d); });
+      if (r.fix) lines.push('   → ' + r.fix);
+    }
+  });
+  return lines.join('\n');
+}
+
+function copyHealthReport() {
+  var txt = _healthReportText();
+  if (!txt) return;
+  var done = function() { var b = document.querySelector('#health-modal .btn-secondary'); if (b) { var t = b.textContent; b.textContent = '✓ Copied'; setTimeout(function() { b.textContent = t; }, 1500); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done).catch(function() { prompt('Copy the report:', txt); });
+  else prompt('Copy the report:', txt);
 }
 
 // ─── OPERATIONAL WEEK ──────────────────────────────────────────────────────
@@ -15601,7 +15975,7 @@ async function aiCreateSupplyRequest(input) {
 
   var now = new Date();
   var yyyymm = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0');
-  var seq = String(db_reqs.length + 1).padStart(4, '0');
+  var seq = String(_nextReqSeq(yyyymm)).padStart(4, '0');
   var req = {
     id: 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     reqNumber: 'REQ-' + yyyymm + '-' + seq,
@@ -15615,7 +15989,8 @@ async function aiCreateSupplyRequest(input) {
   saveReqsLocal();
   if (sb && REQ_TABLE_OK !== false) {
     try {
-      await sb.from('supply_requests').insert([req]);
+      var ins = await sb.from('supply_requests').insert([req]);
+      if (ins && ins.error) throw ins.error;
       REQ_TABLE_OK = true;
     } catch (e) {
       // Same schema-mismatch fallback submitRequest() uses — some columns
@@ -15624,12 +15999,13 @@ async function aiCreateSupplyRequest(input) {
       try {
         var base = Object.assign({}, req);
         delete base.priority; delete base.reqNumber; delete base.batchId; delete base.station;
-        await sb.from('supply_requests').insert([base]);
+        var ins2 = await sb.from('supply_requests').insert([base]);
+        if (ins2 && ins2.error) throw ins2.error;
         REQ_TABLE_OK = true;
         sb.from('supply_requests').update({ reqNumber: req.reqNumber, batchId: req.batchId, station: req.station }).eq('id', req.id).then(function(){}).catch(function(){});
-      } catch (e2) { REQ_TABLE_OK = false; }
+      } catch (e2) { REQ_TABLE_OK = false; req._unsynced = true; saveReqsLocal(); }
     }
-  }
+  } else { req._unsynced = true; saveReqsLocal(); }
   logAudit('Supply request created (Shelfie)', req.itemName + ' x' + qty + ' for ' + req.requestedBy);
   updateRequestBadge();
   renderRequests();
