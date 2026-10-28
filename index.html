@@ -68,6 +68,11 @@
   .nav-group-hdr[aria-expanded="false"] + .sidebar-nav { display: none; }
   .ng-beta { background: #f59e0b; color: #1c1917; font-size: 9px; font-weight: 800; letter-spacing: .06em; padding: 1px 6px; border-radius: 99px; margin-left: 4px; vertical-align: 1px; }
   a.nav-item { text-decoration: none; }
+  /* Consumables tools (lock, count sheet, test mode) under the Consumables menu */
+  .nav-tools { padding: 0 0 6px; border-top: 1px solid var(--sidebar-border); margin: 0 10px; padding-top: 6px; }
+  .nav-tools:empty { display: none; }
+  button.nav-item.nav-tool { width: calc(100% - 0px); margin: 2px 0; background: none; border: none; font-family: inherit; text-align: left; font-size: 13px; }
+  #ng-hdr-cons[aria-expanded="false"] ~ #cons-tools { display: none; }
   /* Consumables banners (test mode, stocktake lock, count reminders, FIFO setup) stay off the Assets pages */
   body.on-assets #testmode-banner,
   body.on-assets #stocktake-banner,
@@ -714,6 +719,11 @@
     <div id="nav-audit" class="nav-item" data-tab="audit" draggable="true" onclick="switchTab('audit')">📋 <span>Audit Log</span><span class="nav-drag-handle">⠿</span></div>
     <div class="reorder-hint" id="reorder-hint" style="display:none">Drag to reorder</div>
   </nav>
+  <div id="cons-tools" class="nav-tools">
+    <button type="button" id="btn-stocktake-lock" class="nav-item nav-tool" onclick="toggleStocktakeLock()" style="display:none">🔒 Lock for Stocktake</button>
+    <button type="button" id="btn-count-sheet" class="nav-item nav-tool" onclick="openCountSheet()" style="display:none">📋 <span>Count Sheet</span></button>
+    <button type="button" id="btn-testmode-settings" class="nav-item nav-tool" onclick="openSettings()" style="display:none">🧪 <span>Test Mode</span></button>
+  </div>
   <div id="ng-assets" style="display:none">
     <button type="button" class="nav-group-hdr" id="ng-hdr-assets" onclick="toggleNavGroup('assets')" aria-expanded="true">
       <span>🧰 Assets <span class="ng-beta">BETA</span></span><span class="ng-chev">▾</span>
@@ -736,10 +746,7 @@
       <button id="btn-change-pass" class="sidebar-action-btn" onclick="openChangePassword()">🔑 Change Password</button>
       <button id="btn-contact-admin" class="sidebar-action-btn" onclick="openContactAdmin()">📞 Contact Admin</button>
       <button id="btn-refresh" class="sidebar-action-btn" onclick="refreshData()">↻ Refresh</button>
-      <button id="btn-stocktake-lock" class="sidebar-action-btn" onclick="toggleStocktakeLock()" style="display:none">🔒 Lock for Stocktake</button>
-      <button id="btn-count-sheet" class="sidebar-action-btn" onclick="openCountSheet()" style="display:none">📋 Count Sheet</button>
       <button id="btn-health" class="sidebar-action-btn" onclick="openHealthCheck()" style="display:none">🩺 System Health <span id="health-badge" style="display:none;margin-left:6px;background:#dc2626;color:#fff;border-radius:99px;font-size:11px;padding:0 7px"></span></button>
-      <button id="btn-testmode-settings" class="sidebar-action-btn" onclick="openSettings()" style="display:none">🧪 Test Mode</button>
       <button id="btn-reset" class="sidebar-action-btn sidebar-action-danger" onclick="confirmReset()">↺ Reset</button>
       <button id="btn-install-app" class="sidebar-action-btn" onclick="openInstallModal()" style="display:none;color:#38bdf8">📲 Install App</button>
       <button class="sidebar-action-btn sidebar-action-signout" onclick="logout()">Sign out</button>
@@ -11248,7 +11255,9 @@ var ASSET_VIEW_TITLES = { dashboard: 'Dashboard', register: 'Register', checkout
 var _assetsFrameLoaded = false;
 function _ensureAssetsFrame() {
   var f = document.getElementById('assets-frame');
-  if (f && !_assetsFrameLoaded) { f.src = './assets.html?embed=1#' + _assetsView; _assetsFrameLoaded = true; }
+  // `v=` makes the browser fetch the latest assets.html after an update
+  // (a hard refresh of SupplyBase doesn't refresh a page loaded inside it)
+  if (f && !_assetsFrameLoaded) { f.src = './assets.html?embed=1&v=' + Date.now() + '#' + _assetsView; _assetsFrameLoaded = true; }
   return f;
 }
 // On sign-out, drop the embedded page so the next user starts fresh
@@ -11368,6 +11377,9 @@ function applyRoleUI() {
   var ngAssets = document.getElementById('ng-assets');
   if (ngAssets) ngAssets.style.display = (currentRole && currentRole !== 'brand') ? '' : 'none';
   applyNavGroups();
+  // Hide the consumables tools strip (and its divider) when none of its buttons apply
+  var consTools = document.getElementById('cons-tools');
+  if (consTools) consTools.style.display = canManageStocktake() || currentRole === 'superuser' ? '' : 'none';
   if (typeof scheduleAutoHealthCheck === 'function') scheduleAutoHealthCheck();
   if (typeof renderOpsReminders === 'function') renderOpsReminders();
   // Test Mode banner is superuser-only, so re-check it whenever the role UI
