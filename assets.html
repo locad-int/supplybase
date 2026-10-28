@@ -113,6 +113,11 @@
   #login { position: fixed; inset: 0; background: #0f172a; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 16px; }
   #login .box { background: var(--surface); border-radius: 14px; padding: 26px; width: 100%; max-width: 360px; }
 
+  /* Embed mode: shown inside SupplyBase (its sidebar and top bar take over) */
+  body.embed .top { display: none; }
+  body.embed main { padding: 0 0 30px; max-width: none; }
+  body.embed .beta-bar { border: 1px solid #fcd34d; border-radius: 8px; margin: 0 0 14px; padding: 7px 12px; }
+
   #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #0f172a; color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 300; display: none; max-width: 90vw; }
 
   @media (max-width: 760px) {
@@ -388,7 +393,7 @@
   <h2>🏷 Print labels</h2>
   <div class="muted small" id="lb-info" style="margin-bottom:10px"></div>
   <div class="form-grid">
-    <div class="fg"><label>Label stock</label><select id="lb-stock"><option value="roll">50 × 25 mm roll (label printer)</option><option value="a4">A4 sheet (3 × 8)</option></select></div>
+    <div class="fg"><label>Label stock</label><select id="lb-stock"><option value="roll">2 × 1 in sticker roll (label printer)</option><option value="a4">A4 sheet (3 × 8)</option></select></div>
     <div class="fg"><label>Code</label><select id="lb-code"><option value="both">QR + Code 128</option><option value="qr">QR only</option><option value="c128">Code 128 only (1D scanners)</option></select></div>
   </div>
   <div class="modal-actions">
@@ -448,6 +453,8 @@ var PERMS = {
 
 var sb = null;
 var me = null; // { username, role }
+// Embed mode = opened by SupplyBase inside its own layout (?embed=1)
+var EMBED = (function() { try { return /[?&]embed=1\b/.test(location.search) && window.parent !== window; } catch (e) { return false; } })();
 var S = { assets: [], checkouts: [], maint: [], issues: [], audits: [], scans: [], log: [], people: [] };
 
 function can(action) { return !!(me && PERMS[me.role] && PERMS[me.role].indexOf(action) !== -1); }
@@ -678,8 +685,9 @@ var VIEWS = ['dashboard', 'register', 'checkout', 'maintenance', 'issues', 'audi
 function go(v) {
   if (VIEWS.indexOf(v) === -1) v = 'dashboard';
   currentView = v;
-  // Keep the address in step so SupplyBase's sidebar links and bookmarks open the same view
+  // Keep the address in step so bookmarks open the same view
   if (location.hash !== '#' + v) { try { history.replaceState(null, '', '#' + v); } catch (e) {} }
+  if (EMBED) { try { window.parent.onAssetsView && window.parent.onAssetsView(v); } catch (e) {} }
   document.querySelectorAll('.view').forEach(function(s) { s.classList.toggle('active', s.id === 'v-' + v); });
   document.querySelectorAll('#nav button').forEach(function(b) { b.classList.toggle('active', b.dataset.v === v); });
   renderView(v);
@@ -698,9 +706,14 @@ function renderAll() {
 }
 function renderNavCounts() {
   var set = function(id, n) { var el = document.getElementById(id); el.style.display = n ? '' : 'none'; el.textContent = n; };
-  set('nav-overdue', S.checkouts.filter(function(c) { return isOverdue(c); }).length);
-  set('nav-pm', S.assets.filter(function(a) { return pmState(a).state === 'overdue'; }).length);
-  set('nav-issues', S.issues.filter(function(i) { return i.status !== 'Resolved' && (i.severity === 'High' || i.severity === 'Critical'); }).length);
+  var counts = {
+    checkout: S.checkouts.filter(function(c) { return isOverdue(c); }).length,
+    maintenance: S.assets.filter(function(a) { return pmState(a).state === 'overdue'; }).length,
+    issues: S.issues.filter(function(i) { return i.status !== 'Resolved' && (i.severity === 'High' || i.severity === 'Critical'); }).length,
+  };
+  set('nav-overdue', counts.checkout); set('nav-pm', counts.maintenance); set('nav-issues', counts.issues);
+  // Same counts on SupplyBase's sidebar when shown inside it
+  if (EMBED) { try { window.parent.onAssetsCounts && window.parent.onAssetsCounts(counts); } catch (e) {} }
 }
 function applyPerms() {
   [['perm-edit', 'edit'], ['perm-maintain', 'maintain'], ['perm-issue', 'issue']].forEach(function(p) {
@@ -1641,7 +1654,7 @@ function printLabels() {
       + (code !== 'qr' ? '<div class="bc">' + c128Svg(id) + '</div>' : '') + '<div class="own">LOCAD · Cabuyao FC</div></div></div>';
   }).join('');
   var css = stock === 'roll'
-    ? '@page{size:50mm 25mm;margin:0}.lb{width:50mm;height:25mm;page-break-after:always;padding:1.5mm 2mm}'
+    ? '@page{size:2in 1in;margin:0}.lb{width:2in;height:1in;page-break-after:always;padding:1.5mm 2mm}'
     : '@page{size:A4;margin:8mm 6mm}.sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:0}.lb{height:35mm;border:0.2mm dashed #bbb;padding:2.5mm}';
   var w = window.open('', '_blank');
   if (!w) { toast('Allow pop-ups to print labels.'); return; }
@@ -1692,6 +1705,7 @@ async function startApp() {
   document.addEventListener('visibilitychange', function() { if (!document.hidden) reloadAll(); });
 }
 window.addEventListener('load', function() {
+  if (EMBED) document.body.classList.add('embed');
   initSb();
   if (!sb) { document.body.innerHTML = '<div style="padding:30px">Could not load the database library. Check the internet connection and reload.</div>'; return; }
   var s = readSession();

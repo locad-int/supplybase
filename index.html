@@ -714,12 +714,12 @@
       <span>🧰 Assets <span class="ng-beta">BETA</span></span><span class="ng-chev">▾</span>
     </button>
     <nav class="sidebar-nav" id="sidebar-nav-assets">
-      <a class="nav-item" href="./assets.html#dashboard">📊 <span>Dashboard</span></a>
-      <a class="nav-item" href="./assets.html#register">🗂 <span>Register</span></a>
-      <a class="nav-item" href="./assets.html#checkout">🔁 <span>Check-out / in</span></a>
-      <a class="nav-item" href="./assets.html#maintenance">🛠 <span>Maintenance</span></a>
-      <a class="nav-item" href="./assets.html#issues">⚠️ <span>Issues</span></a>
-      <a class="nav-item" href="./assets.html#audits">📋 <span>Audits</span></a>
+      <div class="nav-item" data-tab="assets" data-av="dashboard" onclick="openAssets('dashboard')">📊 <span>Dashboard</span></div>
+      <div class="nav-item" data-tab="assets" data-av="register" onclick="openAssets('register')">🗂 <span>Register</span></div>
+      <div class="nav-item" data-tab="assets" data-av="checkout" onclick="openAssets('checkout')">🔁 <span>Check-out / in</span><span class="nav-unread-badge" id="anb-checkout" style="display:none"></span></div>
+      <div class="nav-item" data-tab="assets" data-av="maintenance" onclick="openAssets('maintenance')">🛠 <span>Maintenance</span><span class="nav-unread-badge" id="anb-maintenance" style="display:none"></span></div>
+      <div class="nav-item" data-tab="assets" data-av="issues" onclick="openAssets('issues')">⚠️ <span>Issues</span><span class="nav-unread-badge" id="anb-issues" style="display:none"></span></div>
+      <div class="nav-item" data-tab="assets" data-av="audits" onclick="openAssets('audits')">📋 <span>Audits</span></div>
     </nav>
   </div>
   </div>
@@ -792,7 +792,7 @@
   <main>
 
   <!-- Summary Cards -->
-  <div class="summary">
+  <div class="summary" id="cons-summary">
     <div class="card" onclick="filterInventory('')" style="cursor:pointer" title="Show all items">
       <div class="label">Total Items</div>
       <div class="value" id="s-total">0</div>
@@ -817,6 +817,11 @@
       <div class="label">📅 This Week's Expenses</div>
       <div class="value" id="s-value" style="font-size:1.2rem">₱0</div>
     </div>
+  </div>
+
+  <!-- ASSETS TAB (Asset Management, loaded from assets.html inside the SupplyBase layout) -->
+  <div class="tab-panel" id="tab-assets">
+    <iframe id="assets-frame" title="Asset Management" style="width:100%;height:600px;border:0;display:block;border-radius:10px;background:transparent"></iframe>
   </div>
 
   <!-- INVENTORY TAB -->
@@ -4307,7 +4312,10 @@ function switchTab(name) {
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', requests: 'Requests', audit: 'Audit Log', ai: 'Shelfie' };
+  // The consumables summary cards don't belong on the Assets pages
+  var consSummary = document.getElementById('cons-summary');
+  if (consSummary) consSummary.style.display = name === 'assets' ? 'none' : '';
+  var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', requests: 'Requests', audit: 'Audit Log', ai: 'Shelfie', assets: 'Assets' };
   var titleEl = document.getElementById('page-title');
   if (titleEl) titleEl.textContent = (titles[name] || name).toUpperCase();
   if (name === 'inventory') renderInventory();
@@ -4317,6 +4325,7 @@ function switchTab(name) {
   if (name === 'dashboard') renderDashboard();
   if (name === 'requests') { reqVisibleCount = REQ_PAGE_SIZE; renderRequests(); }
   if (name === 'audit') renderAuditLog();
+  if (name === 'assets') { _ensureAssetsFrame(); sizeAssetsFrame(); _markAssetNav(_assetsView); }
   // Sync bottom nav active state
   ['inventory','usage','requests'].forEach(function(t) {
     var btn = document.getElementById('bn-' + t);
@@ -4368,7 +4377,7 @@ function openMobileMoreMenu() {
     html += '<div class="mm-item" onclick="closeMobileMoreMenu();openCompareModal()">⚖ Compare Count Files</div>';
     html += '<div class="mm-item" onclick="closeMobileMoreMenu();openSnapshotModal()">🕒 Inventory Snapshot</div>';
   }
-  if (currentRole && currentRole !== 'brand') html += '<div class="mm-item" onclick="location.href=\'./assets.html\'">🧰 Assets (Beta)</div>';
+  if (currentRole && currentRole !== 'brand') html += '<div class="mm-item" onclick="closeMobileMoreMenu();openAssets(\'dashboard\')">🧰 Assets (Beta)</div>';
   html += '<div class="mm-item" onclick="openSettings();closeMobileMoreMenu()">⚙ Settings</div>';
   html += '<div class="mm-item" onclick="openChangePassword();closeMobileMoreMenu()">🔑 Change Password</div>';
   if (currentRole === 'superuser') {
@@ -11170,6 +11179,7 @@ function showCriticalStockAlert() {
 }
 
 function logout() {
+  if (typeof _resetAssetsFrame === 'function') _resetAssetsFrame();
   stopAutoRefresh();
   stopRealtime();
   stopSessionTimer();
@@ -11212,12 +11222,68 @@ function toggleNavGroup(g) {
   try { localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify(c)); } catch(e) {}
   applyNavGroups();
 }
-// Opening SupplyBase with #report, #requests … (e.g. from the Assets page)
-// lands on that tab instead of Inventory.
+// Opening SupplyBase with #report, #requests, #assets-register … lands on
+// that page instead of Inventory.
 function _initialTab() {
   var h = (location.hash || '').replace('#', '');
+  var m = h.match(/^assets(?:-(\w+))?$/);
+  if (m) { _assetsView = m[1] || 'dashboard'; return 'assets'; }
   return (h && document.getElementById('tab-' + h)) ? h : 'inventory';
 }
+
+// ─── ASSETS INSIDE SUPPLYBASE ──────────────────────────────────────────────────
+// Asset Management lives in assets.html (its own code and tables) but is shown
+// here, inside SupplyBase's sidebar and top bar, in embed mode. Same site, so
+// it shares the signed-in session; it reports which page it's on and its
+// counts back so the sidebar stays in step.
+var _assetsView = 'dashboard';
+var ASSET_VIEW_TITLES = { dashboard: 'Dashboard', register: 'Register', checkout: 'Check-out / in', maintenance: 'Maintenance', issues: 'Issues', audits: 'Audits' };
+var _assetsFrameLoaded = false;
+function _ensureAssetsFrame() {
+  var f = document.getElementById('assets-frame');
+  if (f && !_assetsFrameLoaded) { f.src = './assets.html?embed=1#' + _assetsView; _assetsFrameLoaded = true; }
+  return f;
+}
+// On sign-out, drop the embedded page so the next user starts fresh
+function _resetAssetsFrame() {
+  var f = document.getElementById('assets-frame');
+  if (f && _assetsFrameLoaded) { f.src = 'about:blank'; _assetsFrameLoaded = false; }
+}
+function openAssets(view) {
+  _assetsView = ASSET_VIEW_TITLES[view] ? view : 'dashboard';
+  var f = _ensureAssetsFrame();
+  switchTab('assets');
+  try { if (f.contentWindow && typeof f.contentWindow.go === 'function') f.contentWindow.go(_assetsView); } catch(e) {}
+  _markAssetNav(_assetsView);
+}
+function _markAssetNav(view) {
+  document.querySelectorAll('.nav-item[data-av]').forEach(function(el) {
+    el.classList.toggle('active', !!document.getElementById('tab-assets').classList.contains('active') && el.dataset.av === view);
+  });
+  var t = document.getElementById('page-title');
+  if (t && document.getElementById('tab-assets').classList.contains('active')) t.textContent = ('Assets · ' + (ASSET_VIEW_TITLES[view] || '')).toUpperCase();
+}
+// Called by assets.html (embed mode) when its page changes or its counts update
+window.onAssetsView = function(view) { _assetsView = view; _markAssetNav(view); };
+window.onAssetsCounts = function(c) {
+  ['checkout', 'maintenance', 'issues'].forEach(function(k) {
+    var b = document.getElementById('anb-' + k);
+    if (!b) return;
+    var n = (c && c[k]) || 0;
+    b.textContent = n; b.style.display = n ? 'inline' : 'none';
+  });
+};
+// The embedded page fills the window below the top bar and banners, and
+// scrolls on its own (so its pop-ups stay in view).
+function sizeAssetsFrame() {
+  var f = document.getElementById('assets-frame');
+  if (!f || !document.getElementById('tab-assets').classList.contains('active')) return;
+  var bn = document.getElementById('bottom-nav');
+  var bnH = bn && bn.offsetParent !== null ? bn.offsetHeight : 0;
+  var y0 = f.getBoundingClientRect().top + window.scrollY;
+  f.style.height = Math.max(420, window.innerHeight - y0 - bnH - 16) + 'px';
+}
+window.addEventListener('resize', sizeAssetsFrame);
 
 // ─── NAV REORDER ────────────────────────────────────────────────────────────────
 (function initNavDrag() {
