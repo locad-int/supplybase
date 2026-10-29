@@ -15169,7 +15169,7 @@ var aiPanelOpen = false; // Shelfie is a floating corner widget, not a tab
 // Tools that never write anything (a chat answer or a local file download),
 // so they run the instant they're seen instead of going through the
 // Confirm/Cancel card the three write actions use.
-var AI_READONLY_TOOLS = ['get_cost_report', 'export_cost_report_csv', 'lookup_history', 'get_monthly_summary', 'lookup_asset'];
+var AI_READONLY_TOOLS = ['get_cost_report', 'export_cost_report_csv', 'lookup_history', 'get_monthly_summary', 'lookup_asset', 'get_stock_history'];
 
 // Computes and applies an exact pixel height for the floating panel and its
 // scrollable message list, in JS rather than CSS. A min()/calc()+flex
@@ -16123,6 +16123,7 @@ async function aiRunReadOnlyTool(block) {
     else if (block.name === 'lookup_history') result = aiLookupHistory(block.input || {});
     else if (block.name === 'get_monthly_summary') result = aiGetMonthlySummary(block.input || {});
     else if (block.name === 'lookup_asset') result = await aiLookupAsset(block.input || {});
+    else if (block.name === 'get_stock_history') result = aiGetStockHistory(block.input || {});
     else result = { ok: false, message: 'Unknown query: ' + block.name };
   } catch (e) {
     result = { ok: false, message: 'Failed: ' + (e && e.message ? e.message : String(e)) };
@@ -16767,6 +16768,87 @@ function _aiWhen(d) {
 // shared records (requests store who approved/rejected them, POs store who
 // created/checked/approved them, stock entries store who logged them), with
 // this device's audit lines added as extra detail. ──
+// ── Read-only: rebuild an item's stock level over time from its logs. The
+// current quantity is known; walking the log backwards (undoing each
+// delivery, usage, damage and count) gives the level after every entry, so
+// peaks, lows, averages and stock-outs can be read for any period — or for
+// the stretch when a given supplier was delivering the item. ──
+function _stockDelta(l) {
+  if (l.type === 'restock') return +(l.qty || 0);
+  if (l.type === 'use' || l.type === 'damage') return -(l.qty || 0);
+  if (l.type === 'adjust') return adjustDelta(l) || 0;
+  return 0;
+}
+function _stockSeries(item) {
+  var logs = db.logs.filter(function(l) { return l.itemId === item.id && ['restock', 'use', 'damage', 'adjust'].indexOf(l.type) !== -1; })
+    .sort(function(a, b) { return new Date(a.date) - new Date(b.date); });
+  var after = item.qty || 0, pts = [];
+  for (var i = logs.length - 1; i >= 0; i--) {
+    pts.unshift({ t: new Date(logs[i].date).getTime(), level: after, log: logs[i] });
+    after -= _stockDelta(logs[i]);
+  }
+  return { start: after, pts: pts }; // start = level before the first entry
+}
+function _supplierOfRestock(l) {
+  var s = _rptSupplierFor(l).supplier;
+  return s || '';
+}
+function aiGetStockHistory(input) {
+  input = input || {};
+  var q = String(input.item || '').trim().toLowerCase();
+  if (!q) return { ok: false, message: 'Which item?' };
+  var items = catalogItems().filter(function(i) { return i.id === input.item || String(i.name || '').toLowerCase().indexOf(q) !== -1; });
+  if (!items.length) return { ok: false, message: 'No item matches "' + input.item + '".' };
+  if (items.length > 8) return { ok: false, message: items.length + ' items match "' + input.item + '" — ask the person to be more specific (e.g. a size).' };
+  var sup = String(input.supplier || '').trim().toLowerCase();
+  var fromT = input.from ? new Date(input.from + 'T00:00:00').getTime() : null;
+  var toT = input.to ? new Date(input.to + 'T23:59:59').getTime() : Date.now();
+  if ((input.from && isNaN(fromT)) || (input.to && isNaN(toT))) return { ok: false, message: 'Use dates as YYYY-MM-DD.' };
+  var fmtD = function(t) { return new Date(t).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }); };
+  var out = [];
+  items.forEach(function(item) {
+    var S = _stockSeries(item), unit = item.unit || 'units';
+    var winFrom = fromT, winTo = toT, note = '';
+    if (sup) {
+      var restocks = S.pts.filter(function(p) { return p.log.type === 'restock'; });
+      var mine = restocks.filter(function(p) { return _supplierOfRestock(p.log).toLowerCase().indexOf(sup) !== -1; });
+      if (!mine.length) { out.push(item.name + ': no deliveries from a supplier matching "' + input.supplier + '" on record.'); return; }
+      var firstT = mine[0].t, lastT = mine[mine.length - 1].t;
+      var next = restocks.find(function(p) { var s = _supplierOfRestock(p.log); return p.t > lastT && s && s.toLowerCase().indexOf(sup) === -1; });
+      winFrom = Math.max(firstT, fromT || firstT);
+      winTo = Math.min(next ? next.t - 1 : Date.now(), toT);
+      note = ' (period with ' + _supplierOfRestock(mine[0].log) + ': ' + fmtD(winFrom) + ' – ' + (next ? fmtD(winTo) + ', when another supplier took over' : 'today') + '; ' + mine.length + ' deliver' + (mine.length === 1 ? 'y' : 'ies') + ')';
+    }
+    if (winFrom === null) winFrom = S.pts.length ? S.pts[0].t : Date.now();
+    // Level at the start of the window
+    var level = S.start;
+    S.pts.forEach(function(p) { if (p.t < winFrom) level = p.level; });
+    var startLevel = level, max = { v: level, t: winFrom }, min = { v: level, t: winFrom };
+    var area = 0, outMs = 0, prevT = winFrom, prevV = level, deliveries = 0, delivered = 0;
+    S.pts.forEach(function(p) {
+      if (p.t < winFrom || p.t > winTo) return;
+      area += prevV * (p.t - prevT);
+      if (prevV <= 0) outMs += p.t - prevT;
+      prevT = p.t; prevV = p.level;
+      if (p.level > max.v) max = { v: p.level, t: p.t };
+      if (p.level < min.v) min = { v: p.level, t: p.t };
+      if (p.log.type === 'restock') { deliveries++; delivered += p.log.qty || 0; }
+    });
+    area += prevV * (winTo - prevT);
+    if (prevV <= 0) outMs += winTo - prevT;
+    var span = Math.max(1, winTo - winFrom);
+    out.push(item.name + note + ':\n'
+      + '  Highest: ' + fmtInt(max.v) + ' ' + unit + ' on ' + fmtD(max.t) + '\n'
+      + '  Lowest: ' + fmtInt(min.v) + ' ' + unit + ' on ' + fmtD(min.t) + '\n'
+      + '  Average: ' + fmtInt(Math.round(area / span)) + ' ' + unit + '\n'
+      + '  Start → end of period: ' + fmtInt(startLevel) + ' → ' + fmtInt(prevV) + ' ' + unit + '\n'
+      + '  Days out of stock: ' + (Math.round(outMs / 864e5 * 10) / 10) + '\n'
+      + '  Deliveries in period: ' + deliveries + ' (' + fmtInt(delivered) + ' ' + unit + ')');
+  });
+  var range = sup ? '' : ' for ' + (input.from || 'the start of the records') + ' to ' + (input.to || 'today');
+  return { ok: true, message: 'Stock levels rebuilt from the log' + range + '. Levels before an item\'s first logged entry aren\'t known.\n\n' + out.join('\n\n') };
+}
+
 function aiLookupHistory(input) {
   if (isTabHidden('audit')) return { ok: false, message: 'Your role doesn\'t have access to the Audit Log, so I can\'t look up history.' };
   var q = ((input || {}).query || '').trim().toLowerCase();
