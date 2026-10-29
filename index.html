@@ -1835,7 +1835,8 @@
       </div>
       <div class="form-group" id="lf-delivery-cost-group" style="display:none">
         <label>Delivery Cost per Unit (₱)</label>
-        <input type="number" id="lf-delivery-cost" min="0" step="0.01" placeholder="0.00" oninput="updateWACPreview()">
+        <input type="number" id="lf-delivery-cost" min="0" step="0.01" placeholder="e.g. 12.50 · 0 if free" oninput="updateWACPreview()">
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Brand / client-supplied stock that Locad doesn't pay for: enter <b>0</b>.</div>
         <div id="lf-wac-preview" style="font-size:12px;color:var(--muted);margin-top:4px;display:none"></div>
       </div>
       <div class="form-group full" id="lf-po-group" style="display:none">
@@ -2410,7 +2411,8 @@
       </div>
       <div class="form-group full">
         <label>Delivery Cost per Unit (₱)</label>
-        <input type="number" id="recv-cost" min="0" step="0.01" placeholder="0.00">
+        <input type="number" id="recv-cost" min="0" step="0.01" placeholder="e.g. 12.50 · 0 if free">
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Brand / client-supplied stock that Locad doesn't pay for: enter <b>0</b>.</div>
       </div>
       <div class="form-group full">
         <label>Notes</label>
@@ -3519,7 +3521,8 @@ function _priceHistoryPoints(itemId) {
       price: parseFloat(r.cost), qty: r.qty || 0, source: 'PO', ref: r.poNumber });
   });
   db.logs.forEach(function(l) {
-    if (l.itemId !== itemId || l.type !== 'restock' || l.costAmount === undefined || l.costAmount === null || !(l.qty > 0)) return;
+    // (₱0 = free brand-supplied stock, not a purchase price)
+    if (l.itemId !== itemId || l.type !== 'restock' || !(l.costAmount > 0) || !(l.qty > 0)) return;
     if (l.by === 'Initial' || /opening stock|Item created/i.test(l.notes || '')) return; // not a purchase
     if (typeof isLogVisible === 'function' && !isLogVisible(l)) return;
     // Already represented by a priced PO line it was delivered against
@@ -4261,7 +4264,9 @@ async function drConfirmScan() {
       var r = db.reorders.find(function(x) { return x.id === row.lineId; });
       var item = r && db.items.find(function(it) { return it.id === r.itemId; });
       if (!r || !item) continue;
-      await _applyReceive(r, item, row.qty, parseFloat(r.cost), 'from scanned DR' + (res.invoice_number ? ' · SI ' + String(res.invoice_number).slice(0, 20) : '') + (row.description ? ' ("' + row.description.slice(0, 60) + '")' : ''), _drs.drNo, drUrl);
+      // PO price when set; otherwise the cost on record (a blank/0 PO price
+      // isn't treated as "free" here — receive it manually and enter 0 for that)
+      await _applyReceive(r, item, row.qty, parseFloat(r.cost) > 0 ? parseFloat(r.cost) : NaN,'from scanned DR' + (res.invoice_number ? ' · SI ' + String(res.invoice_number).slice(0, 20) : '') + (row.description ? ' ("' + row.description.slice(0, 60) + '")' : ''), _drs.drNo, drUrl);
       done.push(item.name + ' +' + fmtInt(row.qty));
       // Remember this supplier's wording for next time
       var sk = _supKey(r.supplier || res.supplier_name || '');
@@ -6203,17 +6208,31 @@ function _confirmUnusualQty(item, type, qty) {
 // A delivery must carry a cost. Blank → offer the item's current cost
 // (recorded explicitly on the entry) or let the person enter the real one.
 // Returns true to proceed; fills the input when the current cost is accepted.
+// A typed 0 is allowed: brand / client-supplied stock Locad doesn't pay for
+// (e.g. brand packmats) — recorded as a ₱0 batch, so its usage costs ₱0.
 function _ensureDeliveryCost(costEl, item, fallbackCost) {
-  var v = parseFloat(costEl && costEl.value);
+  var raw = String((costEl && costEl.value) || '').trim();
+  var v = parseFloat(raw);
   if (!isNaN(v) && v > 0) return true;
+  var freeMsg = 'Record this delivery of ' + item.name + ' as FREE (₱0 per ' + (item.unit || 'unit') + ')?\n\n'
+    + 'Use this for brand / client-supplied stock that Locad doesn\'t pay for. Usage of these units will count as ₱0 in cost reports.';
+  if (raw !== '' && v === 0) {
+    if (confirm(freeMsg)) return true;
+    if (costEl) costEl.focus();
+    return false;
+  }
   var c = fallbackCost || currentUnitCost(item) || item.cost || 0;
   if (!c) {
-    alert('Enter the delivery cost per unit for ' + item.name + ' — there is no current cost on record to use.');
+    // Nothing on record — most likely client-supplied stock
+    if (confirm('No delivery cost entered, and ' + item.name + ' has no cost on record.\n\n' + freeMsg + '\n\nChoose Cancel to enter the cost instead.')) {
+      if (costEl) costEl.value = 0;
+      return true;
+    }
     if (costEl) costEl.focus();
     return false;
   }
   if (!confirm('No delivery cost entered for ' + item.name + '.\n\nRecord this delivery at ₱' + (Math.round(c * 100) / 100) + ' per ' + (item.unit || 'unit')
-    + ' (the cost on record)?\n\nChoose Cancel to enter the actual invoice cost instead.')) {
+    + ' (the cost on record)?\n\nChoose Cancel to enter the actual invoice cost instead (or 0 if this delivery is free / brand-supplied).')) {
     if (costEl) costEl.focus();
     return false;
   }
@@ -6309,8 +6328,9 @@ async function _saveLogImpl() {
     fifoCost   = consumeLayers(item, qty);
   } else if (type === 'restock') {
     const dc = parseFloat(document.getElementById('lf-delivery-cost').value);
-    addLayer(item, qty, (!isNaN(dc) && dc > 0) ? dc : undefined);
-    if (!isNaN(dc) && dc > 0) fifoCost = Math.round(qty * dc * 100) / 100;
+    // dc === 0 is a confirmed free (brand-supplied) delivery → ₱0 batch
+    addLayer(item, qty, (!isNaN(dc) && dc >= 0) ? dc : undefined);
+    if (!isNaN(dc) && dc >= 0) fifoCost = Math.round(qty * dc * 100) / 100;
   } else if (type === 'adjust') {
     const d = newQty - originalQty;
     if (d < 0)      { fifoDetail = describeConsumption(item, -d); fifoCost = consumeLayers(item, -d); }
@@ -7045,7 +7065,8 @@ async function _applyReceive(r, item, qty, cost, extraNotes, drNo, drUrl) {
   var newQty = item.qty + qty;
   // FIFO: this delivery opens a new batch, same as a manual restock log
   getLayers(item);
-  addLayer(item, qty, (!isNaN(cost) && cost > 0) ? cost : undefined);
+  // cost 0 = confirmed free (brand-supplied) delivery → ₱0 batch
+  addLayer(item, qty, (!isNaN(cost) && cost >= 0) ? cost : undefined);
 
   var receivedBefore = _reorderReceivedSoFar(r);
   var receivedAfter = receivedBefore + qty;
@@ -7054,7 +7075,7 @@ async function _applyReceive(r, item, qty, cost, extraNotes, drNo, drUrl) {
   var logEntry = {
     id: uid(), itemId: r.itemId, type: 'restock', qty: qty, absQty: newQty, by: 'Reorder', date: now,
     notes: 'Reorder received from ' + (r.supplier || 'supplier') + (isComplete ? '' : ' (partial)') + (extraNotes ? ' — ' + extraNotes : '') + (drUrl ? ' 📎 DR: ' + drUrl : ''),
-    ref: (r.poNumber || '') + (drNo ? (r.poNumber ? ' · ' : '') + 'DR ' + drNo : ''), costAmount: (!isNaN(cost) && cost > 0) ? Math.round(qty * cost * 100) / 100 : null,
+    ref: (r.poNumber || '') + (drNo ? (r.poNumber ? ' · ' : '') + 'DR ' + drNo : ''), costAmount: (!isNaN(cost) && cost >= 0) ? Math.round(qty * cost * 100) / 100 : null,
   };
   db.logs.push(logEntry);
   item.qty = newQty;
