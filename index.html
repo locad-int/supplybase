@@ -949,6 +949,7 @@
         <option value="received">Received</option>
       </select>
       <button id="btn-create-reorder" class="btn btn-primary" onclick="openReorderCreateModal()">+ Create Reorder</button>
+      <button id="btn-receive-dr" class="btn btn-secondary" onclick="openDrReceive()" title="Photograph a delivery receipt — SupplyBase reads it and fills in what to receive" style="display:none">📷 Receive from DR</button>
       <button id="btn-po-history" class="btn btn-secondary" onclick="openPoHistoryModal()">📋 PO History</button>
       <button id="btn-supplier-dir" class="btn btn-secondary" onclick="openSupplierDirectory()" style="display:none">🏢 Suppliers</button>
       <button id="btn-import-suppliers" class="btn btn-secondary" onclick="openSupplierImportModal()" style="display:none">⬆ Import Suppliers</button>
@@ -2304,6 +2305,13 @@
   </div>
 </div>
 
+<!-- RECEIVE FROM DR (scan → read → review → receive) -->
+<div class="modal-bg" id="dr-scan-modal">
+  <div class="modal" style="max-width:880px">
+    <div id="drs-body"></div>
+  </div>
+</div>
+
 <!-- COUNT SHEET MODAL (stocktake counting + review + booking) -->
 <div class="modal-bg" id="count-sheet-modal">
   <div class="modal" style="max-width:760px">
@@ -2408,6 +2416,15 @@
         <label>Notes</label>
         <input type="text" id="recv-notes" placeholder="Optional">
       </div>
+      <div class="form-group">
+        <label>DR no.</label>
+        <input type="text" id="recv-dr-no" placeholder="e.g. 12345" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Delivery receipt</label>
+        <button type="button" class="btn btn-secondary" onclick="drPick('recv')" style="justify-content:center">📷 Scan DR</button>
+      </div>
+      <div class="form-group full" id="recv-dr-pages" style="display:none"></div>
     </div>
     <p style="color:var(--muted);font-size:11px;margin-top:4px">Entering less than the remaining quantity keeps this reorder marked "ordered" with a partial-delivery note, so you can log the rest later. Entering the full remaining amount marks it "received."</p>
     <div class="modal-actions">
@@ -2589,6 +2606,14 @@
       <div class="form-group full">
         <label>Default "Approved by"</label>
         <input type="text" id="set-po-approved-by" placeholder="e.g. Michael Porto" autocomplete="off">
+      </div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+    <p style="color:var(--muted);font-size:13px;margin-bottom:12px"><strong>DR scans → Google Drive.</strong> Paste the Web app URL of the SupplyBase DR uploader (Apps Script) so scanned delivery receipts are saved to the shared drive. Leave blank to turn DR scanning off.</p>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>DR uploader URL</label>
+        <input type="text" id="set-dr-upload-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
       </div>
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
@@ -3725,6 +3750,550 @@ async function savePoSignatories() {
   } catch(e) {}
 }
 
+// ─── DR SCANS → GOOGLE DRIVE ───────────────────────────────────────────────────
+// Staff photograph the delivery receipt on Receive Delivery (or attach it
+// later from PO Details). SupplyBase shrinks the photos into one PDF and sends
+// it to a small Apps Script web app (dr_upload_apps_script.gs) that saves it
+// in the SupplyBase shared drive, filed by month. The returned Drive link is
+// kept on the delivery's log entry as "📎 DR: <link>" in its notes — no
+// database change needed — and shown as a 📎 link wherever deliveries appear.
+var DR_UPLOAD_URL_KEY = 'drUploadUrl';
+var DR_APP_KEY = 'supplybase-dr-v1'; // must match APP_KEY in the Apps Script
+var drUploadUrl = '';
+var DR_MAX_SIDE = 1600, DR_JPEG_Q = 0.72;
+var DR_LINK_RE = /\s*📎 DR: (https:\/\/\S+)/;
+var _drPages = { recv: [], attach: [], scan: [] };
+var _drAttachLogId = null;
+
+async function saveDrUploadUrl() {
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', DR_UPLOAD_URL_KEY);
+    if (drUploadUrl) await sb.from('settings').insert([{ key: DR_UPLOAD_URL_KEY, value: drUploadUrl }]);
+    logAudit('DR uploader set', drUploadUrl ? 'DR scans go to Google Drive' : 'DR scanning turned off');
+  } catch(e) {}
+}
+
+function _drUrlOf(notes) { var m = String(notes || '').match(DR_LINK_RE); return m ? m[1] : ''; }
+// Notes as safe HTML with the DR link shown as a 📎 link instead of a long URL
+function _notesHtml(notes) {
+  var url = _drUrlOf(notes);
+  var text = esc(String(notes || '').replace(DR_LINK_RE, '').trim());
+  return text + (url ? (text ? ' ' : '') + '<a href="' + esc(url) + '" target="_blank" rel="noopener" title="Open the scanned delivery receipt" style="white-space:nowrap">📎 DR</a>' : '');
+}
+
+function drPick(ctx) {
+  // Reading a DR works without Drive; saving/attaching a copy needs the uploader
+  if (!drUploadUrl && ctx !== 'scan') { alert('DR scanning isn\'t set up yet. A superuser needs to add the DR uploader URL in Settings.'); return; }
+  var inp = document.getElementById('dr-file-input');
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.type = 'file'; inp.id = 'dr-file-input'; inp.multiple = true;
+    inp.accept = 'image/*,application/pdf';
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
+  }
+  inp.value = '';
+  inp.onchange = function() { drAddFiles(ctx, inp.files); };
+  inp.click();
+}
+
+// Photos are shrunk (longest side 1,600 px, JPEG) before anything is uploaded
+function _drCompress(file) {
+  return new Promise(function(resolve, reject) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function() {
+      var s = Math.min(1, DR_MAX_SIDE / Math.max(img.width, img.height));
+      var c = document.createElement('canvas');
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve({ kind: 'img', dataUrl: c.toDataURL('image/jpeg', DR_JPEG_Q), w: c.width, h: c.height, name: file.name });
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('Could not read ' + file.name)); };
+    img.src = url;
+  });
+}
+
+async function drAddFiles(ctx, files) {
+  var list = Array.prototype.slice.call(files || []);
+  for (var i = 0; i < list.length; i++) {
+    var f = list[i];
+    if (f.type === 'application/pdf') {
+      if (f.size > 10 * 1024 * 1024) { alert(f.name + ' is larger than 10 MB.'); continue; }
+      _drPages[ctx].push({ kind: 'pdf', file: f, name: f.name });
+    } else if (/^image\//.test(f.type)) {
+      try { _drPages[ctx].push(await _drCompress(f)); } catch(e) { alert(e.message); }
+    }
+  }
+  var hasPdf = _drPages[ctx].some(function(p) { return p.kind === 'pdf'; });
+  if (hasPdf && _drPages[ctx].length > 1) {
+    alert('Use either photos (one per page) or a single PDF for a DR — not both. Keeping the PDF only.');
+    _drPages[ctx] = _drPages[ctx].filter(function(p) { return p.kind === 'pdf'; }).slice(0, 1);
+  }
+  if (ctx === 'attach') { await _drAttachUpload(); return; }
+  renderDrPages(ctx);
+  if (ctx === 'scan') renderDrScan();
+}
+
+function drRemovePage(ctx, i) { _drPages[ctx].splice(i, 1); renderDrPages(ctx); if (ctx === 'scan') renderDrScan(); }
+
+function renderDrPages(ctx) {
+  var el = document.getElementById(ctx + '-dr-pages');
+  if (!el) return;
+  var pages = _drPages[ctx];
+  el.style.display = pages.length ? '' : 'none';
+  el.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    + pages.map(function(p, i) {
+      var thumb = p.kind === 'img'
+        ? '<img src="' + p.dataUrl + '" alt="DR page ' + (i + 1) + '" style="width:56px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">'
+        : '<div style="width:56px;height:72px;border-radius:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted)">PDF</div>';
+      return '<div style="position:relative">' + thumb
+        + '<button type="button" onclick="drRemovePage(\'' + ctx + '\',' + i + ')" title="Remove" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#dc2626;color:#fff;font-size:12px;line-height:1;cursor:pointer">×</button></div>';
+    }).join('')
+    + (pages.some(function(p) { return p.kind === 'pdf'; }) ? '' : '<button type="button" class="btn btn-secondary btn-sm" onclick="drPick(\'' + ctx + '\')">+ page</button>')
+    + '<span style="font-size:11px;color:var(--muted)">' + pages.length + ' page' + (pages.length === 1 ? '' : 's') + ' · saved to Google Drive on Confirm</span></div>';
+}
+
+function _drFileToBase64(file) {
+  return new Promise(function(resolve, reject) {
+    var r = new FileReader();
+    r.onload = function() { resolve(String(r.result).split(',')[1]); };
+    r.onerror = function() { reject(new Error('Could not read the PDF.')); };
+    r.readAsDataURL(file);
+  });
+}
+
+// Photos → one PDF (A4, each page fitted) using the jsPDF library SupplyBase
+// already loads for Purchase Orders.
+async function _drPayload(pages) {
+  if (pages.length === 1 && pages[0].kind === 'pdf') return { mimeType: 'application/pdf', data: await _drFileToBase64(pages[0].file) };
+  var JsPDF = window.jspdf && window.jspdf.jsPDF;
+  if (!JsPDF) throw new Error('PDF tool not loaded — check the internet connection and reload.');
+  var doc = new JsPDF({ unit: 'mm', format: 'a4', compress: true });
+  var W = 210, H = 297, M = 6;
+  pages.forEach(function(p, i) {
+    if (i) doc.addPage();
+    var s = Math.min((W - 2 * M) / p.w, (H - 2 * M) / p.h);
+    var w = p.w * s, h = p.h * s;
+    doc.addImage(p.dataUrl, 'JPEG', (W - w) / 2, (H - h) / 2, w, h);
+  });
+  return { mimeType: 'application/pdf', data: doc.output('datauristring').split(',')[1] };
+}
+
+function _drFileName(meta) {
+  var d = new Date();
+  var ymd = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  var sup = String(meta.supplier || '').split(/\s+/).slice(0, 3).join(' ');
+  return [meta.po || 'No PO', sup, meta.drNo ? 'DR ' + meta.drNo : '', meta.item || '', ymd].filter(Boolean).join(' · ') + '.pdf';
+}
+
+async function _drUpload(pages, meta) {
+  if (!drUploadUrl) throw new Error('DR uploader URL not set in Settings.');
+  var payload = await _drPayload(pages);
+  var d = new Date();
+  var body = {
+    key: DR_APP_KEY, fileName: _drFileName(meta), mimeType: payload.mimeType, data: payload.data,
+    month: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'),
+    description: 'SupplyBase delivery receipt · ' + [meta.po, meta.supplier, meta.item, meta.drNo ? 'DR ' + meta.drNo : '', 'received by ' + ((currentUser && currentUser.username) || '')].filter(Boolean).join(' · '),
+  };
+  // Plain-text body = a "simple" request, so the browser doesn't need a CORS
+  // pre-check that Apps Script can't answer.
+  var res = await fetch(drUploadUrl, { method: 'POST', body: JSON.stringify(body) });
+  var out = null;
+  try { out = await res.json(); } catch(e) {}
+  if (!out || !out.ok || !out.url) throw new Error((out && out.error) || ('Upload failed (HTTP ' + res.status + ')'));
+  return out.url;
+}
+
+// Attach a DR to a delivery that's already been received (from PO Details)
+function drAttachToLog(logId) {
+  if (!can('mark_received')) return;
+  _drAttachLogId = logId;
+  _drPages.attach = [];
+  drPick('attach');
+}
+async function _drAttachUpload() {
+  var l = db.logs.find(function(x) { return x.id === _drAttachLogId; });
+  var pages = _drPages.attach;
+  if (!l || !pages.length) return;
+  var item = db.items.find(function(i) { return i.id === l.itemId; });
+  var po = (String(l.ref || '').match(PO_NUMBER_RE) || [''])[0];
+  var drNo = (String(l.ref || '').match(/DR\s*#?\s*([\w-]+)/i) || [])[1] || '';
+  var sp = _rptSupplierFor(l);
+  toastMsg('Uploading DR…');
+  try {
+    var url = await _drUpload(pages, { po: po, supplier: sp.supplier, drNo: drNo, item: item ? item.name : '' });
+    var notes = String(l.notes || '').replace(DR_LINK_RE, '').trim() + ' 📎 DR: ' + url;
+    if (sb) { var r = await sb.from('logs').update({ notes: notes }).eq('id', l.id); if (r && r.error) throw new Error(r.error.message); }
+    l.notes = notes;
+    logAudit('DR attached', (item ? item.name : l.itemId) + (po ? ' (' + po + ')' : ''));
+    toastMsg('DR saved to Google Drive');
+    if (typeof renderPoDetail === 'function') renderPoDetail();
+    if (typeof renderLogs === 'function') renderLogs();
+  } catch(e) {
+    alert('The DR could not be uploaded: ' + e.message);
+  } finally {
+    _drPages.attach = []; _drAttachLogId = null;
+  }
+}
+function toastMsg(m) {
+  var t = document.getElementById('dr-toast');
+  if (!t) { t = document.createElement('div'); t.id = 'dr-toast'; t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;z-index:400'; document.body.appendChild(t); }
+  t.textContent = m; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(function() { t.style.display = 'none'; }, 3000);
+}
+
+// ─── RECEIVE FROM DR (scan → read → review → receive) ──────────────────────────
+// Photograph a DR; the dr-reader Edge Function (Gemini) reads the supplier,
+// DR no., date and each line's quantity, and suggests which open PO line each
+// one belongs to. Nothing is received until a person checks the table and
+// confirms. Confirmed matches are remembered per supplier (drAliases) so the
+// reader gets better at that supplier's wording over time.
+var DR_ALIASES_KEY = 'drItemAliases';
+var drAliases = {}; // { supplierKey: { normalized DR description: itemName } }
+var _drs = null;    // current scan session
+
+function _drNorm(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+
+// Open PO lines, OLDEST PO FIRST — when a DR has no PO number (the usual
+// case), a delivery is matched by supplier + item, and goes to the oldest
+// open PO for that item first.
+function _drPoDate(r) {
+  var po = (db.purchaseOrders || []).find(function(p) { return String(p.poNumber) === String(r.poNumber); });
+  return String((po && (po.date || po.createdAt)) || r.orderedAt || r.createdAt || r.poNumber || '');
+}
+function drOpenLines() {
+  return db.reorders.filter(function(r) { return r.poNumber && r.status !== 'received'; })
+    .sort(function(a, b) { return _drPoDate(a).localeCompare(_drPoDate(b)); })
+    .map(function(r) {
+      var item = db.items.find(function(i) { return i.id === r.itemId; });
+      return { line_id: r.id, po_number: r.poNumber, po_date: _drPoDate(r).slice(0, 10), supplier: r.supplier || '', item_name: item ? item.name : '(deleted item)',
+        unit: item ? (item.unit || '') : '', remaining: Math.max(0, (r.qty || 0) - _reorderReceivedSoFar(r)) };
+    });
+}
+function _drSameSupplier(a, b) {
+  var x = _supKey(a).split(' ')[0], y = _supKey(b).split(' ')[0];
+  return !!x && !!y && x === y;
+}
+// For a chosen line, the other open lines for the same item from the same
+// supplier (oldest first) — used to steer to the oldest PO and to offer the
+// alternatives when the DR doesn't say which PO it's for.
+function _drSiblings(open, line, supplier) {
+  return open.filter(function(l) {
+    return l.item_name === line.item_name && l.remaining > 0 && _drSameSupplier(l.supplier, supplier || line.supplier);
+  });
+}
+
+function openDrReceive() {
+  if (!can('mark_received')) return;
+  if (checkStocktakeLock()) return;
+  _drPages.scan = [];
+  _drs = { step: 'capture', reading: false, result: null, rows: [], error: '' };
+  renderDrScan();
+  openModal('dr-scan-modal');
+}
+
+function renderDrScan() {
+  var el = document.getElementById('drs-body');
+  if (!el || !_drs) return;
+  if (_drs.step === 'review') { el.innerHTML = _drReviewHtml(); _drUpdateWarnings(); return; }
+  var n = _drPages.scan.length;
+  el.innerHTML = '<h2 style="margin-bottom:4px">📷 Receive from DR</h2>'
+    + '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">Take a clear, flat photo of each page of the delivery receipt. SupplyBase reads it and fills in what to receive — you check everything before anything is saved.</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
+    + '<button class="btn btn-secondary" onclick="drPick(\'scan\')">' + (n ? '+ Add page' : '📷 Take / choose DR photo') + '</button>'
+    + (drUploadUrl ? '<span style="font-size:12px;color:var(--muted)">A copy is saved to Google Drive when you confirm.</span>' : '<span style="font-size:12px;color:var(--muted)">DR copies aren\'t saved (Drive uploader not set in Settings).</span>')
+    + '</div>'
+    + '<div id="scan-dr-pages" style="display:none"></div>'
+    + (_drs.error ? '<div style="background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 10px;font-size:13px;margin-top:10px">' + esc(_drs.error) + '</div>' : '')
+    + '<div class="modal-actions">'
+    + '<button class="btn btn-secondary" onclick="closeModal(\'dr-scan-modal\')">Cancel</button>'
+    + '<button class="btn btn-primary" id="drs-read-btn" onclick="drReadScan()"' + (n && !_drs.reading ? '' : ' disabled') + '>' + (_drs.reading ? 'Reading the DR…' : '✨ Read DR') + '</button>'
+    + '</div>';
+  renderDrPages('scan');
+}
+
+async function _drImagesPayload(pages) {
+  var out = [];
+  for (var i = 0; i < pages.length; i++) {
+    var p = pages[i];
+    if (p.kind === 'img') out.push({ mimeType: 'image/jpeg', data: p.dataUrl.split(',')[1] });
+    else out.push({ mimeType: 'application/pdf', data: await _drFileToBase64(p.file) });
+  }
+  return out;
+}
+
+async function drReadScan() {
+  if (!_drs || _drs.reading || !_drPages.scan.length) return;
+  _drs.reading = true; _drs.error = '';
+  renderDrScan();
+  try {
+    var images = await _drImagesPayload(_drPages.scan);
+    var res = await fetch(HARDCODED_SUPABASE_URL + '/functions/v1/dr-reader', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + HARDCODED_SUPABASE_KEY, 'apikey': HARDCODED_SUPABASE_KEY },
+      body: JSON.stringify({ images: images, context: { openLines: drOpenLines(), aliases: drAliases, today: new Date().toISOString().slice(0, 10) } }),
+    });
+    var out = null;
+    try { out = await res.json(); } catch(e) {}
+    if (!res.ok || !out || !out.ok) throw new Error((out && out.error) || ('The DR reader isn\'t available (HTTP ' + res.status + '). Is the dr-reader function deployed?'));
+    _drBuildRows(out.result || {});
+    _drs.step = 'review';
+  } catch(e) {
+    _drs.error = e.message || String(e);
+  } finally {
+    _drs.reading = false;
+  }
+  renderDrScan();
+}
+
+// Backup matcher for when the reader read a line but didn't link it to a PO
+// line: compares the DR wording with item names, only among the PO written on
+// the DR (or else the same supplier's open lines). Size and colour words must
+// not conflict ("Black Pouch (M)" → Medium Pouch (Black), never Large / clear).
+var _DR_SIZES = ['xsmall', 'small', 'medium', 'large', 'xlarge', 'xxlarge'];
+var _DR_COLOURS = ['black', 'clear', 'white', 'brown', 'transparent', 'pink', 'blue', 'red', 'green', 'yellow'];
+function _drTokens(s) {
+  s = ' ' + String(s || '').toLowerCase().replace(/["”″]/g, ' in ').replace(/[()\[\],\/\-]/g, ' ') + ' ';
+  s = s.replace(/\bextra\s+small\b/g, ' xsmall ').replace(/\bextra\s+large\b/g, ' xlarge ').replace(/\bx\s*-?\s*large\b/g, ' xlarge ')
+       .replace(/\s(xs)\s/g, ' xsmall ').replace(/\s(s)\s/g, ' small ').replace(/\s(m|med)\s/g, ' medium ').replace(/\s(l|lg)\s/g, ' large ')
+       .replace(/\s(xl)\s/g, ' xlarge ').replace(/\s(xxl)\s/g, ' xxlarge ').replace(/\bpouches\b/g, 'pouch').replace(/\bboxes\b/g, 'box');
+  var stop = { x: 1, pcs: 1, pc: 1, the: 1, of: 1, and: 1, 'in': 1, recycled: 1, no: 1, logo: 1, '': 1 };
+  return (s.match(/\d+(?:\.\d+)?|[a-z]+/g) || []).filter(function(t) { return !stop[t]; });
+}
+// True when the DR wording and an item name name different sizes or colours
+function _drConflicts(desc, itemName) {
+  var dt = _drTokens(desc), it = _drTokens(itemName);
+  var pick = function(list, t) { return list.filter(function(w) { return t.indexOf(w) !== -1; }); };
+  var clash = function(list) { var a = pick(list, dt), b = pick(list, it); return a.length && b.length && !a.some(function(w) { return b.indexOf(w) !== -1; }); };
+  // Dimensions: both mention sizes in numbers but share none (13" vs 20")
+  var num = function(t) { return t.filter(function(w) { return /^\d/.test(w); }); };
+  var dn = num(dt), inum = num(it);
+  var numClash = dn.length && inum.length && !dn.some(function(w) { return inum.indexOf(w) !== -1; });
+  return !!(clash(_DR_SIZES) || clash(_DR_COLOURS) || numClash);
+}
+function _drGuessLine(desc, open, result) {
+  var poOnDr = String(result.po_number || '').toUpperCase();
+  var pool = poOnDr ? open.filter(function(l) { return String(l.po_number).toUpperCase() === poOnDr; }) : [];
+  if (!pool.length) pool = open.filter(function(l) { return _drSameSupplier(l.supplier, result.supplier_name || ''); });
+  var dt = _drTokens(desc);
+  if (!dt.length || !pool.length) return null;
+  var scored = pool.map(function(l) {
+    if (_drConflicts(desc, l.item_name)) return { l: l, s: 0 };
+    var it = _drTokens(l.item_name);
+    var hit = it.filter(function(w) { return dt.indexOf(w) !== -1; }).length;
+    return { l: l, s: hit / Math.max(it.length, 1) };
+  }).sort(function(a, b) { return b.s - a.s; });
+  if (scored[0].s < 0.5) return null;
+  if (scored[1] && scored[1].s === scored[0].s && scored[1].l.item_name !== scored[0].l.item_name) return null; // tie → let a person choose
+  return scored[0].l;
+}
+
+// Turns the reader's answer into editable review rows, double-checking its
+// matches against the real open lines (and the learned supplier wording).
+function _drBuildRows(result) {
+  var open = drOpenLines();
+  var byId = {}; open.forEach(function(l) { byId[l.line_id] = l; });
+  var supKey = _supKey(result.supplier_name || '');
+  _drs.result = result;
+  _drs.drNo = result.dr_number || '';
+  _drs.drDate = result.dr_date || '';
+  _drs.rows = (result.lines || []).map(function(L) {
+    var lineId = L.matched_line_id && byId[L.matched_line_id] ? L.matched_line_id : '';
+    var conf = L.confidence || 'low', note = L.note || '';
+    // The reader can mix up similar lines (e.g. Medium vs Large pouch) —
+    // drop its pick when the size or colour plainly disagrees with the DR
+    if (lineId && _drConflicts(L.description, byId[lineId].item_name)) {
+      lineId = '';
+      if (conf === 'high') conf = 'medium';
+      note = (note ? note + '; ' : '') + 'reader\'s PO line had a different size or colour';
+    }
+    if (!lineId) {
+      // Learned wording: same supplier wrote this description before → that item's open line
+      var learned = null;
+      Object.keys(drAliases).forEach(function(k) {
+        if (!learned && (!supKey || k === supKey || supKey.indexOf(k) !== -1 || k.indexOf(supKey) !== -1)) learned = (drAliases[k] || {})[_drNorm(L.description)];
+      });
+      if (learned) {
+        var cand = open.filter(function(l) { return l.item_name === learned; });
+        if (result.po_number) cand.sort(function(a, b) { return (b.po_number === result.po_number) - (a.po_number === result.po_number); });
+        if (cand.length) lineId = cand[0].line_id;
+      }
+    }
+    if (!lineId) {
+      var guess = _drGuessLine(L.description, open, result);
+      if (guess) {
+        lineId = guess.line_id;
+        if (conf === 'high') conf = 'medium';
+        note = (note ? note + '; ' : '') + 'PO line picked by SupplyBase from the wording';
+      }
+    }
+    // No PO number on the DR: settle on the OLDEST open PO from this
+    // supplier for that item (the reader's pick, or the learned match, may
+    // have landed on a newer one), and note the other POs it could be.
+    var others = [];
+    if (lineId) {
+      var chosen = byId[lineId];
+      var sib = _drSiblings(open, chosen, result.supplier_name || chosen.supplier);
+      var poOnDr = result.po_number && sib.find(function(l) { return String(l.po_number).toUpperCase() === String(result.po_number).toUpperCase(); });
+      if (poOnDr) lineId = poOnDr.line_id;
+      else if (sib.length) lineId = sib[0].line_id;
+      others = sib.filter(function(l) { return l.line_id !== lineId; }).map(function(l) { return l.po_number; });
+    }
+    var qty = parseFloat(L.qty);
+    return { description: L.description || '', qty: isNaN(qty) ? '' : qty, unit: L.unit || '', lineId: lineId, otherPos: others,
+      confidence: conf, note: note, include: !!lineId && !isNaN(qty) && qty > 0 };
+  });
+}
+
+function drRowSet(i, field, val) {
+  var r = _drs && _drs.rows[i];
+  if (!r) return;
+  if (field === 'qty') r.qty = val === '' ? '' : parseFloat(val);
+  else if (field === 'lineId') { r.lineId = val; if (val) r.include = true; }
+  else if (field === 'include') r.include = !!val;
+  else if (field === 'drNo') _drs.drNo = val;
+  if (field !== 'qty' && field !== 'drNo') renderDrScan();
+  else _drUpdateWarnings();
+}
+
+function _drRowWarnings(row) {
+  var w = [];
+  var line = row.lineId ? drOpenLines().find(function(l) { return l.line_id === row.lineId; }) : null;
+  if (row.include && !row.lineId) w.push('Pick the PO line');
+  if (!row.include && !row.lineId) w.push('No matching open PO line — pick one if this was ordered, or leave it unticked');
+  if (row.include && !(row.qty > 0)) w.push('Enter the quantity');
+  if (line && row.qty > line.remaining) w.push('More than the ' + fmtInt(line.remaining) + ' still due' + (row.otherPos && row.otherPos.length ? ' — the rest may belong to ' + row.otherPos.join(', ') : ''));
+  else if (line && row.otherPos && row.otherPos.length && !(_drs.result && _drs.result.po_number)) w.push('Also open on ' + row.otherPos.join(', ') + ' — oldest PO picked; change if the supplier says otherwise');
+  if (row.confidence !== 'high') w.push((row.confidence === 'low' ? 'Check carefully' : 'Double-check') + (row.note ? ': ' + row.note : ''));
+  var sup = _drs.result && _drs.result.supplier_name;
+  if (line && sup && line.supplier && _supKey(line.supplier).split(' ')[0] !== _supKey(sup).split(' ')[0]) w.push('PO supplier is ' + line.supplier);
+  return w;
+}
+function _drUpdateWarnings() {
+  (_drs.rows || []).forEach(function(row, i) {
+    var el = document.getElementById('drs-warn-' + i);
+    if (el) el.innerHTML = _drRowWarnings(row).map(function(t) { return '<div>⚠️ ' + esc(t) + '</div>'; }).join('');
+  });
+}
+
+function _drReviewHtml() {
+  var res = _drs.result || {};
+  var open = drOpenLines();
+  var byPo = {};
+  open.forEach(function(l) { (byPo[l.po_number] = byPo[l.po_number] || []).push(l); });
+  var opts = function(sel) {
+    // POs from the DR's supplier first, then the rest; oldest first within each
+    var sup = (_drs.result && _drs.result.supplier_name) || '';
+    var pos = Object.keys(byPo).sort(function(a, b) {
+      var sa = _drSameSupplier(byPo[a][0].supplier, sup) ? 0 : 1, sb2 = _drSameSupplier(byPo[b][0].supplier, sup) ? 0 : 1;
+      return sa - sb2 || String(byPo[a][0].po_date).localeCompare(String(byPo[b][0].po_date));
+    });
+    return '<option value="">— not on an open PO / skip —</option>' + pos.map(function(po) {
+      return '<optgroup label="' + esc(po + ' · ' + (byPo[po][0].supplier || '')) + '">' + byPo[po].map(function(l) {
+        return '<option value="' + esc(l.line_id) + '"' + (l.line_id === sel ? ' selected' : '') + '>' + esc(l.item_name + ' — ' + fmtInt(l.remaining) + ' ' + l.unit + ' due') + '</option>';
+      }).join('') + '</optgroup>';
+    }).join('');
+  };
+  var n = _drs.rows.filter(function(r) { return r.include; }).length;
+  var notDr = res.is_delivery_receipt === false;
+  return '<h2 style="margin-bottom:4px">📷 Check what the DR says</h2>'
+    + '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Read by AI — check every quantity against the paper DR before confirming.</div>'
+    + (notDr ? '<div style="background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:10px">This doesn\'t look like a delivery receipt. Retake the photo or receive manually.</div>' : '')
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:12px">'
+    + [['Supplier', esc(res.supplier_name || '—')], ['DR date', esc(res.dr_date || '—')], ['PO on DR', esc(res.po_number || '—')]].concat(res.invoice_number ? [['Sales invoice', esc(res.invoice_number)]] : []).map(function(c) {
+        return '<div style="background:var(--surface2);border-radius:8px;padding:8px 10px"><div style="font-size:11px;color:var(--muted)">' + c[0] + '</div><div style="font-weight:600">' + c[1] + '</div></div>';
+      }).join('')
+    + '<div style="background:var(--surface2);border-radius:8px;padding:8px 10px"><div style="font-size:11px;color:var(--muted)">DR no.</div><input value="' + esc(_drs.drNo || '') + '" oninput="drRowSet(0,\'drNo\',this.value)" style="padding:4px 6px;font-weight:600"></div>'
+    + '</div>'
+    + (res.remarks ? '<div style="background:#fef3c7;color:#92400e;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:10px">📝 ' + esc(res.remarks) + '</div>' : '')
+    + '<div class="table-wrap" style="max-height:48vh;overflow-y:auto"><table><thead><tr><th style="width:30px"></th><th>On the DR</th><th style="width:110px">Qty received</th><th>Receive against PO line</th></tr></thead><tbody>'
+    + (_drs.rows.length ? _drs.rows.map(function(r, i) {
+        var conf = r.confidence === 'high' ? '' : (r.confidence === 'low' ? 'background:rgba(220,38,38,.05)' : 'background:rgba(245,158,11,.06)');
+        return '<tr style="' + conf + '"><td><input type="checkbox" ' + (r.include ? 'checked' : '') + ' onchange="drRowSet(' + i + ',\'include\',this.checked)" style="width:16px;height:16px"></td>'
+          + '<td><div style="font-weight:600">' + esc(r.description) + '</div><div style="font-size:11px;color:var(--muted)">' + esc(r.unit || '') + ' · ' + esc(r.confidence) + ' confidence</div></td>'
+          + '<td><input type="number" min="0" step="any" value="' + (r.qty === '' ? '' : r.qty) + '" oninput="drRowSet(' + i + ',\'qty\',this.value)" style="width:100px;text-align:right;font-weight:600"></td>'
+          + '<td><select onchange="drRowSet(' + i + ',\'lineId\',this.value)" style="width:100%">' + opts(r.lineId) + '</select>'
+          + '<div id="drs-warn-' + i + '" style="font-size:11.5px;color:#b45309;margin-top:3px"></div></td></tr>';
+      }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:16px">No item lines could be read.</td></tr>')
+    + '</tbody></table></div>'
+    + '<div class="modal-actions">'
+    + '<button class="btn btn-secondary" onclick="_drs.step=\'capture\';renderDrScan()">← Retake</button>'
+    + '<button class="btn btn-secondary" onclick="closeModal(\'dr-scan-modal\')">Cancel</button>'
+    + '<button class="btn btn-primary" id="drs-confirm-btn" onclick="drConfirmScan()"' + (n ? '' : ' disabled') + '>Receive ' + n + ' line' + (n === 1 ? '' : 's') + '</button>'
+    + '</div>';
+}
+
+var _drConfirming = false;
+async function drConfirmScan() {
+  if (_drConfirming || !_drs) return;
+  if (checkStocktakeLock()) return;
+  var rows = _drs.rows.filter(function(r) { return r.include; });
+  var bad = rows.filter(function(r) { return !r.lineId || !(r.qty > 0); });
+  if (bad.length) { alert('Each ticked line needs a PO line and a quantity (or untick it).'); return; }
+  var ids = rows.map(function(r) { return r.lineId; });
+  if (ids.some(function(id, i) { return ids.indexOf(id) !== i; })) { alert('Two DR lines point to the same PO line. Combine them into one quantity or change one of them.'); return; }
+  var open = drOpenLines();
+  var over = rows.filter(function(r) { var l = open.find(function(x) { return x.line_id === r.lineId; }); return l && r.qty > l.remaining; });
+  if (over.length && !confirm('These are more than what\'s still due on the PO:\n\n' + over.map(function(r) {
+      var l = open.find(function(x) { return x.line_id === r.lineId; }); return '• ' + l.item_name + ': ' + fmtInt(r.qty) + ' (due ' + fmtInt(l.remaining) + ')'; }).join('\n') + '\n\nReceive anyway?')) return;
+  _drConfirming = true;
+  var btn = document.getElementById('drs-confirm-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    var res = _drs.result || {};
+    var first = db.reorders.find(function(x) { return x.id === rows[0].lineId; });
+    var drUrl = '';
+    if (drUploadUrl && _drPages.scan.length) {
+      if (btn) btn.textContent = 'Saving DR to Drive…';
+      try {
+        drUrl = await _drUpload(_drPages.scan, { po: first && first.poNumber, supplier: (first && first.supplier) || res.supplier_name, drNo: _drs.drNo, item: rows.length === 1 && first ? (db.items.find(function(i) { return i.id === first.itemId; }) || {}).name : rows.length + ' items' });
+      } catch(e) {
+        if (!confirm('The DR copy could not be saved to Drive (' + e.message + ').\n\nReceive anyway? You can attach it later from PO Details.')) return;
+      }
+      if (btn) btn.textContent = 'Saving…';
+    }
+    var done = [];
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var r = db.reorders.find(function(x) { return x.id === row.lineId; });
+      var item = r && db.items.find(function(it) { return it.id === r.itemId; });
+      if (!r || !item) continue;
+      await _applyReceive(r, item, row.qty, parseFloat(r.cost), 'from scanned DR' + (res.invoice_number ? ' · SI ' + String(res.invoice_number).slice(0, 20) : '') + (row.description ? ' ("' + row.description.slice(0, 60) + '")' : ''), _drs.drNo, drUrl);
+      done.push(item.name + ' +' + fmtInt(row.qty));
+      // Remember this supplier's wording for next time
+      var sk = _supKey(r.supplier || res.supplier_name || '');
+      if (sk && row.description) { drAliases[sk] = drAliases[sk] || {}; drAliases[sk][_drNorm(row.description)] = item.name; }
+    }
+    _saveDrAliases();
+    logAudit('Received from scanned DR', (_drs.drNo ? 'DR ' + _drs.drNo + ' · ' : '') + done.join(', '));
+    _drPages.scan = [];
+    closeModal('dr-scan-modal');
+    toastMsg('Received ' + done.length + ' line' + (done.length === 1 ? '' : 's') + ' from the DR');
+    renderReorder();
+    renderInventory();
+    if (typeof updateSummary === 'function') updateSummary();
+  } catch(e) {
+    alert('Something went wrong while receiving: ' + (e.message || e) + '\n\nCheck the Reorder tab before trying again — some lines may already be received.');
+  } finally {
+    _drConfirming = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Receive'; }
+  }
+}
+
+async function _saveDrAliases() {
+  // keep it small: at most 60 suppliers × 80 descriptions
+  Object.keys(drAliases).slice(60).forEach(function(k) { delete drAliases[k]; });
+  Object.keys(drAliases).forEach(function(k) { var e = Object.keys(drAliases[k]); e.slice(0, Math.max(0, e.length - 80)).forEach(function(d) { delete drAliases[k][d]; }); });
+  if (!sb) return;
+  try {
+    await sb.from('settings').delete().eq('key', DR_ALIASES_KEY);
+    await sb.from('settings').insert([{ key: DR_ALIASES_KEY, value: JSON.stringify(drAliases) }]);
+  } catch(e) {}
+}
+
 function getRefreshInterval() {
   var v = parseInt(localStorage.getItem(REFRESH_INTERVAL_KEY));
   return isNaN(v) ? 2 : v; // default 2 minutes
@@ -3836,6 +4405,8 @@ async function loadGlobalSettings() {
         if (poSeqParsed && typeof poSeqParsed === 'object') poSequences = poSeqParsed;
       } catch(e) {}
     }
+    if (settingsMap[DR_UPLOAD_URL_KEY] !== undefined) drUploadUrl = settingsMap[DR_UPLOAD_URL_KEY] || '';
+    if (settingsMap[DR_ALIASES_KEY] !== undefined) { try { drAliases = JSON.parse(settingsMap[DR_ALIASES_KEY]) || {}; } catch(e) {} }
     if (settingsMap[PO_SIGNATORIES_KEY] !== undefined) {
       try {
         var sigParsed = JSON.parse(settingsMap[PO_SIGNATORIES_KEY]);
@@ -5022,7 +5593,7 @@ function renderLogs() {
       + vBadge + vReason
 
       + '<div class="log-meta">' + new Date(log.date).toLocaleString() + ' · By: ' + esc(log.by||'—') + (log.ref ? ' · Ref: ' + esc(log.ref) : '') + '</div>'
-      + (log.notes ? '<div style="color:var(--muted);font-size:12px;margin-top:3px">' + esc(log.notes) + '</div>' : '')
+      + (log.notes ? '<div style="color:var(--muted);font-size:12px;margin-top:3px">' + _notesHtml(log.notes) + '</div>' : '')
       + '</div>'
       + '<div style="text-align:right">'
       + '<div class="log-qty" style="color:' + typeColors[log.type] + '">' + qtySign + fmtInt(Math.abs(logQtyForDisplay)) + ' ' + esc(item ? (item.unit||'') : '') + '</div>'
@@ -5233,7 +5804,7 @@ function openLogDetail(logId) {
     + row('Reference / PO #', log.ref ? esc(log.ref) : '')
     + (log.type === 'adjust' ? row('Variance', (qtyForDisplay >= 0 ? '+' : '') + fmtInt(qtyForDisplay)) : '')
     + (log.varianceReason ? row('Variance reason', esc(log.varianceReason)) : '')
-    + row('Notes', log.notes ? esc(log.notes) : '');
+    + row('Notes', log.notes ? _notesHtml(log.notes) : '');
 
   var revBtn = document.getElementById('ld-reverse-btn');
   if (revBtn) {
@@ -5452,7 +6023,7 @@ function filterItemHistory() {
       '<td style="padding:8px 10px;text-align:right;font-weight:700;color:' + meta.color + '">' + qtySign + fmtInt(qtyShown) + '</td>' +
       '<td style="padding:8px 10px;text-align:right;color:var(--muted);font-size:12px">' + (l._balanceAfter != null ? fmtInt(l._balanceAfter) : '—') + '</td>' +
       '<td style="padding:8px 10px;font-size:12px">' + esc(l.by||'—') + '</td>' +
-      '<td style="padding:8px 10px;font-size:12px;color:var(--muted)">' + esc(notesStr||'—') + '</td>';
+      '<td style="padding:8px 10px;font-size:12px;color:var(--muted)">' + (notesStr ? _notesHtml(notesStr) : '—') + '</td>';
     tbody.appendChild(tr);
 
     prevDateKey = dateKey;
@@ -6268,7 +6839,7 @@ function _poDetailData(poNumber) {
       db.logs.forEach(function(l) {
         if (!_logCountsTowardReorder(l, L.r)) return;
         var dr = String(l.ref || '').replace(new RegExp(String(poNumber).replace(/[-]/g, '\\-') + '\\s*·?\\s*', 'i'), '').trim();
-        deliveries.push({ date: l.date, name: L.name, qty: l.qty || 0, unit: L.unit, by: l.by || '', dr: dr, notes: l.notes || '', linked: _logRefsPo(l, poNumber) });
+        deliveries.push({ id: l.id, date: l.date, name: L.name, qty: l.qty || 0, unit: L.unit, by: l.by || '', dr: dr, notes: l.notes || '', linked: _logRefsPo(l, poNumber) });
       });
     } else if (L.receivedAt) {
       deliveries.push({ date: L.receivedAt, name: L.name, qty: L.ordered, unit: L.unit, by: L.receivedBy, dr: '', notes: 'Non-catalog item marked delivered', linked: true });
@@ -6344,7 +6915,8 @@ function renderPoDetail() {
           + '<td style="text-align:right">+' + fmtInt(x.qty) + ' ' + esc(x.unit) + '</td>'
           + '<td>' + (x.dr ? esc(x.dr) : '<span style="color:var(--muted)">—</span>') + '</td>'
           + '<td>' + esc(x.by || '—') + '</td>'
-          + '<td style="max-width:220px;font-size:12px;color:var(--muted)">' + esc(x.notes) + (x.linked ? '' : ' <span title="Logged before PO-linked receiving; counted the old way">(unlinked)</span>') + '</td></tr>';
+          + '<td style="max-width:220px;font-size:12px;color:var(--muted)">' + _notesHtml(x.notes) + (x.linked ? '' : ' <span title="Logged before PO-linked receiving; counted the old way">(unlinked)</span>')
+          + (x.id && !_drUrlOf(x.notes) && drUploadUrl && can('mark_received') ? ' <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" title="Scan or upload the delivery receipt for this delivery" onclick="drAttachToLog(\'' + x.id + '\')">📎 Attach DR</button>' : '') + '</td></tr>';
       }).join('')
       + '</tbody></table></div>';
   }
@@ -6390,6 +6962,9 @@ function openReceiveModal(id) {
   document.getElementById('recv-qty').value = remaining || '';
   document.getElementById('recv-cost').value = r.cost || '';
   document.getElementById('recv-notes').value = '';
+  document.getElementById('recv-dr-no').value = '';
+  _drPages.recv = [];
+  renderDrPages('recv');
   openModal('receive-modal');
 }
 
@@ -6428,7 +7003,34 @@ async function _confirmReceiveImpl() {
   if (!_ensureDeliveryCost(document.getElementById('recv-cost'), item, r.cost)) return;
   var cost = parseFloat(document.getElementById('recv-cost').value);
   var extraNotes = document.getElementById('recv-notes').value.trim();
+  var drNo = (document.getElementById('recv-dr-no').value || '').trim();
 
+  // Scanned DR → Google Drive first, so the link can go on the log entry.
+  // An upload problem never blocks receiving — the DR can be attached later.
+  var drUrl = '';
+  if (_drPages.recv.length) {
+    var btnU = document.getElementById('recv-confirm-btn');
+    if (btnU) btnU.textContent = 'Uploading DR…';
+    try {
+      drUrl = await _drUpload(_drPages.recv, { po: r.poNumber, supplier: r.supplier, drNo: drNo, item: item.name });
+    } catch(e) {
+      if (!confirm('The DR could not be uploaded (' + e.message + ').\n\nReceive the delivery anyway? You can attach the DR later from PO Details.')) return;
+    } finally {
+      if (btnU) btnU.textContent = 'Saving…';
+    }
+  }
+
+  await _applyReceive(r, item, qty, cost, extraNotes, drNo, drUrl);
+  _drPages.recv = [];
+  closeModal('receive-modal');
+  renderReorder();
+  renderInventory();
+}
+
+// Core of receiving one PO line: adds stock (new FIFO batch), logs the
+// restock linked to the PO (+ DR no. / DR link), updates the line's status.
+// Shared by Receive Delivery and the DR scan-to-fill flow.
+async function _applyReceive(r, item, qty, cost, extraNotes, drNo, drUrl) {
   // Fresh qty first — this restock must add on top of the latest DB value,
   // not a possibly-stale local one (same class of bug as the disappearing
   // restock: a bulk save() from a stale snapshot can silently undo it).
@@ -6451,8 +7053,8 @@ async function _confirmReceiveImpl() {
 
   var logEntry = {
     id: uid(), itemId: r.itemId, type: 'restock', qty: qty, absQty: newQty, by: 'Reorder', date: now,
-    notes: 'Reorder received from ' + (r.supplier || 'supplier') + (isComplete ? '' : ' (partial)') + (extraNotes ? ' — ' + extraNotes : ''),
-    ref: r.poNumber || '', costAmount: (!isNaN(cost) && cost > 0) ? Math.round(qty * cost * 100) / 100 : null,
+    notes: 'Reorder received from ' + (r.supplier || 'supplier') + (isComplete ? '' : ' (partial)') + (extraNotes ? ' — ' + extraNotes : '') + (drUrl ? ' 📎 DR: ' + drUrl : ''),
+    ref: (r.poNumber || '') + (drNo ? (r.poNumber ? ' · ' : '') + 'DR ' + drNo : ''), costAmount: (!isNaN(cost) && cost > 0) ? Math.round(qty * cost * 100) / 100 : null,
   };
   db.logs.push(logEntry);
   item.qty = newQty;
@@ -6485,9 +7087,6 @@ async function _confirmReceiveImpl() {
   }
   logAudit(isComplete ? 'Reorder received' : 'Reorder partially received',
     (item.name || r.itemId) + ': +' + fmtInt(qty) + (isComplete ? '' : ' (' + fmtInt(receivedAfter) + ' of ' + fmtInt(r.qty) + ')'));
-  closeModal('receive-modal');
-  renderReorder();
-  renderInventory();
 }
 
 function deleteReorder(id) {
@@ -8227,7 +8826,7 @@ function openRptDetail(itemId, typeGroup) {
           + '<td>' + (x.supplier ? esc(x.supplier) : '<span style="color:var(--muted)">—</span>') + '</td>'
           + '<td>' + (x.po ? '<a href="#" onclick="event.preventDefault();openPoDetail(\'' + esc(x.po) + '\')">' + esc(x.po) + '</a>' : '<span style="color:var(--muted)">—</span>') + '</td>'
           + '<td>' + esc(x.by || '—') + '</td>'
-          + '<td style="font-size:12px;color:var(--muted);max-width:220px">' + esc(x.notes) + '</td></tr>';
+          + '<td style="font-size:12px;color:var(--muted);max-width:220px">' + _notesHtml(x.notes) + '</td></tr>';
       }).join('')
       + '</tbody></table></div>';
   } else {
@@ -8240,7 +8839,7 @@ function openRptDetail(itemId, typeGroup) {
           + '<td style="font-size:12px;white-space:nowrap">' + esc(x.batches) + '</td>'
           + '<td>' + esc(x.by || '—') + '</td>'
           + '<td style="font-size:12px">' + (x.ref ? esc(x.ref) : '<span style="color:var(--muted)">—</span>') + '</td>'
-          + '<td style="font-size:12px;color:var(--muted);max-width:240px">' + esc(x.notes) + '</td></tr>';
+          + '<td style="font-size:12px;color:var(--muted);max-width:240px">' + _notesHtml(x.notes) + '</td></tr>';
       }).join('')
       + '</tbody></table></div>';
   }
@@ -11377,6 +11976,7 @@ function applyRoleUI() {
   show('btn-import-suppliers', currentRole === 'superuser');
   show('btn-supplier-dir', currentRole === 'superuser' || currentRole === 'user');
   show('btn-health', currentRole === 'superuser');
+  show('btn-receive-dr', can('mark_received'));
   var ngAssets = document.getElementById('ng-assets');
   if (ngAssets) ngAssets.style.display = (currentRole && currentRole !== 'brand') ? '' : 'none';
   applyNavGroups();
@@ -12684,6 +13284,7 @@ function openSettings() {
   document.getElementById('set-low-stock-threshold').value = String(getLowStockThreshold());
   document.getElementById('set-po-checked-by').value = poSignatories.checkedBy || '';
   document.getElementById('set-po-approved-by').value = poSignatories.approvedBy || '';
+  document.getElementById('set-dr-upload-url').value = drUploadUrl || '';
   // Populate user permissions checkboxes
   Object.keys(userPermissions).forEach(function(k) {
     var cb = document.getElementById('uperm-' + k);
@@ -12781,6 +13382,14 @@ function saveSettings() {
   poSignatories.checkedBy = document.getElementById('set-po-checked-by').value.trim();
   poSignatories.approvedBy = document.getElementById('set-po-approved-by').value.trim();
   savePoSignatories();
+  // DR uploader (Apps Script Web app) URL — only a script.google.com address is accepted
+  var drIn = document.getElementById('set-dr-upload-url').value.trim();
+  if (drIn && !/^https:\/\/script\.google\.com\/macros\/s\/[^\s]+\/exec$/.test(drIn)) {
+    alert('The DR uploader URL should look like https://script.google.com/macros/s/…/exec — it was not saved.');
+  } else if (drIn !== (drUploadUrl || '')) {
+    drUploadUrl = drIn;
+    saveDrUploadUrl();
+  }
 
   logAudit('Settings changed', 'Passwords/username updated');
   document.getElementById('settings-msg').textContent = 'Settings saved.';
