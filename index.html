@@ -678,17 +678,95 @@
   }
 
   /* ─── COUNT SHEET ────────────────────────────────────────────────────────── */
-  .cs-chip { font-size: 12px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; white-space: nowrap; }
-  .cs-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .cs-cat { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 14px 0 4px; display: flex; justify-content: space-between; }
-  .cs-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
-  .cs-row .cs-name { flex: 1; min-width: 0; font-size: 14px; }
-  .cs-spots { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
-  .cs-spot { display: flex; gap: 4px; align-items: center; }
-  .cs-spot input { width: 96px; height: 38px; text-align: right; font-size: 16px; }
-  .cs-mini { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; font-size: 12px; padding: 3px 8px; cursor: pointer; }
+  #count-sheet-modal .modal { max-width: 640px; padding: 18px 18px 0; display: flex; flex-direction: column; }
+  #cs-body { display: flex; flex-direction: column; min-height: 0; }
+  #cs-body > * { flex-shrink: 0; }
+  /* Shelfie's button would sit on top of the Review button */
+  body:has(#count-sheet-modal.open) #ai-fab { display: none !important; }
+  .cs-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .cs-lock { display: inline-flex; align-items: center; gap: 5px; background: #fffbeb; color: #92400e; border-radius: 99px; padding: 3px 10px; font-size: 12px; font-weight: 500; }
+  .cs-lock .i { width: 13px; height: 13px; }
+  .cs-lock.off { background: #fef2f2; color: #b91c1c; }
+  .cs-note { border-radius: 10px; padding: 9px 12px; font-size: 12.5px; margin-top: 10px; display: flex; gap: 8px; align-items: flex-start; line-height: 1.45; flex-wrap: wrap; }
+  .cs-note.warn { background: #fffbeb; color: #92400e; }
+  .cs-note.bad { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; margin: 0 0 10px; flex-wrap: nowrap; }
+  .cs-prog { margin: 12px 0 2px; }
+  .cs-prog-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 7px; color: var(--muted); }
+  .cs-prog-row b { color: var(--text); font-size: 15px; }
   .cs-progress { height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
-  .cs-progress > div { height: 100%; background: var(--accent); transition: width .2s; }
+  .cs-progress > div { height: 100%; background: #22c55e; border-radius: 99px; transition: width .2s; }
+  .cs-counter { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .cs-seg { display: flex; gap: 2px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; margin: 12px 0 8px; }
+  .cs-seg button { flex: 1; border: none; background: none; border-radius: 7px; padding: 8px 4px; font: inherit; font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  .cs-seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(16,24,40,.12); }
+  .cs-seg .c { color: var(--muted); font-weight: 400; opacity: .85; }
+  .cs-seg .c.red { color: var(--danger); font-weight: 600; opacity: 1; }
+  .cs-cats { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
+  .cs-cats::-webkit-scrollbar { display: none; }
+  .cs-cc { flex: 0 0 auto; border: 1px solid var(--border); background: var(--surface); border-radius: 99px; padding: 6px 11px; font: inherit; font-size: 12.5px; color: var(--text); cursor: pointer; white-space: nowrap; }
+  .cs-cc b { font-weight: 500; color: var(--muted); margin-left: 2px; }
+  .cs-cc.on { background: #111827; border-color: #111827; color: #fff; }
+  .cs-cc.on b { color: #9ca3af; }
+  #cs-search { width: 100%; height: 42px; margin-bottom: 4px; }
+  #cs-list { max-height: 50vh; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .cs-cat { font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 12px 2px 6px; display: flex; justify-content: space-between; }
+  .cs-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+  .cs-row:focus-within { border-color: #86efac; box-shadow: 0 0 0 3px rgba(22,163,74,.12); }
+  .cs-row.cs-typed { background: #f6fef9; }
+  .cs-row.cs-done { background: #f0fdf4; border-color: #bbf7d0; align-items: center; }
+  .cs-row.cs-flag { background: #fef2f2; border-color: #fecaca; }
+  .cs-name { flex: 1; min-width: 0; }
+  .cs-name.cs-wide { width: 100%; }
+  .cs-title { font-weight: 600; font-size: 14px; line-height: 1.3; }
+  .cs-ok { color: #16a34a; margin-right: 4px; display: inline-flex; vertical-align: -2px; }
+  .cs-ok .i { width: 15px; height: 15px; stroke-width: 2.4; }
+  .cs-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .cs-flag-note { color: #b91c1c; font-size: 12px; margin-top: 4px; display: flex; gap: 4px; align-items: center; }
+  .cs-flag-note .i { width: 14px; height: 14px; }
+  .cs-link { border: none; background: none; padding: 0; margin-top: 6px; color: #15803d; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; display: inline-block; }
+  .cs-in { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+  .cs-in input, .cs-spot input { width: 104px; height: 50px; border-radius: 12px; text-align: right; font-size: 19px !important; font-weight: 600; padding: 0 12px; }
+  .cs-in input::placeholder, .cs-spot input::placeholder { font-size: 14px; font-weight: 400; }
+  .cs-unit { font-size: 12px; color: var(--muted); font-weight: 400; }
+  .cs-val { text-align: right; white-space: nowrap; font-size: 16px; }
+  .cs-val .cs-link { display: block; margin: 2px 0 0 auto; }
+  .cs-spots { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .cs-spot { display: flex; align-items: center; gap: 8px; }
+  .cs-spot-l { width: 50px; font-size: 12px; color: var(--muted); flex-shrink: 0; }
+  .cs-spot input { flex: 1; width: auto; height: 46px; }
+  .cs-x { border: none; background: none; color: var(--muted); padding: 8px; cursor: pointer; display: flex; border-radius: 8px; }
+  .cs-x:hover { background: var(--surface2); color: var(--danger); }
+  .cs-total { margin-top: 8px; font-size: 13px; }
+  .cs-empty { color: var(--muted); text-align: center; padding: 22px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .cs-foot { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); margin: 8px -18px 0; padding: 10px 18px 14px; }
+  .cs-foot-note { font-size: 12px; color: var(--muted); text-align: center; margin-bottom: 8px; }
+  .cs-foot-btns { display: flex; gap: 8px; }
+  .cs-foot-btns .btn-primary { flex: 1; justify-content: center; min-height: 46px; font-size: 15px; }
+  .cs-discard { color: var(--muted) !important; }
+  .cs-mini { background: #fff; border: 1px solid #fcd34d; color: #92400e; border-radius: 7px; font-size: 12px; padding: 3px 9px; cursor: pointer; }
+  .cs-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+  .cs-kpi { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+  .cs-kpi-l { font-size: 12px; color: var(--muted); }
+  .cs-kpi-v { font-size: 17px; font-weight: 600; margin-top: 2px; }
+  .cs-kpi-v.red, .cs-rv-d.red { color: #b91c1c; } .cs-kpi-v.green, .cs-rv-d.green { color: #15803d; }
+  .cs-rv-list { max-height: 44vh; overflow-y: auto; }
+  .cs-rv { display: flex; justify-content: space-between; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 6px; }
+  .cs-rv.cs-flag { background: #fef2f2; border-color: #fecaca; }
+  .cs-rv-l { min-width: 0; }
+  .cs-rv-r { text-align: right; flex-shrink: 0; }
+  .cs-rv-d { font-weight: 600; margin-top: 2px; white-space: nowrap; }
+  .cs-tag { display: inline-block; border-radius: 99px; padding: 0 7px; background: var(--surface2); font-weight: 500; }
+  .cs-tag.red { background: #fee2e2; color: #b91c1c; }
+  .cs-nc { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  .cs-nc summary { cursor: pointer; }
+  .cs-nc div { margin-top: 6px; line-height: 1.5; }
+  @media (max-width: 768px) {
+    #count-sheet-modal .modal { padding: 16px 14px 0; }
+    .cs-foot { margin: 8px -14px 0; padding: 10px 14px calc(14px + env(safe-area-inset-bottom, 0px)); }
+    .cs-kpis { grid-template-columns: 1fr 1fr; }
+    #cs-list { max-height: 46vh; }
+    .cs-foot-btns .btn-secondary { padding-left: 12px; padding-right: 12px; }
+  }
 
   /* ─── TEST MODE BANNER ───────────────────────────────────────────────────── */
   #testmode-banner {
@@ -1591,12 +1669,6 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
         <div class="dash-kpi-label">Restock cost</div>
         <div class="dash-kpi-value" id="dk-restock" style="color:#2563eb">₱0</div>
         <div class="dash-kpi-delta" id="dk-restock-delta"></div>
-      </div>
-      <div class="dash-kpi">
-        <div class="dash-kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg></div>
-        <div class="dash-kpi-label">Units consumed</div>
-        <div class="dash-kpi-value" id="dk-units">0</div>
-        <div class="dash-kpi-delta" id="dk-units-delta"></div>
       </div>
       <div class="dash-kpi">
         <div class="dash-kpi-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
@@ -3271,7 +3343,7 @@ function isReqVisible(r) {
 // any code that reads an element's text see exactly what they saw before.
 // Native pop-ups (alert/confirm), dropdown options and input boxes can't show
 // icons, so those keep their emoji.
-var SB_ICONS = {"inbox": "<path d=\"M22 12h-6l-2 3h-4l-2-3H2\"/><path d=\"M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z\"/>", "check": "<path d=\"M5 12.5l4.5 4.5L19 7.5\"/>", "more": "<circle cx=\"5\" cy=\"12\" r=\"1.3\"/><circle cx=\"12\" cy=\"12\" r=\"1.3\"/><circle cx=\"19\" cy=\"12\" r=\"1.3\"/>", "alert": "<path d=\"M12 3l9.5 17h-19z\"/><path d=\"M12 10v4M12 17.5v.01\"/>", "archive": "<rect x=\"3\" y=\"4\" width=\"18\" height=\"5\" rx=\"1\"/><path d=\"M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4\"/>", "bolt": "<path d=\"M13 2L4 14h7l-1 8 9-12h-7z\"/>", "book": "<path d=\"M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5z\"/><path d=\"M4 21.5A2.5 2.5 0 0 1 6.5 19H20v3H6.5\"/>", "box": "<path d=\"M21 8l-9-5-9 5 9 5 9-5z\"/><path d=\"M3 8v8l9 5 9-5V8\"/><path d=\"M12 13v8\"/>", "building": "<rect x=\"4\" y=\"3\" width=\"16\" height=\"18\" rx=\"1.5\"/><path d=\"M9 8h1M14 8h1M9 12h1M14 12h1M10 21v-4h4v4\"/>", "cal": "<rect x=\"3\" y=\"5\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M3 10h18M8 3v4M16 3v4\"/>", "call": "<path d=\"M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z\"/>", "camera": "<path d=\"M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z\"/><circle cx=\"12\" cy=\"13.5\" r=\"3.5\"/>", "chart": "<path d=\"M3 3v18h18\"/><path d=\"M7 15l4-4 3 3 5-6\"/>", "check": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M8 12.5l2.5 2.5L16 9.5\"/>", "clip": "<rect x=\"5\" y=\"4\" width=\"14\" height=\"17\" rx=\"2\"/><path d=\"M9 4h6v3H9z\"/><path d=\"M9 12h6M9 16h4\"/>", "clipp": "<path d=\"M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>", "coins": "<ellipse cx=\"12\" cy=\"6\" rx=\"7\" ry=\"3\"/><path d=\"M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6\"/><path d=\"M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6\"/>", "dash": "<rect x=\"3\" y=\"3\" width=\"7\" height=\"9\" rx=\"1.5\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"5\" rx=\"1.5\"/><rect x=\"14\" y=\"12\" width=\"7\" height=\"9\" rx=\"1.5\"/><rect x=\"3\" y=\"16\" width=\"7\" height=\"5\" rx=\"1.5\"/>", "down": "<path d=\"M12 4v12M6 10l6 6 6-6M4 20h16\"/>", "eye": "<path d=\"M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>", "eyeoff": "<path d=\"M3 3l18 18\"/><path d=\"M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 5.4-1.6\"/><path d=\"M9.9 9.9a3 3 0 0 0 4.2 4.2\"/>", "flask": "<path d=\"M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3\"/><path d=\"M7 15h10\"/>", "folder": "<path d=\"M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/>", "gear": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z\"/>", "help": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01\"/>", "hist": "<path d=\"M3 12a9 9 0 1 0 3-6.7L3 8\"/><path d=\"M3 3v5h5\"/><path d=\"M12 7v5l3 2\"/>", "inbox": "<path d=\"M22 12h-6l-2 3h-4l-2-3H2\"/><path d=\"M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z\"/>", "key": "<circle cx=\"7.5\" cy=\"15.5\" r=\"4.5\"/><path d=\"M10.7 12.3L21 2M16 7l3 3M18 5l2 2\"/>", "left": "<path d=\"M19 12H5M11 6l-6 6 6 6\"/>", "lock": "<rect x=\"4\" y=\"11\" width=\"16\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 8 0v4\"/>", "mail": "<rect x=\"3\" y=\"5\" width=\"18\" height=\"14\" rx=\"2\"/><path d=\"M3 7l9 6 9-6\"/>", "note": "<path d=\"M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z\"/><path d=\"M14 3v6h6M8 13h8M8 17h5\"/>", "pen": "<path d=\"M12 20h9\"/><path d=\"M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z\"/>", "phone": "<rect x=\"7\" y=\"2\" width=\"10\" height=\"20\" rx=\"2\"/><path d=\"M11 18h2\"/>", "pin": "<path d=\"M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z\"/><circle cx=\"12\" cy=\"10\" r=\"2.5\"/>", "plug": "<path d=\"M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4\"/>", "pulse": "<path d=\"M3 12h4l3-8 4 16 3-8h4\"/>", "receipt": "<path d=\"M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z\"/><path d=\"M9 8h6M9 12h6\"/>", "refresh": "<path d=\"M21 12a9 9 0 0 1-15.5 6.2L3 16\"/><path d=\"M3 12a9 9 0 0 1 15.5-6.2L21 8\"/><path d=\"M21 3v5h-5M3 21v-5h5\"/>", "right": "<path d=\"M5 12h14M13 6l6 6-6 6\"/>", "save": "<path d=\"M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z\"/><path d=\"M7 3v5h8V3M7 21v-7h10v7\"/>", "scale": "<path d=\"M12 3v18M5 21h14M7 7h10\"/><path d=\"M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M20 20l-3.5-3.5\"/>", "slash": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M5.6 5.6l12.8 12.8\"/>", "sparkle": "<path d=\"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z\"/><path d=\"M19 17l.7 1.8L21.5 19.5l-1.8.7L19 22l-.7-1.8-1.8-.7 1.8-.7z\"/>", "stop": "<rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"2\"/>", "swap": "<path d=\"M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7\"/>", "tag": "<path d=\"M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\"1.2\"/>", "trash": "<path d=\"M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3\"/>", "tray": "<path d=\"M22 13h-6l-2 3h-4l-2-3H2\"/><path d=\"M12 3v9M8 8l4 4 4-4\"/><path d=\"M2 13v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6\"/>", "undo": "<path d=\"M9 14L4 9l5-5\"/><path d=\"M4 9h11a5 5 0 0 1 0 10h-3\"/>", "unlock": "<rect x=\"4\" y=\"11\" width=\"16\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 7.8-1.3\"/>", "up": "<path d=\"M12 20V8M6 14l6-6 6 6M4 4h16\"/>", "upload": "<path d=\"M12 16V4M7 9l5-5 5 5M4 20h16\"/>", "user": "<circle cx=\"12\" cy=\"8\" r=\"4\"/><path d=\"M4 21a8 8 0 0 1 16 0\"/>", "users": "<circle cx=\"9\" cy=\"8\" r=\"3.5\"/><path d=\"M2 21a7 7 0 0 1 14 0\"/><path d=\"M16 4.5a3.5 3.5 0 0 1 0 7M22 21a7 7 0 0 0-4.5-6.5\"/>", "wrench": "<path d=\"M14.7 6.3a4 4 0 0 0 5 5L21 13l-8 8-3-3 8-8z\" transform=\"translate(-2 -2)\"/><path d=\"M3 21l6-6\"/>"};
+var SB_ICONS = {"x": "<path d=\"M6 6l12 12M18 6L6 18\"/>", "alert": "<path d=\"M12 3l9.5 17h-19z\"/><path d=\"M12 10v4M12 17.5v.01\"/>", "inbox": "<path d=\"M22 12h-6l-2 3h-4l-2-3H2\"/><path d=\"M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z\"/>", "check": "<path d=\"M5 12.5l4.5 4.5L19 7.5\"/>", "more": "<circle cx=\"5\" cy=\"12\" r=\"1.3\"/><circle cx=\"12\" cy=\"12\" r=\"1.3\"/><circle cx=\"19\" cy=\"12\" r=\"1.3\"/>", "alert": "<path d=\"M12 3l9.5 17h-19z\"/><path d=\"M12 10v4M12 17.5v.01\"/>", "archive": "<rect x=\"3\" y=\"4\" width=\"18\" height=\"5\" rx=\"1\"/><path d=\"M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4\"/>", "bolt": "<path d=\"M13 2L4 14h7l-1 8 9-12h-7z\"/>", "book": "<path d=\"M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5z\"/><path d=\"M4 21.5A2.5 2.5 0 0 1 6.5 19H20v3H6.5\"/>", "box": "<path d=\"M21 8l-9-5-9 5 9 5 9-5z\"/><path d=\"M3 8v8l9 5 9-5V8\"/><path d=\"M12 13v8\"/>", "building": "<rect x=\"4\" y=\"3\" width=\"16\" height=\"18\" rx=\"1.5\"/><path d=\"M9 8h1M14 8h1M9 12h1M14 12h1M10 21v-4h4v4\"/>", "cal": "<rect x=\"3\" y=\"5\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M3 10h18M8 3v4M16 3v4\"/>", "call": "<path d=\"M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z\"/>", "camera": "<path d=\"M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z\"/><circle cx=\"12\" cy=\"13.5\" r=\"3.5\"/>", "chart": "<path d=\"M3 3v18h18\"/><path d=\"M7 15l4-4 3 3 5-6\"/>", "check": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M8 12.5l2.5 2.5L16 9.5\"/>", "clip": "<rect x=\"5\" y=\"4\" width=\"14\" height=\"17\" rx=\"2\"/><path d=\"M9 4h6v3H9z\"/><path d=\"M9 12h6M9 16h4\"/>", "clipp": "<path d=\"M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>", "coins": "<ellipse cx=\"12\" cy=\"6\" rx=\"7\" ry=\"3\"/><path d=\"M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6\"/><path d=\"M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6\"/>", "dash": "<rect x=\"3\" y=\"3\" width=\"7\" height=\"9\" rx=\"1.5\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"5\" rx=\"1.5\"/><rect x=\"14\" y=\"12\" width=\"7\" height=\"9\" rx=\"1.5\"/><rect x=\"3\" y=\"16\" width=\"7\" height=\"5\" rx=\"1.5\"/>", "down": "<path d=\"M12 4v12M6 10l6 6 6-6M4 20h16\"/>", "eye": "<path d=\"M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>", "eyeoff": "<path d=\"M3 3l18 18\"/><path d=\"M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 5.4-1.6\"/><path d=\"M9.9 9.9a3 3 0 0 0 4.2 4.2\"/>", "flask": "<path d=\"M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3\"/><path d=\"M7 15h10\"/>", "folder": "<path d=\"M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/>", "gear": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z\"/>", "help": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01\"/>", "hist": "<path d=\"M3 12a9 9 0 1 0 3-6.7L3 8\"/><path d=\"M3 3v5h5\"/><path d=\"M12 7v5l3 2\"/>", "inbox": "<path d=\"M22 12h-6l-2 3h-4l-2-3H2\"/><path d=\"M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z\"/>", "key": "<circle cx=\"7.5\" cy=\"15.5\" r=\"4.5\"/><path d=\"M10.7 12.3L21 2M16 7l3 3M18 5l2 2\"/>", "left": "<path d=\"M19 12H5M11 6l-6 6 6 6\"/>", "lock": "<rect x=\"4\" y=\"11\" width=\"16\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 8 0v4\"/>", "mail": "<rect x=\"3\" y=\"5\" width=\"18\" height=\"14\" rx=\"2\"/><path d=\"M3 7l9 6 9-6\"/>", "note": "<path d=\"M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z\"/><path d=\"M14 3v6h6M8 13h8M8 17h5\"/>", "pen": "<path d=\"M12 20h9\"/><path d=\"M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z\"/>", "phone": "<rect x=\"7\" y=\"2\" width=\"10\" height=\"20\" rx=\"2\"/><path d=\"M11 18h2\"/>", "pin": "<path d=\"M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z\"/><circle cx=\"12\" cy=\"10\" r=\"2.5\"/>", "plug": "<path d=\"M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4\"/>", "pulse": "<path d=\"M3 12h4l3-8 4 16 3-8h4\"/>", "receipt": "<path d=\"M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z\"/><path d=\"M9 8h6M9 12h6\"/>", "refresh": "<path d=\"M21 12a9 9 0 0 1-15.5 6.2L3 16\"/><path d=\"M3 12a9 9 0 0 1 15.5-6.2L21 8\"/><path d=\"M21 3v5h-5M3 21v-5h5\"/>", "right": "<path d=\"M5 12h14M13 6l6 6-6 6\"/>", "save": "<path d=\"M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z\"/><path d=\"M7 3v5h8V3M7 21v-7h10v7\"/>", "scale": "<path d=\"M12 3v18M5 21h14M7 7h10\"/><path d=\"M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M20 20l-3.5-3.5\"/>", "slash": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M5.6 5.6l12.8 12.8\"/>", "sparkle": "<path d=\"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z\"/><path d=\"M19 17l.7 1.8L21.5 19.5l-1.8.7L19 22l-.7-1.8-1.8-.7 1.8-.7z\"/>", "stop": "<rect x=\"5\" y=\"5\" width=\"14\" height=\"14\" rx=\"2\"/>", "swap": "<path d=\"M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7\"/>", "tag": "<path d=\"M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\"1.2\"/>", "trash": "<path d=\"M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3\"/>", "tray": "<path d=\"M22 13h-6l-2 3h-4l-2-3H2\"/><path d=\"M12 3v9M8 8l4 4 4-4\"/><path d=\"M2 13v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6\"/>", "undo": "<path d=\"M9 14L4 9l5-5\"/><path d=\"M4 9h11a5 5 0 0 1 0 10h-3\"/>", "unlock": "<rect x=\"4\" y=\"11\" width=\"16\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 7.8-1.3\"/>", "up": "<path d=\"M12 20V8M6 14l6-6 6 6M4 4h16\"/>", "upload": "<path d=\"M12 16V4M7 9l5-5 5 5M4 20h16\"/>", "user": "<circle cx=\"12\" cy=\"8\" r=\"4\"/><path d=\"M4 21a8 8 0 0 1 16 0\"/>", "users": "<circle cx=\"9\" cy=\"8\" r=\"3.5\"/><path d=\"M2 21a7 7 0 0 1 14 0\"/><path d=\"M16 4.5a3.5 3.5 0 0 1 0 7M22 21a7 7 0 0 0-4.5-6.5\"/>", "wrench": "<path d=\"M14.7 6.3a4 4 0 0 0 5 5L21 13l-8 8-3-3 8-8z\" transform=\"translate(-2 -2)\"/><path d=\"M3 21l6-6\"/>"};
 var SB_EMOJI = {"⚠": "alert", "⬇": "down", "⬆": "up", "📋": "clip", "⛔": "slash", "✏": "pen", "🔒": "lock", "🔓": "unlock", "🗑": "trash", "✅": "check", "🧾": "receipt", "📦": "box", "📊": "dash", "📝": "note", "📅": "cal", "📎": "clipp", "🧪": "flask", "👁": "eye", "⚡": "bolt", "⚖": "scale", "📥": "tray", "🛒": "inbox", "📷": "camera", "📂": "folder", "🔄": "refresh", "💰": "coins", "⚙": "gear", "🩺": "pulse", "🕒": "clock", "↩": "undo", "📖": "book", "📈": "chart", "🧰": "tag", "🔑": "key", "📞": "call", "📲": "phone", "📱": "phone", "🔍": "search", "🏢": "building", "🏭": "building", "👤": "user", "👥": "users", "💾": "save", "⏳": "clock", "⏰": "clock", "🗂": "folder", "🔁": "swap", "🛠": "wrench", "🔧": "wrench", "📌": "pin", "📜": "note", "🗄": "archive", "🔌": "plug", "✨": "sparkle", "📤": "upload", "💥": "alert", "⏹": "stop", "🙈": "eyeoff", "✉": "mail", "🙋": "user", "🏷": "tag", "❓": "help", "➡": "right", "⬅": "left", "⇄": "swap", "📄": "note", "🤖": null, "👋": null, "🎉": null, "🔴": "dot:#dc2626", "🟠": "dot:#f59e0b", "🔵": "dot:#3b82f6", "🟢": "dot:#16a34a", "🟡": "dot:#eab308"};
 var SB_EMOJI_COLOR = {"✅": "#16a34a", "⚠": "#d97706", "⛔": "#dc2626", "💥": "#dc2626", "⚡": "#d97706", "❓": "#6b7280"};
 function SBI(n) { return '<svg class="i" viewBox="0 0 24 24">' + (SB_ICONS[n] || '') + '</svg>'; }
@@ -10193,7 +10265,8 @@ function renderDashboard() {
 
   document.getElementById('dk-spend').textContent   = fmtPHP(totalSpend);
   document.getElementById('dk-restock').textContent = fmtPHP(totalRestockCost);
-  document.getElementById('dk-units').textContent   = fmtInt(totalUnits);
+  var dkUnits = document.getElementById('dk-units'); // card removed — kept null-safe
+  if (dkUnits) dkUnits.textContent = fmtInt(totalUnits);
   document.getElementById('dk-avg').textContent     = fmtPHP(avgCost);
 
   // Trend subtitle
@@ -13010,7 +13083,7 @@ function _countEntryNote() {
 // each book what they counted; items nobody counted keep their quantity.
 var CS_DRAFT_KEY = 'sb_countSheetDraft';
 var CS_FLAG_PCT = 50;
-var _cs = { counts: {}, view: 'count', filter: 'all', q: '', flagged: {}, recounted: {}, busy: false, result: null };
+var _cs = { counts: {}, view: 'count', filter: 'todo', cat: '', editing: {}, q: '', flagged: {}, recounted: {}, busy: false, result: null };
 
 function _csSaveDraft() {
   try { localStorage.setItem(CS_DRAFT_KEY, JSON.stringify({ lockAt: stocktakeLockAt || null, savedAt: new Date().toISOString(), counts: _cs.counts, flagged: _cs.flagged, recounted: _cs.recounted })); } catch(e) {}
@@ -13023,7 +13096,7 @@ function _csClearDraft() { try { localStorage.removeItem(CS_DRAFT_KEY); } catch(
 function openCountSheet() {
   if (!canManageStocktake()) return;
   var draft = _csLoadDraft();
-  _cs = { counts: {}, view: 'count', filter: 'all', q: '', flagged: {}, recounted: {}, busy: false, result: null };
+  _cs = { counts: {}, view: 'count', filter: 'todo', cat: '', editing: {}, q: '', flagged: {}, recounted: {}, busy: false, result: null };
   if (draft && draft.counts && Object.keys(draft.counts).length) {
     var sameLock = (draft.lockAt || null) === (stocktakeLockAt || null);
     var n = Object.keys(draft.counts).filter(function(id) { return _csSum(draft.counts[id]) !== null; }).length;
@@ -13065,45 +13138,67 @@ function renderCountSheet() {
   if (!body) return;
   if (_cs.view === 'done') { body.innerHTML = _csDoneHtml(); return; }
   if (_cs.view === 'review') { body.innerHTML = _csReviewHtml(); return; }
+  if (!_cs.editing) _cs.editing = {};
+  if (_cs.cat === undefined) _cs.cat = '';
   var items = _csItems();
   var counted = _csCountedN();
   var pct = items.length ? Math.round(counted / items.length * 100) : 0;
-  var flaggedN = Object.keys(_cs.flagged).filter(function(id) { return _cs.flagged[id] && !_cs.recounted[id]; }).length;
   var lockInfo = stocktakeLock
-    ? '<span class="badge badge-warn">🔒 Locked ' + (stocktakeLockAt ? new Date(stocktakeLockAt).toLocaleString('en-PH', { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) : '') + '</span>'
-    : '<span class="badge badge-danger">Not locked</span>';
-  var html = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'
-    + '<h2 style="margin:0">📋 Count Sheet</h2>' + lockInfo + '</div>'
-    + (stocktakeLock ? '' : '<div style="background:#fef3c7;color:#92400e;border-radius:8px;padding:8px 10px;font-size:12px;margin-top:8px">The stocktake isn\'t locked, so issues and deliveries can still change stock while you count. '
-        + '<button class="cs-mini" style="color:#92400e;border-color:#f59e0b" onclick="toggleStocktakeLock().then(renderCountSheet)">🔒 Lock now</button></div>')
-    + '<div style="font-size:12px;color:var(--muted);margin:8px 0 4px"><span id="cs-progress-text">' + counted + ' of ' + items.length + ' items counted</span> · Counter: ' + esc((currentUser && currentUser.username) || '') + '</div>'
+    ? '<span class="cs-lock"><span class="em">🔒 </span>' + SBI('lock') + 'Locked ' + (stocktakeLockAt ? new Date(stocktakeLockAt).toLocaleString('en-PH', { weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) : '') + '</span>'
+    : '<span class="cs-lock off">Not locked</span>';
+  var cats = [];
+  items.forEach(function(i) { var c = i.category || 'Uncategorized'; if (cats.indexOf(c) === -1) cats.push(c); });
+  var html = '<div class="cs-head"><h2 style="margin:0">Count sheet</h2>' + lockInfo + '</div>'
+    + (stocktakeLock ? '' : '<div class="cs-note warn">The stocktake isn\'t locked, so issues and deliveries can still change stock while you count. '
+        + '<button class="cs-mini" onclick="toggleStocktakeLock().then(renderCountSheet)"><span class="em">🔒 </span>Lock now</button></div>')
+    + '<div class="cs-prog"><div class="cs-prog-row"><span id="cs-progress-text"><b>' + counted + '</b> of ' + items.length + ' counted</span><span id="cs-progress-pct">' + pct + '%</span></div>'
     + '<div class="cs-progress"><div id="cs-progress-bar" style="width:' + pct + '%"></div></div>'
-    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 8px">'
-    + [['all', 'All'], ['todo', 'Not counted'], ['done', 'Counted']].concat(flaggedN ? [['flagged', 'Recount (' + flaggedN + ')']] : [])
-        .map(function(f) { return '<button class="cs-chip' + (_cs.filter === f[0] ? ' on' : '') + '" onclick="csSetFilter(\'' + f[0] + '\')">' + f[1] + '</button>'; }).join('')
-    + '</div>'
-    + '<input type="search" id="cs-search" placeholder="Search item…" value="' + esc(_cs.q) + '" oninput="csSearch(this.value)" style="width:100%;margin-bottom:4px">'
-    + '<div id="cs-list" style="max-height:52vh;overflow-y:auto">' + _csListHtml() + '</div>'
-    + '<div style="font-size:12px;color:var(--muted);margin:10px 0">🙈 Expected quantities stay hidden while counting. Use <strong>+ spot</strong> when an item is in more than one place — the spots are added up.</div>'
-    + '<div class="modal-actions" style="margin-top:6px">'
-    + '<button class="btn btn-secondary" onclick="csDiscard()">Discard</button>'
-    + '<button class="btn btn-secondary" onclick="closeModal(\'count-sheet-modal\')">Close (keeps counts)</button>'
-    + '<button class="btn btn-primary" onclick="csReview()"' + (counted ? '' : ' disabled') + '>Review counts →</button>'
-    + '</div>';
+    + '<div class="cs-counter">Counter: ' + esc((currentUser && currentUser.username) || '') + '</div></div>'
+    + '<div class="cs-seg" id="cs-seg">' + _csSegHtml() + '</div>'
+    + '<div class="cs-cats" id="cs-cats">' + _csCatsHtml(cats) + '</div>'
+    + '<input type="search" id="cs-search" placeholder="Search item or SKU" value="' + esc(_cs.q) + '" oninput="csSearch(this.value)">'
+    + '<div id="cs-list">' + _csListHtml() + '</div>'
+    + '<div class="cs-foot">'
+    + '<div class="cs-foot-note">Expected amounts stay hidden. Counts are saved on this device.</div>'
+    + '<div class="cs-foot-btns">'
+    + '<button class="btn btn-secondary cs-discard" onclick="csDiscard()">Discard</button>'
+    + '<button class="btn btn-secondary" onclick="closeModal(\'count-sheet-modal\')">Close</button>'
+    + '<button class="btn btn-primary" id="cs-review-btn" onclick="csReview()"' + (counted ? '' : ' disabled') + '>' + _csReviewLabel(counted) + '</button>'
+    + '</div></div>';
   body.innerHTML = html;
+}
+function _csReviewLabel(n) { return n ? 'Review ' + n + ' count' + (n === 1 ? '' : 's') : 'Review counts'; }
+function _csFlaggedN() { return Object.keys(_cs.flagged).filter(function(id) { return _cs.flagged[id] && !_cs.recounted[id]; }).length; }
+function _csSegHtml() {
+  var all = _csItems().length, done = _csCountedN(), fl = _csFlaggedN();
+  return [['todo', 'Not counted', all - done], ['done', 'Counted', done], ['flagged', 'Recount', fl], ['all', 'All', null]].map(function(f) {
+    return '<button class="' + (_cs.filter === f[0] ? 'on' : '') + '" onclick="csSetFilter(\'' + f[0] + '\')">' + f[1]
+      + (f[2] !== null ? ' <span class="c' + (f[0] === 'flagged' && f[2] ? ' red' : '') + '">' + f[2] + '</span>' : '') + '</button>';
+  }).join('');
+}
+function _csCatsHtml(cats) {
+  var items = _csItems();
+  var chip = function(key, label) {
+    var inCat = key ? items.filter(function(x) { return (x.category || 'Uncategorized') === key; }) : items;
+    var d = inCat.filter(function(x) { return _csSum(_cs.counts[x.id]) !== null; }).length;
+    return '<button class="cs-cc' + (_cs.cat === key ? ' on' : '') + '" onclick="csSetCat(\'' + esc(key).replace(/'/g, "\\'") + '\')">' + esc(label)
+      + ' <b id="cs-cc-' + (key ? _csCatKey(key) : '_all') + '">' + d + '/' + inCat.length + '</b></button>';
+  };
+  return chip('', 'All') + cats.map(function(c) { return chip(c, c); }).join('');
 }
 
 function _csListHtml() {
   var q = (_cs.q || '').trim().toLowerCase();
   var items = _csItems().filter(function(i) {
     var c = _csSum(_cs.counts[i.id]);
-    if (_cs.filter === 'todo' && c !== null) return false;
+    if (_cs.cat && (i.category || 'Uncategorized') !== _cs.cat) return false;
+    if (_cs.filter === 'todo' && c !== null && !_cs.editing[i.id]) return false;
     if (_cs.filter === 'done' && c === null) return false;
     if (_cs.filter === 'flagged' && !(_cs.flagged[i.id] && !_cs.recounted[i.id])) return false;
     if (q && [i.name, i.category, i.sku].every(function(v) { return String(v || '').toLowerCase().indexOf(q) === -1; })) return false;
     return true;
   });
-  if (!items.length) return '<div style="color:var(--muted);text-align:center;padding:20px">' + (_cs.filter === 'todo' ? '✅ Everything is counted.' : 'No items match.') + '</div>';
+  if (!items.length) return '<div class="cs-empty">' + (_cs.filter === 'todo' ? '<span class="em">✅ </span>' + SBI('check') + ' Everything here is counted.' : 'No items match.') + '</div>';
   var html = '', lastCat = null;
   var allItems = _csItems();
   items.forEach(function(i) {
@@ -13114,38 +13209,91 @@ function _csListHtml() {
       html += '<div class="cs-cat"><span>' + esc(cat) + '</span><span id="cs-cat-' + _csCatKey(cat) + '">' + doneCat + '/' + inCat.length + '</span></div>';
       lastCat = cat;
     }
-    html += '<div class="cs-row" id="cs-row-' + esc(i.id) + '">' + _csRowInner(i) + '</div>';
+    var total = _csSum(_cs.counts[i.id]);
+    var flagged = _cs.flagged[i.id] && !_cs.recounted[i.id];
+    var compact = total !== null && !_cs.editing[i.id] && !flagged;
+    html += '<div class="cs-row' + (compact ? ' cs-done' : '') + (flagged ? ' cs-flag' : '') + '" id="cs-row-' + esc(i.id) + '">' + (compact ? _csRowDone(i) : _csRowInner(i)) + '</div>';
   });
   return html;
 }
 
 function _csCatKey(cat) { return String(cat).replace(/[^a-z0-9]/gi, '_'); }
 
+// A counted row, folded: the number, with Edit to change it
+function _csRowDone(i) {
+  var spots = (_cs.counts[i.id] || []).filter(function(v) { return v !== '' && v !== null && !isNaN(parseFloat(v)); });
+  return '<div class="cs-name"><div class="cs-title"><span class="cs-ok">' + SBI('check') + '<span class="em">✓ </span></span>' + esc(i.name) + '</div>'
+    + '<div class="cs-meta">' + esc(i.unit || '') + (i.sku ? ' · ' + esc(i.sku) : '') + (spots.length > 1 ? ' · ' + spots.map(function(s) { return fmt(parseFloat(s)); }).join(' + ') : '') + '</div></div>'
+    + '<div class="cs-val"><b>' + fmt(_csSum(_cs.counts[i.id])) + '</b> <span class="cs-unit">' + esc(i.unit || '') + '</span>'
+    + '<button class="cs-link" onclick="csEdit(\'' + esc(i.id) + '\')">Edit</button></div>';
+}
+
 function _csRowInner(i) {
   var spots = _cs.counts[i.id] && _cs.counts[i.id].length ? _cs.counts[i.id] : [''];
   var total = _csSum(spots);
   var flagged = _cs.flagged[i.id] && !_cs.recounted[i.id];
-  return '<div class="cs-name"><div style="font-weight:600">' + (total !== null ? '<span style="color:var(--ok)">✓</span> ' : '') + esc(i.name) + '</div>'
-    + '<div style="font-size:12px;color:var(--muted)">' + esc(i.unit || '') + (i.sku ? ' · ' + esc(i.sku) : '') + '</div>'
-    + (flagged ? '<div style="font-size:12px;color:var(--danger);margin-top:2px">⚠️ Recount — this was far from expected</div>' : '')
-    + (spots.length > 1 ? '<div id="cs-total-' + esc(i.id) + '" style="font-size:12px;margin-top:4px">Total: <strong>' + (total === null ? '—' : fmt(total)) + '</strong></div>' : '')
-    + '</div>'
-    + '<div class="cs-spots">'
-    + spots.map(function(v, idx) {
-      return '<div class="cs-spot">'
-        + (spots.length > 1 ? '<button class="cs-mini" title="Remove this spot" onclick="csRemoveSpot(\'' + esc(i.id) + '\',' + idx + ')">✕</button>' : '')
-        + '<input type="number" inputmode="decimal" min="0" step="any" placeholder="' + (spots.length > 1 ? 'Spot ' + (idx + 1) : 'Count') + '" value="' + (v === null || v === undefined ? '' : esc(String(v))) + '" oninput="csInput(\'' + esc(i.id) + '\',' + idx + ',this.value)">'
-        + '</div>';
-    }).join('')
-    + '<button class="cs-mini" onclick="csAddSpot(\'' + esc(i.id) + '\')">+ spot</button>'
-    + '</div>';
+  var id = esc(i.id);
+  var input = function(v, idx, ph) {
+    return '<input type="number" inputmode="decimal" enterkeyhint="next" min="0" step="any" placeholder="' + ph + '" value="' + (v === null || v === undefined ? '' : esc(String(v))) + '"'
+      + ' oninput="csInput(\'' + id + '\',' + idx + ',this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();csNext(this);}">';
+  };
+  var head = '<div class="cs-title">' + (total !== null ? '<span class="cs-ok">' + SBI('check') + '<span class="em">✓ </span></span>' : '') + esc(i.name) + '</div>'
+    + '<div class="cs-meta">' + esc(i.unit || '') + (i.sku ? ' · ' + esc(i.sku) : '') + '</div>'
+    + (flagged ? '<div class="cs-flag-note"><span class="em">⚠️ </span>' + SBI('alert') + 'Recount — far from expected</div>' : '');
+  var addSpot = '<button class="cs-link" onclick="csAddSpot(\'' + id + '\')">+ Add another spot</button>';
+  if (spots.length === 1) {
+    return '<div class="cs-name">' + head + addSpot + '</div>'
+      + '<div class="cs-in">' + input(spots[0], 0, 'Count') + '<span class="cs-unit">' + esc(i.unit || '') + '</span></div>';
+  }
+  return '<div class="cs-name cs-wide">' + head
+    + '<div class="cs-spots">' + spots.map(function(v, idx) {
+      return '<div class="cs-spot"><span class="cs-spot-l">Spot ' + (idx + 1) + '</span>' + input(v, idx, '0')
+        + '<button class="cs-x" title="Remove this spot" onclick="csRemoveSpot(\'' + id + '\',' + idx + ')"><span class="em">✕</span>' + SBI('x') + '</button></div>';
+    }).join('') + '</div>'
+    + '<div class="cs-total" id="cs-total-' + id + '">Total <strong>' + (total === null ? '—' : fmt(total) + ' ' + esc(i.unit || '')) + '</strong></div>'
+    + addSpot + '</div>';
 }
 
-function csSetFilter(f) { _cs.filter = f; renderCountSheet(); }
+function csSetFilter(f) { _cs.filter = f; _cs.editing = {}; renderCountSheet(); }
+function csSetCat(c) { _cs.cat = c; _cs.editing = {}; renderCountSheet(); var l = document.getElementById('cs-list'); if (l) l.scrollTop = 0; }
 function csSearch(v) {
   _cs.q = v;
   var list = document.getElementById('cs-list');
   if (list) list.innerHTML = _csListHtml();
+}
+function csEdit(id) {
+  _cs.editing[id] = true;
+  _csRerenderRow(id);
+  var inp = document.querySelector('#cs-row-' + id + ' input');
+  if (inp) { inp.focus(); if (inp.select) inp.select(); }
+}
+// Keyboard "Next": the next box in this item (another spot), else the next item
+function csNext(el) {
+  var all = Array.prototype.slice.call(document.querySelectorAll('#cs-list input'));
+  var i = all.indexOf(el);
+  if (i > -1 && i < all.length - 1) { all[i + 1].focus(); if (all[i + 1].scrollIntoView) all[i + 1].scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  else el.blur();
+}
+
+function _csUpdateCounters(id) {
+  var items = _csItems(), counted = _csCountedN();
+  var pct = items.length ? Math.round(counted / items.length * 100) : 0;
+  var pt = document.getElementById('cs-progress-text');
+  if (pt) pt.innerHTML = '<b>' + counted + '</b> of ' + items.length + ' counted';
+  var pp = document.getElementById('cs-progress-pct'); if (pp) pp.textContent = pct + '%';
+  var pb = document.getElementById('cs-progress-bar'); if (pb) pb.style.width = pct + '%';
+  var seg = document.getElementById('cs-seg'); if (seg) seg.innerHTML = _csSegHtml();
+  var all = document.getElementById('cs-cc-_all'); if (all) all.textContent = counted + '/' + items.length;
+  var item = items.find(function(x) { return x.id === id; });
+  if (item) {
+    var cat = item.category || 'Uncategorized';
+    var inCat = items.filter(function(x) { return (x.category || 'Uncategorized') === cat; });
+    var t = inCat.filter(function(x) { return _csSum(_cs.counts[x.id]) !== null; }).length + '/' + inCat.length;
+    var cc = document.getElementById('cs-cat-' + _csCatKey(cat)); if (cc) cc.textContent = t;
+    var ch = document.getElementById('cs-cc-' + _csCatKey(cat)); if (ch) ch.textContent = t;
+  }
+  var reviewBtn = document.getElementById('cs-review-btn');
+  if (reviewBtn) { reviewBtn.disabled = !counted; reviewBtn.textContent = _csReviewLabel(counted); }
 }
 
 // Typing updates state without re-rendering (keeps focus on the input).
@@ -13154,34 +13302,39 @@ function csInput(id, idx, val) {
   spots[idx] = val;
   _cs.counts[id] = spots;
   if (_cs.flagged[id]) _cs.recounted[id] = true;
+  _cs.editing[id] = true; // stays open while you type; folds on the next redraw
   _csSaveDraft();
+  var t = _csSum(spots);
+  var item = db.items.find(function(x) { return x.id === id; });
   var tot = document.getElementById('cs-total-' + id);
-  if (tot) { var t = _csSum(spots); tot.innerHTML = 'Total: <strong>' + (t === null ? '—' : fmt(t)) + '</strong>'; }
-  var items = _csItems(), counted = _csCountedN();
-  var pt = document.getElementById('cs-progress-text');
-  if (pt) pt.textContent = counted + ' of ' + items.length + ' items counted';
-  var pb = document.getElementById('cs-progress-bar');
-  if (pb) pb.style.width = (items.length ? Math.round(counted / items.length * 100) : 0) + '%';
-  var item = items.find(function(x) { return x.id === id; });
-  if (item) {
-    var cat = item.category || 'Uncategorized';
-    var inCat = items.filter(function(x) { return (x.category || 'Uncategorized') === cat; });
-    var cc = document.getElementById('cs-cat-' + _csCatKey(cat));
-    if (cc) cc.textContent = inCat.filter(function(x) { return _csSum(_cs.counts[x.id]) !== null; }).length + '/' + inCat.length;
+  if (tot) tot.innerHTML = 'Total <strong>' + (t === null ? '—' : fmt(t) + ' ' + esc(item ? item.unit || '' : '')) + '</strong>';
+  var row = document.getElementById('cs-row-' + id);
+  if (row) {
+    row.classList.toggle('cs-typed', t !== null);
+    var title = row.querySelector('.cs-title');
+    if (title) {
+      var ok = title.querySelector('.cs-ok');
+      if (t !== null && !ok) title.insertAdjacentHTML('afterbegin', '<span class="cs-ok">' + SBI('check') + '<span class="em">✓ </span></span>');
+      if (t === null && ok) ok.remove();
+    }
   }
-  var reviewBtn = document.querySelector('#cs-body .btn-primary');
-  if (reviewBtn) reviewBtn.disabled = !counted;
+  _csUpdateCounters(id);
 }
 
 function _csRerenderRow(id) {
   var row = document.getElementById('cs-row-' + id);
   var item = db.items.find(function(x) { return x.id === id; });
-  if (row && item) row.innerHTML = _csRowInner(item);
+  if (!row || !item) return;
+  var flagged = _cs.flagged[id] && !_cs.recounted[id];
+  var compact = _csSum(_cs.counts[id]) !== null && !_cs.editing[id] && !flagged;
+  row.className = 'cs-row' + (compact ? ' cs-done' : '') + (flagged ? ' cs-flag' : '') + (!compact && _csSum(_cs.counts[id]) !== null ? ' cs-typed' : '');
+  row.innerHTML = compact ? _csRowDone(item) : _csRowInner(item);
 }
 function csAddSpot(id) {
   var spots = _cs.counts[id] && _cs.counts[id].length ? _cs.counts[id] : [''];
   spots.push('');
   _cs.counts[id] = spots;
+  _cs.editing[id] = true;
   _csSaveDraft();
   _csRerenderRow(id);
   var inputs = document.querySelectorAll('#cs-row-' + id + ' input');
@@ -13191,6 +13344,7 @@ function csRemoveSpot(id, idx) {
   var spots = _cs.counts[id] || [];
   spots.splice(idx, 1);
   _cs.counts[id] = spots.length ? spots : [''];
+  _cs.editing[id] = true;
   _csSaveDraft();
   _csRerenderRow(id);
   csInput(id, 0, _cs.counts[id][0]); // refresh progress
@@ -13199,7 +13353,7 @@ function csRemoveSpot(id, idx) {
 function csDiscard() {
   if (_csCountedN() && !confirm('Discard all counts on this sheet? Nothing has been booked yet.')) return;
   _csClearDraft();
-  _cs = { counts: {}, view: 'count', filter: 'all', q: '', flagged: {}, recounted: {}, busy: false, result: null };
+  _cs = { counts: {}, view: 'count', filter: 'todo', cat: '', editing: {}, q: '', flagged: {}, recounted: {}, busy: false, result: null };
   closeModal('count-sheet-modal');
 }
 
@@ -13229,56 +13383,55 @@ function csReview() {
   _csSaveDraft();
   renderCountSheet();
 }
-function csBackToCount(filter) { _cs.view = 'count'; _cs.filter = filter || 'all'; renderCountSheet(); }
+function csBackToCount(filter) { _cs.view = 'count'; _cs.filter = filter || 'todo'; _cs.editing = {}; renderCountSheet(); }
 
 function _csReviewHtml() {
   var rows = _csReviewRows();
   var all = _csItems();
-  var diffs = rows.filter(function(r) { return r.diff !== 0; }).sort(function(a, b) { return b.estCost - a.estCost; });
+  var diffs = rows.filter(function(r) { return r.diff !== 0; }).sort(function(a, b) {
+    var fa = _cs.flagged[a.item.id] && !_cs.recounted[a.item.id] ? 1 : 0, fb = _cs.flagged[b.item.id] && !_cs.recounted[b.item.id] ? 1 : 0;
+    return (fb - fa) || (b.estCost - a.estCost);
+  });
   var matched = rows.length - diffs.length;
   var notCounted = all.filter(function(i) { return _csSum(_cs.counts[i.id]) === null; });
   var shortage = diffs.filter(function(r) { return r.diff < 0; }).reduce(function(s, r) { return s + r.estCost; }, 0);
   var excess = diffs.filter(function(r) { return r.diff > 0; }).reduce(function(s, r) { return s + r.estCost; }, 0);
   var pending = rows.filter(function(r) { return _cs.flagged[r.item.id] && !_cs.recounted[r.item.id]; });
-  var card = function(label, val, color) {
-    return '<div style="background:var(--surface2);border-radius:8px;padding:8px 12px;flex:1;min-width:120px"><div style="font-size:11px;color:var(--muted)">' + label + '</div><div style="font-size:17px;font-weight:700' + (color ? ';color:' + color : '') + '">' + val + '</div></div>';
-  };
-  var html = '<h2 style="margin-bottom:4px">Review before booking</h2>'
-    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">' + rows.length + ' of ' + all.length + ' items counted · amounts are estimates at the current batch cost</div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
-    + card('Shortage', '≈ ' + fmtPHP(Math.round(shortage * 100) / 100), 'var(--danger)')
-    + card('Excess found', '≈ ' + fmtPHP(Math.round(excess * 100) / 100), 'var(--ok)')
-    + card('Net variance', '≈ ' + fmtPHP(Math.round((shortage - excess) * 100) / 100))
+  var peso = function(v) { return fmtPHP(Math.round(v * 100) / 100); };
+  var card = function(label, val, cls) { return '<div class="cs-kpi"><div class="cs-kpi-l">' + label + '</div><div class="cs-kpi-v ' + (cls || '') + '">' + val + '</div></div>'; };
+  var html = '<div class="cs-head"><h2 style="margin:0">Review before booking</h2></div>'
+    + '<div class="cs-counter" style="margin:4px 0 12px">' + rows.length + ' of ' + all.length + ' items counted · amounts are estimates at the current batch cost</div>'
+    + '<div class="cs-kpis">'
+    + card('Shortage', '≈ ' + peso(shortage), 'red')
+    + card('Excess found', '≈ ' + peso(excess), 'green')
+    + card('Net variance', '≈ ' + peso(shortage - excess))
     + card('Matched', matched + ' item' + (matched === 1 ? '' : 's'))
     + '</div>';
   if (pending.length) {
-    html += '<div style="background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:10px">⚠️ ' + pending.length + ' item' + (pending.length === 1 ? ' is' : 's are')
-      + ' off by more than ' + CS_FLAG_PCT + '%. Recount ' + (pending.length === 1 ? 'it' : 'them') + ' before booking — a typo here becomes a big false variance in this week\'s cost.</div>';
+    html += '<div class="cs-note bad"><span class="em">⚠️ </span>' + SBI('alert') + '<span>' + pending.length + ' item' + (pending.length === 1 ? ' is' : 's are')
+      + ' off by more than ' + CS_FLAG_PCT + '%. Recount ' + (pending.length === 1 ? 'it' : 'them') + ' before booking — a typo here becomes a big false variance in this week\'s cost.</span></div>';
   }
-  html += '<div class="table-wrap" style="max-height:42vh;overflow-y:auto"><table><thead><tr><th>Item</th><th style="text-align:right">Counted</th><th style="text-align:right">Expected</th><th style="text-align:right">Difference</th><th style="text-align:right">≈ Value</th></tr></thead><tbody>'
-    + (diffs.length ? diffs.map(function(r) {
+  html += '<div class="cs-rv-list">' + (diffs.length ? diffs.map(function(r) {
       var flagNow = _cs.flagged[r.item.id] && !_cs.recounted[r.item.id];
-      return '<tr' + (flagNow ? ' style="background:rgba(220,38,38,.06)"' : '') + '><td><strong>' + esc(r.item.name) + '</strong>'
-        + '<div style="font-size:11px;color:var(--muted)">' + esc(r.item.category || '') + (r.spots.length > 1 ? ' · ' + r.spots.map(function(s) { return fmt(parseFloat(s)); }).join(' + ') : '') + '</div>'
-        + (flagNow ? '<span class="badge badge-danger">Recount</span>' : (_cs.recounted[r.item.id] ? '<span class="badge badge-info">Recounted</span>' : '')) + '</td>'
-        + '<td style="text-align:right">' + fmt(r.counted) + '</td><td style="text-align:right">' + fmt(r.expected) + '</td>'
-        + '<td style="text-align:right;font-weight:600;color:' + (r.diff < 0 ? 'var(--danger)' : 'var(--ok)') + '">' + (r.diff > 0 ? '+' : '') + fmt(r.diff)
-        + (r.pctOff !== null ? '<div style="font-size:11px;font-weight:400;color:var(--muted)">' + Math.round(r.pctOff) + '%</div>' : '') + '</td>'
-        + '<td style="text-align:right">' + fmtPHP(Math.round(r.estCost * 100) / 100) + '</td></tr>';
-    }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:16px">✅ Every counted item matches the system.</td></tr>')
-    + '</tbody></table></div>';
+      var tag = flagNow ? ' <span class="cs-tag red">Recount</span>' : (_cs.recounted[r.item.id] ? ' <span class="cs-tag">Recounted</span>' : '');
+      return '<div class="cs-rv' + (flagNow ? ' cs-flag' : '') + '"><div class="cs-rv-l"><strong>' + esc(r.item.name) + '</strong>'
+        + '<div class="cs-meta">' + esc(r.item.category || '') + (r.spots.length > 1 ? ' · ' + r.spots.map(function(s) { return fmt(parseFloat(s)); }).join(' + ') : '') + tag + '</div></div>'
+        + '<div class="cs-rv-r"><div class="cs-meta">' + fmt(r.counted) + ' counted / ' + fmt(r.expected) + ' expected</div>'
+        + '<div class="cs-rv-d ' + (r.diff < 0 ? 'red' : 'green') + '">' + (r.diff > 0 ? '+' : '−') + fmt(Math.abs(r.diff)) + ' ' + esc(r.item.unit || '')
+        + ' <span class="cs-meta">· ' + peso(r.estCost) + (r.pctOff !== null ? ' · ' + Math.round(r.pctOff) + '%' : '') + '</span></div></div></div>';
+    }).join('') : '<div class="cs-empty"><span class="em">✅ </span>' + SBI('check') + ' Every counted item matches the system.</div>') + '</div>';
   if (notCounted.length) {
-    html += '<div style="font-size:12px;color:var(--muted);margin-top:10px">Not counted (' + notCounted.length + ') — these keep their current quantity: '
-      + notCounted.slice(0, 12).map(function(i) { return esc(i.name); }).join(', ') + (notCounted.length > 12 ? '…' : '') + '</div>';
+    html += '<details class="cs-nc"><summary>Not counted (' + notCounted.length + ') — these keep their current quantity</summary><div>'
+      + notCounted.map(function(i) { return esc(i.name); }).join(', ') + '</div></details>';
   }
-  html += '<div style="font-size:12px;color:var(--muted);margin-top:8px">Counts will be dated '
+  html += '<div class="cs-counter" style="margin-top:8px">Counts will be dated '
     + new Date(_countEntryDate(new Date().toISOString())).toLocaleString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
     + (stocktakeLock ? ' — just before the lock, so they close this week.' : ' (now — the stocktake isn\'t locked).') + '</div>'
-    + '<div class="modal-actions">'
-    + '<button class="btn btn-secondary" onclick="csBackToCount()">← Back to counting</button>'
+    + '<div class="cs-foot"><div class="cs-foot-btns">'
+    + '<button class="btn btn-secondary" onclick="csBackToCount()">← Back</button>'
     + (pending.length ? '<button class="btn btn-secondary" onclick="csBackToCount(\'flagged\')">Recount flagged (' + pending.length + ')</button>' : '')
     + '<button class="btn btn-primary" id="cs-book-btn" onclick="csBook()">Book ' + rows.length + ' count' + (rows.length === 1 ? '' : 's') + '</button>'
-    + '</div>';
+    + '</div></div>';
   return html;
 }
 
