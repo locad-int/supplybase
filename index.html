@@ -586,6 +586,21 @@
   .row-menu button.danger:hover { background: #fef2f2; }
   .row-menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
   .row-more.on { background: var(--surface2) !important; color: var(--text) !important; }
+  tr.po-group-header td:first-child { white-space: nowrap; }
+  /* Reorder list: one row per PO */
+  .ro-seg { display: inline-flex; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 2px; }
+  .ro-seg button { border: none; background: none; padding: 5px 12px; border-radius: 7px; font: inherit; font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  .ro-seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(16,24,40,.12); }
+  .ro-seg .c { color: var(--muted); font-weight: 400; margin-left: 2px; }
+  .ro-seg .c:empty { display: none; }
+  tr.ro-row { cursor: pointer; }
+  tr.ro-row td:first-child { white-space: nowrap; }
+  .ro-sup { color: var(--muted); }
+  .ro-late { display: inline-block; margin-left: 6px; background: #fef2f2; color: #b91c1c; border-radius: 99px; padding: 1px 8px; font-size: 11.5px; font-weight: 500; }
+  .ro-prog { display: flex; align-items: center; gap: 8px; white-space: nowrap; color: var(--muted); font-size: 12.5px; }
+  .ro-bar { width: 64px; height: 5px; background: var(--surface2); border-radius: 99px; overflow: hidden; flex-shrink: 0; }
+  .ro-bar > div { height: 100%; background: #22c55e; border-radius: 99px; }
+  .pod-recv .i { color: var(--ok); width: 14px; height: 14px; }
   /* ─── COST REPORT TOOLBAR ────────────────────────────────────────────────── */
   .rpt-toolbar { margin-bottom: 16px; gap: 8px; }
   .rpt-toolbar > select { flex: 0 1 auto; min-width: 0; max-width: none; }
@@ -1222,12 +1237,12 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
   <!-- REORDER TAB -->
   <div class="tab-panel" id="tab-reorder">
     <div class="filters">
-      <select id="reorder-filter" onchange="renderReorder()" style="width:auto;max-width:220px">
-        <option value="">All Items</option>
-        <option value="needed">Needs Reorder</option>
-        <option value="ordered">Ordered</option>
-        <option value="received">Received</option>
-      </select>
+      <input type="hidden" id="reorder-filter" value="open">
+      <div class="ro-seg" role="tablist" aria-label="Show">
+        <button type="button" data-f="open" class="on" onclick="setReorderFilter('open')">Open <span class="c" id="ro-c-open"></span></button>
+        <button type="button" data-f="received" onclick="setReorderFilter('received')">Received <span class="c" id="ro-c-received"></span></button>
+        <button type="button" data-f="all" onclick="setReorderFilter('all')">All <span class="c" id="ro-c-all"></span></button>
+      </div>
       <button id="btn-create-reorder" class="btn btn-primary" onclick="openReorderCreateModal()">+ Create Reorder</button>
       <button id="btn-receive-dr" class="btn btn-secondary" onclick="openDrReceive()" title="Photograph a delivery receipt — SupplyBase reads it and fills in what to receive" style="display:none"><span class="em">📷 </span><svg class="i" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>Receive from DR</button>
       <button id="btn-po-history" class="btn btn-secondary" onclick="openPoHistoryModal()"><span class="em">📋 </span><svg class="i" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 12h6M9 16h4"/></svg>PO History</button>
@@ -1238,21 +1253,20 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
       <table>
         <thead>
           <tr>
-            <th>Purchase Order</th>
+            <th>PO</th>
             <th>Supplier</th>
-            <th>Qty to Order</th>
-            <th>Cost/Unit</th>
-            <th>Total Cost</th>
-            <th>Timeline</th>
+            <th>Items</th>
+            <th>Total</th>
+            <th>Delivery date</th>
+            <th>Progress</th>
             <th>Status</th>
-            <th>Notes</th>
-            <th>Actions</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="reorder-tbody"></tbody>
       </table>
     </div>
-    <div class="empty hidden" id="reorder-empty"><div class="icon">🔄</div><p>No reorder records yet.</p></div>
+    <div class="empty hidden" id="reorder-empty"><div class="icon">🔄</div><p id="reorder-empty-msg">No reorder records yet.</p></div>
   </div>
 
   <!-- COST REPORT TAB -->
@@ -2659,6 +2673,8 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
     <div class="modal-actions">
       <button class="btn btn-secondary" id="pod-preview-btn">👁 Preview PDF</button>
       <button class="btn btn-secondary" id="pod-edit-btn" style="display:none"><span class="em">✏️ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Edit PO</button>
+      <button class="btn btn-secondary" id="pod-download-btn" style="display:none"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Download PDF</button>
+      <button class="btn btn-danger" id="pod-delete-btn" style="display:none;margin-right:auto;order:-1"><span class="em">🗑 </span><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3"/></svg>Delete PO</button>
       <button class="btn btn-primary" onclick="closeModal('po-detail-modal')">Close</button>
     </div>
   </div>
@@ -5418,25 +5434,69 @@ function closeRowMenu() {
   if (m) m.remove();
   document.querySelectorAll('.row-more.on').forEach(function(b) { b.classList.remove('on'); });
 }
-function openRowMenu(btn, itemId) {
+// Each entry: [icon, emoji (old look), label, onclick JS, isDanger]. Danger
+// entries (Delete) always go last, below a divider. Only what this person may
+// do is listed; a row with nothing to offer gets no "⋯" at all.
+function _q(v) { return "'" + String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
+function _rowMenuEntries(kind, a, b) {
+  var E = [];
+  if (kind === 'inv') {
+    E.push(['hist', '📋', 'Item history', 'openItemHistory(' + _q(a) + ')']);
+    if (can('log'))    E.push(['note', '📝', 'Log usage', 'openLogForItem(' + _q(a) + ')']);
+    if (can('adjust')) E.push(['scale', '⚖', 'Stock adjustment', 'openAdjust(' + _q(a) + ')']);
+    if (currentRole === 'superuser') E.push(['pen', '✏️', 'Edit item', 'openItemModal(' + _q(a) + ')']);
+    if (currentRole === 'superuser') E.push(['trash', '🗑', 'Delete item', 'deleteItem(' + _q(a) + ')', true]);
+  } else if (kind === 'po') { // a = PO number
+    var po = (db.purchaseOrders || []).find(function(p) { return String(p.poNumber) === String(a); });
+    E.push(['clip', '📋', 'PO details', 'openPoDetail(' + _q(a) + ')']);
+    if (po) E.push(['eye', '👁', 'Preview PO', 'previewPo(' + _q(po.id) + ')']);
+    if (po) E.push(['down', '⬇', 'Download PO (PDF)', 'redownloadPo(' + _q(po.id) + ')']);
+    if (po && currentRole === 'superuser') E.push(['pen', '✏️', 'Edit PO', 'openEditPoModal(' + _q(po.id) + ')']);
+    if (currentRole === 'superuser') E.push(['trash', '🗑', 'Delete PO', 'deletePoByNumber(' + _q(a) + ')', true]);
+  } else if (kind === 'rline') { // a = reorder line id
+    var r = db.reorders.find(function(x) { return x.id === a; });
+    if (!r) return E;
+    var closedShort = _isClosedShort(r);
+    if (b !== 'detail' && r.status !== 'received' && can('mark_received')) E.push(['tray', '📥', 'Receive delivery', 'openReceiveModal(' + _q(a) + ')']);
+    if (currentRole === 'superuser') E.push(['pen', '✏️', 'Edit line', 'openReorderModal(' + _q(a) + ')']);
+    if (_canCloseShort() && r.status === 'ordered') E.push(['stop', '⏹', 'Close line short', 'closeReorderShort(' + _q(a) + ')']);
+    if (_canCloseShort() && closedShort) E.push(['reset', '↺', 'Reopen line', 'reopenReorderLine(' + _q(a) + ')']);
+    if (currentRole === 'superuser') E.push(['trash', '🗑', 'Delete line', 'deleteReorder(' + _q(a) + ')', true]);
+  } else if (kind === 'cline') { // non-catalog PO line: a = PO id, b = index
+    var recvd = !!(a && b !== undefined && (function() {
+      var p = (db.purchaseOrders || []).find(function(x) { return x.id === a; });
+      var it = p && (p.customItems || [])[b];
+      return it && (it.status === 'received' || it.receivedAt);
+    })());
+    if (!recvd && can('mark_received')) E.push(['tray', '📥', 'Mark delivered', 'markCustomItemReceived(' + _q(a) + ',' + Number(b) + ')']);
+    if (recvd && currentRole === 'superuser') E.push(['undo', '↩️', 'Undo delivered', 'unmarkCustomItemReceived(' + _q(a) + ',' + Number(b) + ')']);
+  }
+  return E;
+}
+// The "⋯" button for a row (or '' when there's nothing to offer)
+function rowMenuBtn(kind, a, b) {
+  if (!_rowMenuEntries(kind, a, b).length) return '';
+  var args = [_q(kind), _q(a)].concat(b === undefined ? [] : [typeof b === 'number' ? b : _q(b)]).join(',');
+  return '<button class="btn btn-icon btn-sm row-more" title="Actions" aria-haspopup="menu" onclick="event.stopPropagation();openRowMenu(this,' + args.replace(/"/g, '&quot;') + ')"><span class="em">⋯</span>' + SBI('more') + '</button>';
+}
+function openRowMenu(btn, kind, a, b) {
+  if (a === undefined) { a = kind; kind = 'inv'; } // older calls: openRowMenu(btn, itemId)
   var wasOpen = btn.classList.contains('on');
   closeRowMenu();
   if (wasOpen) return;
-  var id = String(itemId).replace(/'/g, "\\'");
-  var rows = [['hist', '📋', 'Item history', "openItemHistory('" + id + "')"]];
-  if (can('log'))    rows.push(['note', '📝', 'Log usage', "openLogForItem('" + id + "')"]);
-  if (can('adjust')) rows.push(['scale', '⚖', 'Stock adjustment', "openAdjust('" + id + "')"]);
-  if (currentRole === 'superuser') rows.push(['pen', '✏️', 'Edit item', "openItemModal('" + id + "')"]);
-  var del = currentRole === 'superuser';
+  var E = _rowMenuEntries(kind, a, b);
+  if (!E.length) return;
+  var normal = E.filter(function(e) { return !e[4]; }), danger = E.filter(function(e) { return e[4]; });
+  var item = function(e) {
+    return '<button type="button" role="menuitem"' + (e[4] ? ' class="danger"' : '') + ' onclick="closeRowMenu();' + e[3].replace(/"/g, '&quot;') + '"><span class="em">' + e[1] + ' </span>' + SBI(e[0]) + '<span>' + esc(e[2]) + '</span></button>';
+  };
   var m = document.createElement('div');
   m.id = 'row-menu'; m.className = 'row-menu'; m.setAttribute('role', 'menu');
-  m.innerHTML = rows.map(function(r) {
-    return '<button type="button" role="menuitem" onclick="closeRowMenu();' + r[3] + '"><span class="em">' + r[1] + ' </span>' + SBI(r[0]) + '<span>' + r[2] + '</span></button>';
-  }).join('') + (del ? '<div class="row-menu-sep"></div><button type="button" role="menuitem" class="danger" onclick="closeRowMenu();deleteItem(\'' + id + '\')"><span class="em">🗑 </span>' + SBI('trash') + '<span>Delete item</span></button>' : '');
+  m.innerHTML = normal.map(item).join('') + (danger.length ? (normal.length ? '<div class="row-menu-sep"></div>' : '') + danger.map(item).join('') : '');
   m.addEventListener('click', function(e) { e.stopPropagation(); });
   document.body.appendChild(m);
   btn.classList.add('on');
-  // Place it under the button, right-aligned; flip above if there's no room below
+  // Under the button, right-aligned; flips above when there's no room below
   var r = btn.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
   var left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw));
   var top = r.bottom + 6;
@@ -5728,7 +5788,7 @@ function renderInventory() {
     }
     tr.onclick = function() { openItemDetail(item.id); };
     // One "⋯" button per row; the actions live in a small menu (openRowMenu)
-    var actionsHtml = '<div class="actions-cell"><button class="btn btn-icon btn-sm row-more" title="Actions" aria-haspopup="menu" onclick="event.stopPropagation();openRowMenu(this,\'' + item.id + '\')"><span class="em">⋯</span>' + SBI('more') + '</button></div>';
+    var actionsHtml = '<div class="actions-cell">' + rowMenuBtn('inv', item.id) + '</div>';
     tr.innerHTML = `
       <td class="tbl-seq" style="color:var(--muted);font-size:12px;text-align:center;white-space:nowrap">${canDrag ? '<span style="cursor:grab;font-size:14px;margin-right:4px;opacity:.4" title="Drag to reorder">⠿</span>' : ''}${i+1}</td>
       <td><strong>${esc(item.name)}</strong></td>
@@ -6792,10 +6852,7 @@ function reorderRowHtml(r) {
     const recv = r.status === 'received';
     // No stock to add for a non-catalog line, so "receiving" it just records
     // that it arrived (when, and who marked it) on the PO record itself.
-    let cAct = '<div class="actions-cell">';
-    if (!recv && can('mark_received')) cAct += '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Mark delivered" onclick="event.stopPropagation();markCustomItemReceived(\'' + r.poId + '\',' + r.customIndex + ')">📥</button>';
-    if (recv && currentRole === 'superuser') cAct += '<button class="btn btn-icon btn-sm" title="Undo delivered" onclick="event.stopPropagation();unmarkCustomItemReceived(\'' + r.poId + '\',' + r.customIndex + ')">↩️</button>';
-    cAct += '</div>';
+    let cAct = '<div class="actions-cell">' + rowMenuBtn('cline', r.poId, r.customIndex) + '</div>';
     return `
       <td><strong>${esc(r.name)}</strong>${r.poNumber ? '<div style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</div>' : ''} <span style="font-size:10px;color:var(--muted)">(non-catalog)</span></td>
       <td>${esc(r.supplier||'—')}</td>
@@ -6810,14 +6867,8 @@ function reorderRowHtml(r) {
   const item = db.items.find(i => i.id === r.itemId);
   const total = (r.qty * r.cost);
   const statusColor = r.status === 'received' ? 'ok' : r.status === 'ordered' ? 'warn' : 'danger';
-  var rAct = '<div class="actions-cell">';
-  if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm" onclick="openReorderModal(\'' + r.id + '\')">✏️</button>';
-  if (r.status !== 'received' && can('mark_received')) rAct += '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Receive delivery" onclick="openReceiveModal(\'' + r.id + '\')">📥</button>';
   const closedShort = _isClosedShort(r);
-  if (_canCloseShort() && r.status === 'ordered') rAct += '<button class="btn btn-icon btn-sm" title="Close line short (supplier can\'t deliver the rest)" onclick="closeReorderShort(\'' + r.id + '\')">⏹</button>';
-  if (_canCloseShort() && closedShort) rAct += '<button class="btn btn-icon btn-sm" title="Reopen line" onclick="reopenReorderLine(\'' + r.id + '\')">↺</button>';
-  if (currentRole === 'superuser') rAct += '<button class="btn btn-icon btn-sm btn-danger" onclick="deleteReorder(\'' + r.id + '\')">🗑</button>';
-  rAct += '</div>';
+  var rAct = '<div class="actions-cell">' + rowMenuBtn('rline', r.id) + '</div>';
   return `
     <td><strong>${esc(item ? item.name : 'Deleted Item')}</strong>${r.poNumber ? '<div style="font-size:10px;color:var(--muted)">' + esc(String(r.poNumber)) + '</div>' : ''}</td>
     <td>${esc(r.supplier||'—')}</td>
@@ -6871,7 +6922,8 @@ function renderReorder() {
     if (!r.receivedAt && r.status === 'received') r.receivedAt = r.updatedAt || null;
   });
   const f = document.getElementById('reorder-filter').value;
-  let reorders = db.reorders.filter(r => (!testModeActive || testModeItemIds.indexOf(r.itemId) !== -1) && (!f || r.status === f || (f==='needed' && r.status==='needed')));
+  // f = 'open' | 'received' | 'all' (applied per PO further down)
+  let reorders = db.reorders.filter(r => (!testModeActive || testModeItemIds.indexOf(r.itemId) !== -1));
   reorders.sort((a, b) => new Date(b.orderDate||0) - new Date(a.orderDate||0));
 
   const tbody = document.getElementById('reorder-tbody');
@@ -6907,7 +6959,7 @@ function renderReorder() {
     // Which of this PO's custom lines pass the status filter ("ordered"
     // until marked delivered, then "received" — see markCustomItemReceived).
     var customShown = po.customItems.map(function(c, idx) { return { c: c, idx: idx, status: c.receivedAt ? 'received' : 'ordered' }; })
-      .filter(function(x) { return !f || x.status === f; });
+    ;
     if (!customShown.length) return;
     // Deliberately NOT filtered by Test Mode: the whitelist is a list of
     // catalog item IDs, and a non-catalog line has no item to whitelist — so
@@ -6926,35 +6978,89 @@ function renderReorder() {
     });
   });
 
-  if (units.length === 0) { empty.classList.remove('hidden'); return; }
+  // One row per PO (nothing expands in the list); clicking a PO opens its
+  // PO Details, where lines are received / closed / edited. Reorders that
+  // aren't on a PO yet get a row of their own.
+  var today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  var rowsData = units.map(function(u) {
+    if (u.poNumber) {
+      var d = _poDetailData(u.poNumber), po = d.po;
+      var nLines = d.lines.length || u.items.length;
+      var done = d.lines.length > 0 && d.linesDone === d.lines.length;
+      var anyRecv = d.lines.some(function(L) { return L.received > 0 || L.status === 'received'; });
+      var allNeeded = u.items.every(function(r) { return r.status === 'needed'; });
+      var label = done ? (d.lines.some(function(L) { return L.status === 'closed short'; }) ? 'Received (short)' : 'Received')
+        : (anyRecv ? 'Partly received' : (allNeeded ? 'Needed' : 'Ordered'));
+      var dueRaw = (po && po.delivery) || (u.items.map(function(r) { return r.deliveryDate; }).filter(Boolean).sort()[0]) || '';
+      var pct = d.orderedValue > 0 ? Math.min(100, Math.round(d.receivedValue / d.orderedValue * 100)) : (done ? 100 : 0);
+      return { kind: 'po', po: u.poNumber, supplier: (po && po.supplier) || (u.items[0] && u.items[0].supplier) || '', n: nLines,
+        total: d.orderedValue, dueRaw: dueRaw, pct: pct, linesDone: d.linesDone, open: !done, label: label,
+        tone: done ? 'ok' : (allNeeded && !anyRecv ? 'danger' : 'warn') };
+    }
+    var r = u, item = db.items.find(function(i) { return i.id === r.itemId; });
+    var recv = r.status === 'received';
+    return { kind: 'line', r: r, name: item ? item.name : 'Deleted Item', supplier: r.supplier || '', n: 1,
+      total: (r.qty || 0) * (r.cost || 0), dueRaw: r.deliveryDate || '', pct: recv ? 100 : 0, linesDone: recv ? 1 : 0, open: !recv,
+      label: recv ? 'Received' : (r.status === 'needed' ? 'Needed' : 'Ordered'), tone: recv ? 'ok' : (r.status === 'needed' ? 'danger' : 'warn') };
+  });
+  var counts = { open: 0, received: 0, all: rowsData.length };
+  rowsData.forEach(function(x) { counts[x.open ? 'open' : 'received']++; });
+  ['open', 'received', 'all'].forEach(function(k) { var c = document.getElementById('ro-c-' + k); if (c) c.textContent = counts[k] || ''; });
+  var mode = f || 'open';
+  var shown = rowsData.filter(function(x) { return mode === 'all' || (mode === 'open' ? x.open : !x.open); });
+
+  if (shown.length === 0) {
+    var msg = document.getElementById('reorder-empty-msg');
+    if (msg) msg.textContent = !rowsData.length ? 'No reorder records yet.' : (mode === 'open' ? 'Nothing open — every PO has been received.' : mode === 'received' ? 'No received POs yet.' : 'No reorder records yet.');
+    empty.classList.remove('hidden'); return;
+  }
   empty.classList.add('hidden');
 
-  units.forEach(function(u) {
-    // Any reorder with a PO number renders as a collapsible PO card — even a
-    // 1-item PO — so the first column consistently reads "PO-xxxxxx —
-    // supplier" for every Purchase Order, never an item name. Only reorders
-    // with no PO at all (still "Needed", never generated into a PO) fall
-    // through to a plain item row, since there's no PO to card them under.
-    if (u.poNumber) {
-      renderReorderGroupRow(tbody, u);
+  var fmtDue = function(raw) {
+    if (!raw) return { txt: '—', late: false };
+    var dt = new Date(raw);
+    if (isNaN(dt)) return { txt: esc(String(raw)), late: false };
+    return { txt: dt.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }), late: dt < today0 };
+  };
+  shown.forEach(function(x) {
+    var tr = document.createElement('tr');
+    var due = fmtDue(x.dueRaw);
+    var late = x.open && due.late ? ' <span class="ro-late">overdue</span>' : '';
+    var prog = '<div class="ro-prog"><div class="ro-bar"><div style="width:' + x.pct + '%"></div></div><span>' + x.linesDone + ' of ' + x.n + ' line' + (x.n === 1 ? '' : 's') + '</span></div>';
+    if (x.kind === 'po') {
+      tr.className = 'ro-row';
+      tr.title = 'Open PO details';
+      tr.onclick = function() { openPoDetail(x.po); };
+      tr.innerHTML = '<td><strong>' + esc(String(x.po)) + '</strong></td>'
+        + '<td class="ro-sup">' + esc(x.supplier || '—') + '</td>'
+        + '<td>' + x.n + '</td>'
+        + '<td style="white-space:nowrap;font-weight:600">' + fmtPHP(x.total) + '</td>'
+        + '<td style="white-space:nowrap">' + due.txt + late + '</td>'
+        + '<td>' + prog + '</td>'
+        + '<td><span class="badge badge-' + x.tone + '">' + esc(x.label) + '</span></td>'
+        + '<td><div class="actions-cell">' + rowMenuBtn('po', String(x.po)) + '</div></td>';
     } else {
-      var tr = document.createElement('tr');
-      tr.innerHTML = reorderRowHtml(u);
-      tbody.appendChild(tr);
+      tr.innerHTML = '<td><strong>' + esc(x.name) + '</strong><div style="font-size:11px;color:var(--muted)">Not on a PO yet</div></td>'
+        + '<td class="ro-sup">' + esc(x.supplier || '—') + '</td>'
+        + '<td>1</td>'
+        + '<td style="white-space:nowrap;font-weight:600">' + (x.total ? fmtPHP(x.total) : '—') + '</td>'
+        + '<td style="white-space:nowrap">' + due.txt + late + '</td>'
+        + '<td>' + prog + '</td>'
+        + '<td><span class="badge badge-' + x.tone + '">' + esc(x.label) + '</span></td>'
+        + '<td><div class="actions-cell">' + rowMenuBtn('rline', x.r.id) + '</div></td>';
     }
-    // A collapsed PO group's header row looks identical to a plain standalone
-    // reorder row, so without something marking where one ends and the next
-    // begins, an unrelated row sorted right after a group can look like one
-    // of its items (e.g. a single-item reorder with its own different PO
-    // number landing directly under another PO's collapsed card). This
-    // divider makes that boundary visible regardless of expand/collapse state.
-    var divider = document.createElement('tr');
-    divider.innerHTML = '<td colspan="9" style="height:0;padding:0;border-bottom:2px solid var(--border)"></td>';
-    tbody.appendChild(divider);
+    tbody.appendChild(tr);
   });
   _refreshPoDetailIfOpen();
 }
 
+function setReorderFilter(v) {
+  var el = document.getElementById('reorder-filter'); if (el) el.value = v;
+  document.querySelectorAll('.ro-seg button').forEach(function(b) { b.classList.toggle('on', b.dataset.f === v); });
+  renderReorder();
+}
+
+// (No longer used by the Reorder list, which now shows one row per PO.)
 // Renders a single collapsed "card" row summarizing every item in one PO,
 // plus its item rows (hidden until the card is clicked to expand).
 function renderReorderGroupRow(tbody, group) {
@@ -6984,7 +7090,7 @@ function renderReorderGroupRow(tbody, group) {
     <td style="color:var(--muted);font-size:11px">—</td>
     <td><span class="badge badge-${statusColor}">${esc(statusLabel)}</span></td>
     <td style="color:var(--muted);font-size:11px">—</td>
-    <td><button class="btn btn-icon btn-sm" title="PO details: deliveries received so far" onclick="event.stopPropagation();openPoDetail('${esc(String(group.poNumber))}')">📋</button>${po ? '<button class="btn btn-icon btn-sm" title="Preview PO" onclick="event.stopPropagation();previewPo(\'' + po.id + '\')">👁</button><button class="btn btn-icon btn-sm" title="Download PO PDF" onclick="event.stopPropagation();redownloadPo(\'' + po.id + '\')">⬇</button>' : ''}${(po && currentRole === 'superuser') ? '<button class="btn btn-icon btn-sm" title="Edit PO" onclick="event.stopPropagation();openEditPoModal(\'' + po.id + '\')">✏️</button>' : ''}${currentRole === 'superuser' ? '<button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="event.stopPropagation();deletePoByNumber(\'' + esc(String(group.poNumber)) + '\')">🗑</button>' : ''}</td>`;
+    <td><div class="actions-cell">${rowMenuBtn('po', String(group.poNumber))}</div></td>`;
   tbody.appendChild(headerTr);
 
   items.forEach(function(r) {
@@ -7294,8 +7400,9 @@ function renderPoDetail() {
   html += '<div class="table-wrap" style="margin-bottom:18px"><table><thead><tr><th>Item</th><th style="text-align:right">Ordered</th><th style="text-align:right">Received</th><th style="text-align:right">Remaining</th><th>Progress</th><th>Status</th><th></th></tr></thead><tbody>'
     + d.lines.map(function(L) {
       var act = '';
-      if (L.kind === 'catalog' && canRecv && L.r.status !== 'received') act = '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Receive delivery" onclick="openReceiveModal(\'' + L.r.id + '\')">📥</button>';
-      if (L.kind === 'custom' && canRecv && L.status !== 'received') act = '<button class="btn btn-icon btn-sm" style="color:var(--ok)" title="Mark delivered" onclick="markCustomItemReceived(\'' + L.poId + '\',' + L.idx + ')">📥</button>';
+      if (L.kind === 'catalog' && canRecv && L.r.status !== 'received') act = '<button class="btn btn-secondary btn-sm pod-recv" title="Receive delivery" onclick="openReceiveModal(\'' + L.r.id + '\')"><span class="em">📥 </span>' + SBI('tray') + 'Receive</button>';
+      if (L.kind === 'custom' && canRecv && L.status !== 'received') act = '<button class="btn btn-secondary btn-sm pod-recv" title="Mark delivered" onclick="markCustomItemReceived(\'' + L.poId + '\',' + L.idx + ')"><span class="em">📥 </span>' + SBI('tray') + 'Mark delivered</button>';
+      act += L.kind === 'catalog' ? rowMenuBtn('rline', L.r.id, 'detail') : rowMenuBtn('cline', L.poId, L.idx);
       return '<tr>'
         + '<td><strong>' + esc(L.name) + '</strong>' + (L.kind === 'custom' ? ' <span style="font-size:10px;color:var(--muted)">(non-catalog)</span>' : '') + '</td>'
         + '<td style="text-align:right">' + fmtInt(L.ordered) + ' ' + esc(L.unit) + '</td>'
@@ -7303,7 +7410,7 @@ function renderPoDetail() {
         + '<td style="text-align:right">' + (L.status === 'closed short' ? '<span style="color:var(--muted)">closed</span>' : fmtInt(L.remaining)) + '</td>'
         + '<td style="min-width:110px">' + _pctBar(L.pct, L.pct >= 100 ? 'var(--ok)' : 'var(--accent)') + '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + L.pct + '%</div></td>'
         + '<td><span class="badge ' + (statusBadge[L.status] || 'badge-warn') + '">' + esc(L.status) + '</span></td>'
-        + '<td>' + act + '</td></tr>';
+        + '<td style="white-space:nowrap;text-align:right">' + act + '</td></tr>';
     }).join('')
     + '</tbody></table></div>';
 
@@ -7328,6 +7435,14 @@ function renderPoDetail() {
 
   var prevBtn = document.getElementById('pod-preview-btn');
   if (prevBtn) { prevBtn.style.display = po ? '' : 'none'; prevBtn.onclick = po ? function() { previewPo(po.id); } : null; }
+  var dlBtn = document.getElementById('pod-download-btn');
+  if (dlBtn) { dlBtn.style.display = po ? '' : 'none'; dlBtn.onclick = po ? function() { redownloadPo(po.id); } : null; }
+  var delBtn = document.getElementById('pod-delete-btn');
+  if (delBtn) {
+    var canDel = currentRole === 'superuser';
+    delBtn.style.display = canDel ? '' : 'none';
+    delBtn.onclick = canDel ? function() { closeModal('po-detail-modal'); deletePoByNumber(poNumber); } : null;
+  }
   var editBtn = document.getElementById('pod-edit-btn');
   if (editBtn) {
     var canEdit = po && currentRole === 'superuser';
@@ -12160,6 +12275,21 @@ function showCriticalStockAlert() {
   var danger = catalogItems().filter(function(i) { return i.qty <= 0; });
   var warn   = catalogItems().filter(function(i) { return stockStatus(i) === 'warn'; });
   if (!danger.length && !warn.length) return;
+  // Fast-moving items first: how often each was issued in the last 30 days
+  // (works across units — 1,000 pouches and 5 rolls aren't comparable, but
+  // "used 18 times" is), then whichever runs out sooner.
+  var since = Date.now() - 30 * 86400000, uses = {};
+  db.logs.forEach(function(l) {
+    if ((l.type === 'use' || l.type === 'damage') && new Date(l.date).getTime() >= since) uses[l.itemId] = (uses[l.itemId] || 0) + 1;
+  });
+  var speed = function(i) { var r = getRunway(i); return { n: uses[i.id] || 0, days: r ? r.days : Infinity }; };
+  var byFastest = function(a, b) { var x = speed(a), y = speed(b); return (y.n - x.n) || (x.days - y.days) || String(a.name).localeCompare(String(b.name)); };
+  danger.sort(byFastest); warn.sort(byFastest);
+  var moveNote = function(i) {
+    var sp = speed(i);
+    if (!sp.n) return 'No usage in 30 days';
+    return 'Used ' + sp.n + '× in 30 days' + (isFinite(sp.days) && i.qty > 0 ? ' · ~' + sp.days + ' day' + (sp.days === 1 ? '' : 's') + ' left' : '');
+  };
 
   var listEl = document.getElementById('csa-list');
   if (!listEl) return;
@@ -12170,7 +12300,7 @@ function showCriticalStockAlert() {
     html += danger.map(function(i) {
       return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(220,38,38,.06);border:1px solid rgba(220,38,38,.2);border-radius:7px">'
         + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">' + esc(i.name) + '</div>'
-        + '<div style="font-size:11px;color:var(--muted)">' + (i.category || '') + (i.sku ? ' · ' + i.sku : '') + '</div></div>'
+        + '<div style="font-size:11px;color:var(--muted)">' + esc(moveNote(i)) + (i.category ? ' · ' + esc(i.category) : '') + '</div></div>'
         + '<span class="badge badge-danger" style="flex-shrink:0">0 ' + esc(i.unit||'') + '</span>'
         + '<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;flex-shrink:0" onclick="closeModal(\'critical-stock-modal\');openNewRequestModal(\''+i.id+'\')">Request</button>'
         + '</div>';
@@ -12189,7 +12319,7 @@ function showCriticalStockAlert() {
       }
       return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(217,119,6,.06);border:1px solid rgba(217,119,6,.2);border-radius:7px">'
         + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">' + esc(i.name) + '</div>'
-        + '<div style="font-size:11px;color:var(--muted)">' + subtitle + (i.category ? ' · ' + esc(i.category) : '') + '</div></div>'
+        + '<div style="font-size:11px;color:var(--muted)">' + esc(moveNote(i)) + ' · ' + subtitle + '</div></div>'
         + '<span class="badge badge-warn" style="flex-shrink:0">' + fmtInt(i.qty) + ' ' + esc(i.unit||'') + '</span>'
         + '<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;flex-shrink:0" onclick="closeModal(\'critical-stock-modal\');openNewRequestModal(\''+i.id+'\')">Request</button>'
         + '</div>';
