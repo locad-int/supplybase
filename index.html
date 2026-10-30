@@ -984,7 +984,13 @@ body.sb2 #bottom-nav .sb-nav-thumb { background: rgba(22,163,74,.10); border-rad
 body.sb2 .tab-panel.active { animation: sbPageIn .26s cubic-bezier(.2,.8,.2,1); }
 body.sb2 .modal-bg.open { animation: sbFadeIn .18s ease-out; }
 body.sb2 .modal-bg.open > .modal { animation: sbPopIn .26s cubic-bezier(.2,.9,.3,1); }
-@media (prefers-reduced-motion: reduce) { body.sb2 .tab-panel.active, body.sb2 .modal-bg.open, body.sb2 .modal-bg.open > .modal { animation: none; } body.sb2 .sb-nav-thumb { transition: none; } }
+@keyframes sbFadeOut { to { opacity: 0; } }
+@keyframes sbPopOut { to { opacity: 0; transform: translateY(6px) scale(.98); } }
+@keyframes sbSheetOut { to { opacity: .4; transform: translateY(60px); } }
+body.sb2 .modal-bg.closing { animation: sbFadeOut .19s ease-in forwards; pointer-events: none; }
+body.sb2 .modal-bg.closing > .modal { animation: sbPopOut .19s ease-in forwards; }
+@media (max-width: 768px) { body.sb2 .modal-bg.closing > .modal { animation-name: sbSheetOut; } }
+@media (prefers-reduced-motion: reduce) { body.sb2 .tab-panel.active, body.sb2 .modal-bg.open, body.sb2 .modal-bg.open > .modal, body.sb2 .modal-bg.closing, body.sb2 .modal-bg.closing > .modal { animation: none; } body.sb2 .sb-nav-thumb { transition: none; } }
 /* Popups and forms */
 body.sb2 .modal h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 body.sb2 .form-grid { gap: 14px; }
@@ -9727,10 +9733,22 @@ function closeItemDropdown() {
 var _modalSeq = 0;
 function openModal(id) {
   var el = document.getElementById(id);
+  clearTimeout(_modalCloseT[id]); // reopened while it was still fading out
+  el.classList.remove('closing');
   el.classList.add('open');
   el.dataset.openSeq = String(++_modalSeq);
 }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+// Popups ease out too: 'closing' plays the fade/drop, then the popup is
+// hidden. Skipped (instant) in the old look or with reduced motion.
+var _modalCloseT = {};
+function _modalHide(el) {
+  if (!el || !el.classList.contains('open') || el.classList.contains('closing')) return;
+  var animate = document.body.classList.contains('sb2') && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if (!animate) { el.classList.remove('open'); return; }
+  el.classList.add('closing');
+  _modalCloseT[el.id] = setTimeout(function() { el.classList.remove('open', 'closing'); }, 190);
+}
+function closeModal(id) { _modalHide(document.getElementById(id)); }
 
 // ─── STYLED CONFIRM MODAL ───────────────────────────────────────────────────────
 var _appConfirmCallback = null;
@@ -9760,21 +9778,21 @@ function _runAppConfirm() {
     cb();
   }
 }
-document.querySelectorAll('.modal-bg').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }));
+document.querySelectorAll('.modal-bg').forEach(m => m.addEventListener('click', e => { if (e.target === m) _modalHide(m); }));
 
 // Esc closes the most recently opened popup — same as clicking its
 // background or Cancel (nothing is saved). With no popup open, Esc closes
 // the Shelfie chat panel if it's showing.
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
-  var open = Array.prototype.slice.call(document.querySelectorAll('.modal-bg.open'));
+  var open = Array.prototype.slice.call(document.querySelectorAll('.modal-bg.open:not(.closing)'));
   if (open.length) {
     var top = open.reduce(function(best, m) {
       // ">=" so that, for popups never stamped by openModal, the later one
       // in the page wins — matching how they visually stack.
       return (!best || (+m.dataset.openSeq || 0) >= (+best.dataset.openSeq || 0)) ? m : best;
     }, null);
-    top.classList.remove('open');
+    _modalHide(top);
     e.preventDefault();
     return;
   }
