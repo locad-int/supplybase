@@ -967,6 +967,24 @@ body.sb2 .sb-seg-thumb { display: block; position: absolute; left: 0; top: 0; z-
   box-shadow: 0 1px 3px rgba(16,24,40,.14), 0 1px 1px rgba(16,24,40,.06);
   transition: transform .42s cubic-bezier(.3,1.32,.5,1), width .42s cubic-bezier(.3,1.32,.5,1), height .2s ease; will-change: transform, width; }
 @media (prefers-reduced-motion: reduce) { body.sb2 .sb-seg-thumb { transition: none; } }
+/* Requests filter as one sliding switch */
+body.sb2 #req-filter-row { display: inline-flex !important; gap: 2px !important; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; flex-wrap: nowrap !important; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+body.sb2 #req-filter-row .status-chip { border: none !important; background: none; border-radius: 7px; padding: 6px 12px; color: var(--muted) !important; }
+body.sb2 #req-filter-row .status-chip.active { color: var(--text) !important; }
+/* Navigation glide (sidebar + phone bottom bar) */
+body.sb2 .sb-nav-anim { position: relative; }
+body.sb2 .sb-nav-anim .nav-item, body.sb2 .sb-nav-anim .bn-item { position: relative; z-index: 1; }
+body.sb2 .sb-nav-anim .nav-item.active { background: transparent !important; }
+body.sb2 .sb-nav-thumb { background: var(--sidebar-active-bg); box-shadow: none; border-radius: 8px; transition: transform .42s cubic-bezier(.3,1.25,.5,1), width .3s ease, height .3s ease, opacity .2s; }
+body.sb2 #bottom-nav .sb-nav-thumb { background: rgba(22,163,74,.10); border-radius: 14px; transform-origin: center; }
+/* Pages and popups ease in instead of snapping */
+@keyframes sbPageIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes sbPopIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes sbFadeIn { from { opacity: 0; } to { opacity: 1; } }
+body.sb2 .tab-panel.active { animation: sbPageIn .26s cubic-bezier(.2,.8,.2,1); }
+body.sb2 .modal-bg.open { animation: sbFadeIn .18s ease-out; }
+body.sb2 .modal-bg.open > .modal { animation: sbPopIn .26s cubic-bezier(.2,.9,.3,1); }
+@media (prefers-reduced-motion: reduce) { body.sb2 .tab-panel.active, body.sb2 .modal-bg.open, body.sb2 .modal-bg.open > .modal { animation: none; } body.sb2 .sb-nav-thumb { transition: none; } }
 /* Popups and forms */
 body.sb2 .modal h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 body.sb2 .form-grid { gap: 14px; }
@@ -3462,12 +3480,22 @@ function sbIconize(root) {
 // white "thumb" that glides to the option you pick instead of jumping. Works
 // even when a screen redraws the whole switch: the last position is
 // remembered per switch, so the thumb slides from where it was.
+// The same glide also runs on navigation: the sidebar's highlighted page
+// (across both the Consumables and Assets groups) and the phone's bottom bar.
 var SB_SEGS = [
   { sel: '.ro-seg', key: 'ro' }, { sel: '.cs-seg', key: 'cs' }, { sel: '.rpt-seg', key: 'rpt' },
-  { sel: '.lf-types', key: 'lf' }, { sel: 'body.sb2 .dash-period-bar', key: 'dash' }
+  { sel: '.lf-types', key: 'lf' }, { sel: 'body.sb2 .dash-period-bar', key: 'dash' },
+  { sel: 'body.sb2 #req-filter-row', key: 'rq' },
+  { sel: 'body.sb2 .nav-groups', key: 'nav', act: '.nav-item.active', nav: true },
+  { sel: 'body.sb2 #bottom-nav', key: 'bn', act: ':scope > .bn-item.active', nav: true }
 ];
 var _sbSegLast = {};
-function _sbSegActive(box) {
+function _sbSegActive(box, def) {
+  if (def && def.act) {
+    var a = box.querySelectorAll(def.act);
+    for (var j = 0; j < a.length; j++) if (a[j].offsetWidth) return a[j];
+    return null;
+  }
   var bs = box.querySelectorAll(':scope > button');
   for (var i = 0; i < bs.length; i++) if (bs[i].classList.contains('on') || bs[i].classList.contains('active')) return bs[i];
   return null;
@@ -3477,12 +3505,13 @@ function sbSegSync(instant) {
   SB_SEGS.forEach(function(def) {
     document.querySelectorAll(def.sel).forEach(function(box, n) {
       var key = def.key + n;
-      var btn = _sbSegActive(box);
-      if (!btn || !box.offsetWidth) return; // nothing picked yet, or not on screen
-      box.classList.add('sb-seg-anim');
+      var btn = _sbSegActive(box, def);
       var th = box.querySelector(':scope > .sb-seg-thumb');
+      if (!btn || !box.offsetWidth) { if (th) th.style.opacity = '0'; return; } // nothing picked, hidden, or in a collapsed group
+      box.classList.add(def.nav ? 'sb-nav-anim' : 'sb-seg-anim');
       var fresh = false;
-      if (!th) { th = document.createElement('span'); th.className = 'sb-seg-thumb'; box.insertBefore(th, box.firstChild); fresh = true; }
+      if (!th) { th = document.createElement('span'); th.className = 'sb-seg-thumb' + (def.nav ? ' sb-nav-thumb' : ''); box.insertBefore(th, box.firstChild); fresh = true; }
+      th.style.opacity = '';
       var to = { x: btn.offsetLeft, y: btn.offsetTop, w: btn.offsetWidth, h: btn.offsetHeight };
       var cur = th._pos;
       if (cur && cur.x === to.x && cur.w === to.w && cur.y === to.y && cur.h === to.h) return;
