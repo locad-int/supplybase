@@ -15,9 +15,93 @@
 <link rel="manifest" id="pwa-manifest" href="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ─── STAGING GUARD ──────────────────────────────────────────────────────────
+// Does nothing on the live site. When this page is opened from a /staging/
+// address (e.g. https://locad-int.github.io/supplybase/staging/), it turns the
+// page into a safe test copy:
+//   • reads live data as normal (items, logs, requests, realtime updates)
+//   • BLOCKS every save to Supabase (insert / update / upsert / delete /
+//     file uploads) and pretends it worked, so screens behave normally —
+//     simulated changes disappear on refresh
+//   • blocks DR uploads to Google Drive
+//   • keeps its own browser storage (drafts, caches) apart from the live app;
+//     only the login is shared
+// Must run before anything creates the Supabase client — keep it right after
+// the supabase-js <script> tag.
+(function () {
+  var IS_STAGING = /\/staging(\/|$)/i.test(location.pathname);
+  window.SB_STAGING = IS_STAGING;
+  if (!IS_STAGING) return;
+
+  // 1) Separate browser storage (login keys stay shared)
+  var SHARED = { consumables_tracker_session_role: 1, consumables_tracker_session_user: 1 };
+  var P = 'stg:';
+  var SP = Storage.prototype, _get = SP.getItem, _set = SP.setItem, _rem = SP.removeItem;
+  var isLocal = function (s) { try { return s === window.localStorage; } catch (e) { return false; } };
+  var k = function (s, key) { return isLocal(s) && !SHARED[key] ? P + key : key; };
+  SP.getItem = function (key) { return _get.call(this, k(this, key)); };
+  SP.setItem = function (key, v) { return _set.call(this, k(this, key), v); };
+  SP.removeItem = function (key) { return _rem.call(this, k(this, key)); };
+
+  // 2) Block writes at the network level
+  var blocked = 0;
+  var _fetch = window.fetch.bind(window);
+  var hdr = function (h, name) {
+    if (!h) return '';
+    if (typeof h.get === 'function') return h.get(name) || '';
+    var want = name.toLowerCase();
+    for (var x in h) if (x.toLowerCase() === want) return String(h[x]);
+    return '';
+  };
+  window.fetch = function (input, init) {
+    init = init || {};
+    var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+    var method = String(init.method || (input && input.method) || 'GET').toUpperCase();
+    var write = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+    // Google Drive DR uploader (Apps Script)
+    if (/script\.google(usercontent)?\.com/i.test(url) && write) {
+      blocked++; _stgBadge();
+      return Promise.resolve(new Response(JSON.stringify({ ok: false, error: 'Drive uploads are off in the staging copy' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    // Supabase database + file storage
+    if (/\.supabase\.co\/(rest|storage)\/v1\//i.test(url) && write) {
+      blocked++; _stgBadge();
+      var prefer = hdr(init.headers, 'Prefer'), accept = hdr(init.headers, 'Accept');
+      if (/return=minimal/i.test(prefer) || !/return=representation/i.test(prefer)) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      var body = null;
+      try { body = typeof init.body === 'string' ? JSON.parse(init.body) : null; } catch (e) {}
+      var rows = method === 'DELETE' ? [] : (Array.isArray(body) ? body : (body ? [body] : []));
+      var single = /vnd\.pgrst\.object/i.test(accept);
+      return Promise.resolve(new Response(JSON.stringify(single ? (rows[0] || null) : rows), { status: method === 'POST' ? 201 : 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    return _fetch(input, init);
+  };
+  if (navigator.sendBeacon) navigator.sendBeacon = function () { return true; };
+
+  // 3) Visible "STAGING" bar so nobody mistakes this for the live app
+  document.title = '[STAGING] ' + document.title;
+  function _stgBadge() {
+    var n = document.getElementById('stg-count');
+    if (n) n.textContent = blocked ? ' · ' + blocked + ' save' + (blocked === 1 ? '' : 's') + ' simulated (not saved)' : '';
+  }
+  window._stgBadge = _stgBadge;
+  document.addEventListener('DOMContentLoaded', function () {
+    if (/[?&]embed=1/.test(location.search)) return; // assets frame inside staging: the parent shows the bar
+    var bar = document.createElement('div');
+    bar.id = 'stg-bar';
+    bar.innerHTML = '🧪 <b>STAGING</b> — test copy with live data. Nothing you do here is saved.<span id="stg-count"></span>';
+    bar.style.cssText = 'position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:99999;background:#7c3aed;color:#fff;'
+      + 'font:600 12px/1.3 system-ui,sans-serif;padding:6px 14px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.25);pointer-events:none;max-width:92vw;text-align:center';
+    document.body.appendChild(bar);
+    _stgBadge();
+  });
+})();
+</script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -673,7 +757,176 @@
   }
 </style>
 </head>
-<body>
+<style id="sb2-theme">
+/* ═══ SupplyBase clean theme (sb2) ═══════════════════════════════════════════
+   Same layout as before, Locad black + green, quieter and more modern.
+   The whole theme hangs off <body class="sb2"> — remove that class to get the
+   previous look back instantly. Icons: each spot has the old emoji in
+   <span class="em"> and a line icon <svg class="i">; the theme shows the icon. */
+.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; vertical-align: -3px; }
+body:not(.sb2) .i { display: none; }
+body.sb2 .em { display: none; }
+body.sb2 {
+  --bg: #f6f7f9; --surface: #ffffff; --surface2: #f9fafb; --surface-alt: #f3f4f6;
+  --border: #e9ebef; --text: #111827; --muted: #6b7280;
+  --accent-dim: #ecfdf3; --radius: 12px;
+  --sidebar-bg: #0b0b0c; --sidebar-border: #1c1c1f; --sidebar-muted: #8b8f98; --sidebar-hover: #17171a;
+  --sidebar-active-bg: rgba(34,197,94,.10); --sidebar-active-text: #4ade80;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  letter-spacing: -0.005em; -webkit-font-smoothing: antialiased;
+}
+body.sb2 button, body.sb2 input, body.sb2 select, body.sb2 textarea { font-family: inherit; }
+
+/* Fit: the page never scrolls sideways — wide tables scroll inside their box */
+body.sb2 .main-wrap { min-width: 0; }
+body.sb2 main { min-width: 0; max-width: 100%; }
+body.sb2 .table-wrap { max-width: 100%; }
+
+/* Sidebar */
+body.sb2 .sidebar { border-right: 1px solid var(--sidebar-border); }
+body.sb2 .sidebar-header { padding: 22px 20px 16px; border-bottom: none; }
+body.sb2 .sidebar-header .sb-logo { height: 18px !important; }
+body.sb2 .sidebar-app-name { color: #6b7280; font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; margin-top: 6px; }
+body.sb2 .nav-groups { padding: 2px 0 10px; }
+body.sb2 .nav-group-hdr { color: #6b7280; font-size: 10.5px; font-weight: 600; letter-spacing: .08em; margin: 12px 12px 4px; padding: 4px 10px; width: calc(100% - 24px); }
+body.sb2 .nav-group-hdr:hover { background: none; color: #9ca3af; }
+body.sb2 .ng-beta { background: rgba(245,158,11,.15); color: #fbbf24; font-weight: 700; }
+body.sb2 .nav-item { gap: 11px; padding: 8px 12px; margin: 1px 10px; font-size: 13.5px; font-weight: 500; color: var(--sidebar-muted); border-radius: 8px; }
+body.sb2 .nav-item:hover { background: var(--sidebar-hover); color: #e5e7eb; }
+body.sb2 .nav-item.active { background: var(--sidebar-active-bg); color: #f9fafb; font-weight: 600; }
+body.sb2 .nav-item.active .i { color: var(--sidebar-active-text); }
+body.sb2 .nav-unread-badge { background: #ef4444; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+body.sb2 .nav-unread-badge[style*="display:none"], body.sb2 .nav-unread-badge[style*="display: none"] { display: none !important; }
+body.sb2 .nav-tools { margin: 6px 20px 0; }
+body.sb2 button.nav-item.nav-tool { font-size: 13px; margin: 1px -10px; width: calc(100% + 20px); display: flex; }
+body.sb2 .sidebar-bottom { padding: 12px; }
+body.sb2 .sidebar-role-badge { display: flex; align-items: center; gap: 10px; background: none; padding: 4px 6px 10px; margin-bottom: 2px; color: #e5e7eb; font-size: 13px; }
+body.sb2 .sb-avatar { width: 30px; height: 30px; border-radius: 50%; background: #1f2937; color: #4ade80; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; text-transform: uppercase; }
+body.sb2 .sb-role { display: block; color: #6b7280; font-size: 11.5px; font-weight: 400; margin-top: 1px; }
+body:not(.sb2) .sb-avatar { display: none; }
+body.sb2 .sidebar-actions { gap: 1px; }
+body.sb2 .sidebar-action-btn { display: flex; align-items: center; gap: 10px; background: none; color: var(--sidebar-muted); padding: 7px 10px; font-size: 13px; border-radius: 8px; }
+body.sb2 .sidebar-action-btn:hover { background: var(--sidebar-hover); color: #e5e7eb; }
+body.sb2 .sidebar-action-primary { justify-content: center; margin-bottom: 6px; padding: 9px 10px; border-radius: 9px; }
+body.sb2 .sidebar-action-signout { margin-top: 4px; }
+
+/* Topbar */
+body.sb2 .topbar { padding: 14px 32px; min-height: 60px; box-shadow: none; border-bottom: 1px solid var(--border); background: rgba(255,255,255,.92); -webkit-backdrop-filter: saturate(180%) blur(8px); backdrop-filter: saturate(180%) blur(8px); }
+body.sb2 .page-title { font-size: 17px; font-weight: 600; text-transform: none; letter-spacing: -0.01em; }
+body.sb2 #online-badge { background: #f3f4f6 !important; border: none !important; color: #374151 !important; font-weight: 500 !important; }
+
+/* Banners: softer, same place */
+body.sb2 #testmode-banner { background: #f5f3ff; color: #5b21b6; border-bottom: 1px solid #ede9fe; font-weight: 500; letter-spacing: 0; padding: 8px 16px; }
+body.sb2 #testmode-banner button { background: #fff; color: #5b21b6; border: 1px solid #ddd6fe; font-weight: 500; }
+body.sb2 #stocktake-banner { background: #fffbeb; color: #92400e; border-bottom: 1px solid #fde68a; font-weight: 600; letter-spacing: 0; }
+body.sb2 #stocktake-banner button { background: #fff; color: #92400e; border: 1px solid #fcd34d; font-weight: 500; }
+
+/* Content */
+body.sb2 main { padding: 24px 32px 40px; }
+body.sb2 h2 { letter-spacing: -0.01em; }
+
+/* Summary cards */
+body.sb2 .summary { gap: 14px; margin-bottom: 22px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+body.sb2 .card { border: 1px solid var(--border); border-left: 1px solid var(--border); border-radius: 12px; padding: 15px 18px; box-shadow: 0 1px 2px rgba(16,24,40,.04); min-width: 0; }
+body.sb2 .card[onclick]:hover { background: #fff; border-color: #d9dce2; box-shadow: 0 2px 8px rgba(16,24,40,.06); }
+body.sb2 .card .label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; text-transform: none; letter-spacing: 0; margin-bottom: 8px; font-weight: 500; }
+body.sb2 .card .label::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #cbd5e1; flex-shrink: 0; }
+body.sb2 .card.danger .label::before { background: var(--danger); }
+body.sb2 .card.warn .label::before { background: #f59e0b; }
+body.sb2 .card.ok .label::before { background: var(--accent); }
+body.sb2 .card .value { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; overflow-wrap: anywhere; }
+body.sb2 .card.danger .value { color: #b91c1c; }
+body.sb2 .card.warn .value { color: #b45309; }
+body.sb2 .card.ok .value { color: #15803d; }
+
+/* Toolbars, inputs, buttons */
+body.sb2 .filters { gap: 8px; margin-bottom: 16px; }
+body.sb2 input, body.sb2 select, body.sb2 textarea { border-radius: 9px; border-color: var(--border); padding: 8px 12px; }
+body.sb2 input:focus, body.sb2 select:focus, body.sb2 textarea:focus { border-color: #86efac; box-shadow: 0 0 0 3px rgba(22,163,74,.12); }
+body.sb2 .search-wrap input { padding-left: 34px; }
+body.sb2 .search-icon { left: 11px; color: #9ca3af; display: flex; }
+body.sb2 .status-chip { opacity: 1; border: 1px solid var(--border) !important; color: #374151 !important; background: #fff; font-size: 12px; font-weight: 500; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+body.sb2 .status-chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--c, #9ca3af); }
+body.sb2 .status-chip:hover { border-color: #d1d5db !important; }
+body.sb2 .status-chip.active { background: var(--accent-dim); border-color: #bbf7d0 !important; }
+body.sb2 .btn { border-radius: 9px; font-weight: 500; padding: 8px 14px; gap: 7px; }
+body.sb2 .btn-sm { padding: 5px 10px; }
+body.sb2 .btn-secondary { border-color: var(--border); color: #374151; }
+body.sb2 .btn-secondary:hover { background: #f9fafb; border-color: #d1d5db; }
+body.sb2 .btn-primary { box-shadow: 0 1px 2px rgba(22,163,74,.25); }
+body.sb2 .modal { border-radius: 16px; border-color: var(--border); box-shadow: 0 20px 50px rgba(16,24,40,.18); }
+
+/* Tables */
+body.sb2 .table-wrap { border-radius: 12px; border-color: var(--border); background: #fff; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+body.sb2 thead th { background: #fff; color: #6b7280; font-size: 12px; font-weight: 500; text-transform: none; letter-spacing: 0; padding: 11px 8px; }
+body.sb2 tbody tr { border-bottom: 1px solid #f1f2f4; }
+body.sb2 tbody tr:hover { background: #fafbfc; }
+body.sb2 td { padding: 10px 8px; font-size: 13px; }
+body.sb2 thead th:first-child, body.sb2 td:first-child { padding-left: 14px; }
+body.sb2 thead th:last-child, body.sb2 td:last-child { padding-right: 14px; }
+body.sb2 td strong { font-weight: 500; }
+body.sb2 .num, body.sb2 td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+body.sb2 .badge { font-weight: 500; font-size: 12px; padding: 3px 9px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+body.sb2 .badge-ok, body.sb2 .badge-warn, body.sb2 .badge-danger, body.sb2 .type-badge { background: none !important; border: none !important; padding-left: 0; color: #374151 !important; }
+body.sb2 .badge-ok::before, body.sb2 .badge-warn::before, body.sb2 .badge-danger::before, body.sb2 .type-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+body.sb2 .badge-ok::before { background: var(--accent); }
+body.sb2 .badge-warn::before { background: #f59e0b; }
+body.sb2 .badge-danger::before, body.sb2 .type-badge::before { background: var(--danger); }
+body.sb2 .type-badge.restock::before { background: var(--accent); }
+body.sb2 .badge-info { background: #f3f4f6; color: #4b5563; }
+body.sb2 .btn-icon { background: none; border: none; color: #9ca3af; padding: 5px; border-radius: 8px; }
+body.sb2 td.inv-actions .btn-icon { padding: 4px; }
+body.sb2 td.inv-actions .btn + .btn { margin-left: -3px; }
+body.sb2 td.inv-actions .i { width: 15px; height: 15px; }
+body.sb2 .btn-icon:hover { background: #f3f4f6; color: #111827; }
+body.sb2 .btn-icon.btn-danger { background: none; border: none; color: #9ca3af; }
+body.sb2 .btn-icon.btn-danger:hover { background: #fef2f2; color: var(--danger); }
+body.sb2 .actions-cell, body.sb2 td.inv-actions { white-space: nowrap; }
+body.sb2 .stock-bar { height: 4px; background: #f1f2f4; }
+
+/* Cost Report */
+body.sb2 .rpt-range { border-radius: 10px; border-color: var(--border); padding: 2px 3px 2px 10px; }
+body.sb2 .rpt-range input[type="date"] { border: none; box-shadow: none; padding: 4px 2px; width: 122px; }
+body.sb2 .rpt-toolbar > select { padding-right: 28px; }
+body.sb2 input[type="checkbox"], body.sb2 input[type="radio"] { padding: 0; }
+body.sb2 .rpt-seg { border-left: none; background: #f3f4f6; border-radius: 8px; padding: 2px; margin-left: 6px; gap: 0; }
+body.sb2 .rpt-seg button { font-weight: 500; color: #6b7280; padding: 5px 11px; }
+body.sb2 .rpt-seg button:hover { background: transparent; color: #111827; }
+body.sb2 .rpt-seg button.on { background: #fff; color: #15803d; box-shadow: 0 1px 2px rgba(16,24,40,.12); }
+body.sb2 #rpt-total-cost { color: var(--text) !important; }
+body.sb2 #rpt-total-restock-cost { color: #15803d !important; }
+body.sb2 .cost-cell { color: var(--text) !important; font-weight: 600 !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+body.sb2 .cost-cell.restock { color: #15803d !important; }
+body.sb2 .total-row td { background: #f9fafb; font-weight: 600; }
+body.sb2 .total-row td.total-label { text-transform: none !important; letter-spacing: 0 !important; font-size: 13px !important; }
+body.sb2 .rpt-section { margin-top: 36px !important; padding-top: 0 !important; border-top: none !important; }
+body.sb2 .rpt-section h3 { font-size: 15px !important; font-weight: 600; display: flex; align-items: center; gap: 8px; letter-spacing: -0.01em; }
+body.sb2 .rpt-section h3 .i { color: #6b7280; }
+body.sb2 .rpt-h { font-weight: 600 !important; letter-spacing: -0.01em; }
+body.sb2 .rpt-h .i { color: #6b7280; }
+
+/* Requests / log cards */
+body.sb2 .req-card, body.sb2 .log-entry { border-radius: 12px; border-color: var(--border); }
+body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+
+/* Phones & small windows */
+@media (max-width: 1100px) {
+  body.sb2 main { padding: 20px 20px 32px; }
+  body.sb2 .topbar { padding-left: 20px; padding-right: 20px; }
+}
+@media (max-width: 768px) {
+  body.sb2 main { padding: 14px 14px 24px; }
+  body.sb2 .topbar { padding: max(12px, env(safe-area-inset-top, 12px)) 16px 12px; min-height: 0; }
+  body.sb2 .page-title { font-size: 15px; }
+  body.sb2 .summary { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  body.sb2 .card { padding: 11px 13px; }
+  body.sb2 .card .value { font-size: 20px; }
+  body.sb2 .btn { padding: 9px 16px; }
+  body.sb2 .rpt-range { padding: 4px 6px; }
+  body.sb2 .modal { border-radius: 16px 16px 0 0; }
+}
+</style>
+<body class="sb2">
 
 <div id="session-warn-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#b45309;color:#fff;padding:10px 20px;align-items:center;justify-content:center;gap:12px;font-size:13px;font-weight:600">
   ⚠ You'll be logged out in 1 minute due to inactivity.
@@ -702,54 +955,60 @@
 <!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-header">
-    <img src="https://www.golocad.com/images/LOCAD-LOGO-WHITE.svg" alt="Locad" style="height:20px;display:block;margin-bottom:6px" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Empty.png/1px-Empty.png'">
+    <svg class="sb-logo" role="img" viewBox="0 0 303 59" style="height:20px;display:block;margin-bottom:6px" xmlns="http://www.w3.org/2000/svg" aria-label="Locad">
+<path d="M20.6635 43.021V0H0V59H48.7294V43.021H20.6635Z" fill="white"/>
+<path d="M174.332 23.5742V8.92472C174.332 3.9883 169.986 0 164.602 0H125.412C120.028 0 115.687 3.9883 115.687 8.92472V50.0753C115.687 55.0117 120.033 59 125.417 59H164.607C169.991 59 174.337 55.0117 174.337 50.0753V33.9675H153.669V43.021H136.355V14.6392H153.669V23.5742H174.337H174.332Z" fill="white"/>
+<path d="M293.27 0H244.354V59H293.27C298.654 59 303 55.0117 303 50.0753V8.92472C303 3.9883 298.659 0 293.27 0ZM282.331 43.021H265.018V14.6392H282.331V43.021Z" fill="white"/>
+<path d="M101.8 0H62.6149C57.2309 0 52.8896 3.9883 52.8896 8.92472V50.0753C52.8896 55.0117 57.2309 59 62.6149 59H101.805C107.189 59 111.53 55.0117 111.53 50.0753V8.92472C111.53 3.9883 107.189 0 101.8 0ZM90.5156 43.021H73.8216V40.6301H90.5156V43.021ZM90.5156 39.3368H73.8216V34.5601H90.5156V39.3368ZM90.5672 27.1709V33.21H73.8371V27.1709H69.0468L82.2047 14.6598L95.3524 27.1709H90.562H90.5672Z" fill="white"/>
+<path d="M225.131 0H191.542L174.843 59H195.816L198.289 50.2402H218.39L220.862 59H241.794L225.131 0ZM202.078 36.817L208.339 14.6547L214.601 36.817H202.083H202.078Z" fill="white"/>
+</svg>
     <div class="sidebar-app-name">SupplyBase</div>
   </div>
   <div class="nav-groups">
   <button type="button" class="nav-group-hdr" id="ng-hdr-cons" onclick="toggleNavGroup('cons')" aria-expanded="true">
-    <span>📦 Consumables</span><span class="ng-chev">▾</span>
+    <span><span class="em">📦 </span>Consumables</span><span class="ng-chev">▾</span>
   </button>
   <nav class="sidebar-nav" id="sidebar-nav">
-    <div id="nav-inventory" class="nav-item active" data-tab="inventory" draggable="true" onclick="switchTab('inventory')">📋 <span>Inventory</span><span class="nav-drag-handle">⠿</span></div>
-    <div id="nav-usage" class="nav-item" data-tab="usage" draggable="true" onclick="switchTab('usage')">📝 <span>Usage Log</span><span class="nav-drag-handle">⠿</span></div>
-    <div id="nav-reorder" class="nav-item" data-tab="reorder" draggable="true" onclick="switchTab('reorder')">🔄 <span>Reorder</span><span class="nav-drag-handle">⠿</span></div>
-    <div id="nav-report" class="nav-item" data-tab="report" draggable="true" onclick="switchTab('report')">💰 <span>Cost Report</span><span class="nav-drag-handle">⠿</span></div>
-    <div id="nav-dashboard" class="nav-item" data-tab="dashboard" draggable="true" onclick="switchTab('dashboard')">📊 <span>Dashboard</span><span class="nav-drag-handle">⠿</span></div>
-    <div id="nav-requests" class="nav-item" data-tab="requests" draggable="true" onclick="switchTab('requests')">🛒 <span>Requests</span><span class="nav-drag-handle">⠿</span><span id="req-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
-    <div id="nav-audit" class="nav-item" data-tab="audit" draggable="true" onclick="switchTab('audit')">📋 <span>Audit Log</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-inventory" class="nav-item active" data-tab="inventory" draggable="true" onclick="switchTab('inventory')"><span class="em">📋 </span><svg class="i" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg><span>Inventory</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-usage" class="nav-item" data-tab="usage" draggable="true" onclick="switchTab('usage')"><span class="em">📝 </span><svg class="i" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r=".8"/><circle cx="4" cy="12" r=".8"/><circle cx="4" cy="18" r=".8"/></svg><span>Usage Log</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-reorder" class="nav-item" data-tab="reorder" draggable="true" onclick="switchTab('reorder')"><span class="em">🔄 </span><svg class="i" viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2 3h3l2.5 12.5h12L22 7H6.2"/></svg><span>Reorder</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-report" class="nav-item" data-tab="report" draggable="true" onclick="switchTab('report')"><span class="em">💰 </span><svg class="i" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg><span>Cost Report</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-dashboard" class="nav-item" data-tab="dashboard" draggable="true" onclick="switchTab('dashboard')"><span class="em">📊 </span><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Dashboard</span><span class="nav-drag-handle">⠿</span></div>
+    <div id="nav-requests" class="nav-item" data-tab="requests" draggable="true" onclick="switchTab('requests')"><span class="em">🛒 </span><svg class="i" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></svg><span>Requests</span><span class="nav-drag-handle">⠿</span><span id="req-nav-badge" class="nav-unread-badge" style="display:none">0</span></div>
+    <div id="nav-audit" class="nav-item" data-tab="audit" draggable="true" onclick="switchTab('audit')"><span class="em">📋 </span><svg class="i" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg><span>Audit Log</span><span class="nav-drag-handle">⠿</span></div>
     <div class="reorder-hint" id="reorder-hint" style="display:none">Drag to reorder</div>
   </nav>
   <div id="cons-tools" class="nav-tools">
-    <button type="button" id="btn-stocktake-lock" class="nav-item nav-tool" onclick="toggleStocktakeLock()" style="display:none">🔒 Lock for Stocktake</button>
-    <button type="button" id="btn-count-sheet" class="nav-item nav-tool" onclick="openCountSheet()" style="display:none">📋 <span>Count Sheet</span></button>
-    <button type="button" id="btn-testmode-settings" class="nav-item nav-tool" onclick="openSettings()" style="display:none">🧪 <span>Test Mode</span></button>
+    <button type="button" id="btn-stocktake-lock" class="nav-item nav-tool" onclick="toggleStocktakeLock()" style="display:none"><span class="em">🔒 </span><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Lock for Stocktake</span></button>
+    <button type="button" id="btn-count-sheet" class="nav-item nav-tool" onclick="openCountSheet()" style="display:none"><span class="em">📋 </span><svg class="i" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 12h6M9 16h4"/></svg><span>Count Sheet</span></button>
+    <button type="button" id="btn-testmode-settings" class="nav-item nav-tool" onclick="openSettings()" style="display:none"><span class="em">🧪 </span><svg class="i" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3"/><path d="M7 15h10"/></svg><span>Test Mode</span></button>
   </div>
   <div id="ng-assets" style="display:none">
     <button type="button" class="nav-group-hdr" id="ng-hdr-assets" onclick="toggleNavGroup('assets')" aria-expanded="true">
-      <span>🧰 Assets <span class="ng-beta">BETA</span></span><span class="ng-chev">▾</span>
+      <span><span class="em">🧰 </span>Assets <span class="ng-beta">BETA</span></span><span class="ng-chev">▾</span>
     </button>
     <nav class="sidebar-nav" id="sidebar-nav-assets">
-      <div class="nav-item" data-tab="assets" data-av="dashboard" onclick="openAssets('dashboard')">📊 <span>Dashboard</span></div>
-      <div class="nav-item" data-tab="assets" data-av="register" onclick="openAssets('register')">🗂 <span>Register</span></div>
-      <div class="nav-item" data-tab="assets" data-av="checkout" onclick="openAssets('checkout')">🔁 <span>Check-out / in</span><span class="nav-unread-badge" id="anb-checkout" style="display:none"></span></div>
-      <div class="nav-item" data-tab="assets" data-av="maintenance" onclick="openAssets('maintenance')">🛠 <span>Maintenance</span><span class="nav-unread-badge" id="anb-maintenance" style="display:none"></span></div>
-      <div class="nav-item" data-tab="assets" data-av="issues" onclick="openAssets('issues')">⚠️ <span>Issues</span><span class="nav-unread-badge" id="anb-issues" style="display:none"></span></div>
-      <div class="nav-item" data-tab="assets" data-av="audits" onclick="openAssets('audits')">📋 <span>Audits</span></div>
+      <div class="nav-item" data-tab="assets" data-av="dashboard" onclick="openAssets('dashboard')"><span class="em">📊 </span><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Dashboard</span></div>
+      <div class="nav-item" data-tab="assets" data-av="register" onclick="openAssets('register')"><span class="em">🗂 </span><svg class="i" viewBox="0 0 24 24"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg><span>Register</span></div>
+      <div class="nav-item" data-tab="assets" data-av="checkout" onclick="openAssets('checkout')"><span class="em">🔁 </span><svg class="i" viewBox="0 0 24 24"><path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg><span>Check-out / in</span><span class="nav-unread-badge" id="anb-checkout" style="display:none"></span></div>
+      <div class="nav-item" data-tab="assets" data-av="maintenance" onclick="openAssets('maintenance')"><span class="em">🛠 </span><svg class="i" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0 5 5L21 13l-8 8-3-3 8-8z" transform="translate(-2 -2)"/><path d="M3 21l6-6"/></svg><span>Maintenance</span><span class="nav-unread-badge" id="anb-maintenance" style="display:none"></span></div>
+      <div class="nav-item" data-tab="assets" data-av="issues" onclick="openAssets('issues')"><span class="em">⚠️ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/></svg><span>Issues</span><span class="nav-unread-badge" id="anb-issues" style="display:none"></span></div>
+      <div class="nav-item" data-tab="assets" data-av="audits" onclick="openAssets('audits')"><span class="em">📋 </span><svg class="i" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 12h6M9 16h4"/></svg><span>Audits</span></div>
     </nav>
   </div>
   </div>
   <div class="sidebar-bottom">
     <div id="role-badge" class="sidebar-role-badge"></div>
     <div class="sidebar-actions">
-      <button id="btn-add-item" class="sidebar-action-btn sidebar-action-primary" onclick="openItemModal()">+ Add Item</button>
-      <button id="btn-settings" class="sidebar-action-btn" onclick="openSettings()">⚙ Settings</button>
-      <button id="btn-change-pass" class="sidebar-action-btn" onclick="openChangePassword()">🔑 Change Password</button>
-      <button id="btn-contact-admin" class="sidebar-action-btn" onclick="openContactAdmin()">📞 Contact Admin</button>
-      <button id="btn-refresh" class="sidebar-action-btn" onclick="refreshData()">↻ Refresh</button>
-      <button id="btn-health" class="sidebar-action-btn" onclick="openHealthCheck()" style="display:none">🩺 System Health <span id="health-badge" style="display:none;margin-left:6px;background:#dc2626;color:#fff;border-radius:99px;font-size:11px;padding:0 7px"></span></button>
-      <button id="btn-reset" class="sidebar-action-btn sidebar-action-danger" onclick="confirmReset()">↺ Reset</button>
-      <button id="btn-install-app" class="sidebar-action-btn" onclick="openInstallModal()" style="display:none;color:#38bdf8">📲 Install App</button>
-      <button class="sidebar-action-btn sidebar-action-signout" onclick="logout()">Sign out</button>
+      <button id="btn-add-item" class="sidebar-action-btn sidebar-action-primary" onclick="openItemModal()"><span class="em">+ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Add Item</span></button>
+      <button id="btn-settings" class="sidebar-action-btn" onclick="openSettings()"><span class="em">⚙ </span><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Settings</span></button>
+      <button id="btn-change-pass" class="sidebar-action-btn" onclick="openChangePassword()"><span class="em">🔑 </span><svg class="i" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2M16 7l3 3M18 5l2 2"/></svg><span>Change Password</span></button>
+      <button id="btn-contact-admin" class="sidebar-action-btn" onclick="openContactAdmin()"><span class="em">📞 </span><svg class="i" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg><span>Contact Admin</span></button>
+      <button id="btn-refresh" class="sidebar-action-btn" onclick="refreshData()"><span class="em">↻ </span><svg class="i" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></svg><span>Refresh</span></button>
+      <button id="btn-health" class="sidebar-action-btn" onclick="openHealthCheck()" style="display:none"><span class="em">🩺 </span><svg class="i" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>System Health</span> <span id="health-badge" style="display:none;margin-left:6px;background:#dc2626;color:#fff;border-radius:99px;font-size:11px;padding:0 7px"></span></button>
+      <button id="btn-reset" class="sidebar-action-btn sidebar-action-danger" onclick="confirmReset()"><span class="em">↺ </span><svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span>Reset</span></button>
+      <button id="btn-install-app" class="sidebar-action-btn" onclick="openInstallModal()" style="display:none;color:#38bdf8"><span class="em">📲 </span><svg class="i" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg><span>Install App</span></button>
+      <button class="sidebar-action-btn sidebar-action-signout" onclick="logout()"><svg class="i" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button>
     </div>
   </div>
 </aside>
@@ -762,7 +1021,7 @@
     <button id="hamburger-btn" onclick="toggleMobileSidebar()" aria-label="Menu">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
-    <h1 class="page-title" id="page-title">INVENTORY</h1>
+    <h1 class="page-title" id="page-title">Inventory</h1>
     <div class="topbar-right" style="display:flex;align-items:center;gap:12px">
       <span id="last-refreshed" style="font-size:11px;color:var(--muted);display:none">Last refreshed: <span id="last-refreshed-time">—</span></span>
       <span id="realtime-dot" title="Realtime: connecting…" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;cursor:default"></span>
@@ -810,15 +1069,15 @@
       <div class="value" id="s-total">0</div>
     </div>
     <div class="card danger" onclick="filterInventory('danger')" style="cursor:pointer" title="Show out-of-stock items">
-      <div class="label">⚠ Out of Stock</div>
+      <div class="label"><span class="em">⚠ </span>Out of Stock</div>
       <div class="value" id="s-out">0</div>
     </div>
     <div class="card warn" onclick="filterInventory('warn')" style="cursor:pointer" title="Show low-stock items">
-      <div class="label">⚡ Low Stock</div>
+      <div class="label"><span class="em">⚡ </span>Low Stock</div>
       <div class="value" id="s-low">0</div>
     </div>
     <div class="card ok" onclick="filterInventory('ok')" style="cursor:pointer" title="Show healthy items">
-      <div class="label">✓ Healthy</div>
+      <div class="label"><span class="em">✓ </span>Healthy</div>
       <div class="value" id="s-ok">0</div>
     </div>
     <div class="card" id="card-reorder" onclick="switchTab('reorder')" style="cursor:pointer" title="Go to Reorder tab">
@@ -826,7 +1085,7 @@
       <div class="value" id="s-reorder">0</div>
     </div>
     <div class="card" id="card-expenses" onclick="switchTab('report');setRptPreset('this')" style="cursor:pointer" title="Go to Cost Report">
-      <div class="label">📅 This Week's Expenses</div>
+      <div class="label"><span class="em">📅 </span>This Week's Expenses</div>
       <div class="value" id="s-value" style="font-size:1.2rem">₱0</div>
     </div>
   </div>
@@ -840,22 +1099,22 @@
   <div class="tab-panel active" id="tab-inventory">
     <div class="filters">
       <div class="search-wrap">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon"><span class="em">🔍</span><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
         <input type="text" id="inv-search" placeholder="Search items..." oninput="renderInventory()">
       </div>
       <div id="inv-status-chips" style="display:flex;gap:6px;flex-wrap:nowrap;align-items:center">
-        <button class="status-chip" data-val="danger" onclick="toggleStatusChip('danger')" style="border-color:var(--danger);color:var(--danger)">⚠ Out of Stock</button>
-        <button class="status-chip" data-val="warn"   onclick="toggleStatusChip('warn')"   style="border-color:var(--warn);color:var(--warn)">⚡ Low Stock</button>
-        <button class="status-chip" data-val="ok"     onclick="toggleStatusChip('ok')"     style="border-color:var(--ok);color:var(--ok)">✓ Healthy</button>
+        <button class="status-chip" data-val="danger" onclick="toggleStatusChip('danger')" style="--c:var(--danger);border-color:var(--danger);color:var(--danger)"><span class="em">⚠ </span>Out of Stock</button>
+        <button class="status-chip" data-val="warn"   onclick="toggleStatusChip('warn')"   style="--c:#f59e0b;border-color:var(--warn);color:var(--warn)"><span class="em">⚡ </span>Low Stock</button>
+        <button class="status-chip" data-val="ok"     onclick="toggleStatusChip('ok')"     style="--c:var(--ok);border-color:var(--ok);color:var(--ok)"><span class="em">✓ </span>Healthy</button>
       </div>
       <select id="inv-filter-cat" onchange="renderInventory()" style="max-width:220px;width:auto">
         <option value="">All Categories</option>
       </select>
-      <button id="btn-export-inv-csv" class="btn btn-secondary" onclick="exportInventoryCSV()" style="font-size:12px">⬇ Export CSV</button>
-      <button class="btn btn-primary" onclick="openImportModal()" style="font-size:12px" id="btn-import-file">⬆ Import File</button>
+      <button id="btn-export-inv-csv" class="btn btn-secondary" onclick="exportInventoryCSV()" style="font-size:12px"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
+      <button class="btn btn-primary" onclick="openImportModal()" style="font-size:12px" id="btn-import-file"><span class="em">⬆ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 20V8M6 14l6-6 6 6M4 4h16"/></svg>Import File</button>
       <input type="file" id="import-file-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
       <div id="btn-col-toggle-wrap" style="position:relative;display:none">
-        <button class="btn btn-secondary" onclick="toggleColPopover()" style="font-size:12px">⊞ Columns</button>
+        <button class="btn btn-secondary" onclick="toggleColPopover()" style="font-size:12px"><span class="em">⊞ </span><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></svg>Columns</button>
         <div id="col-toggle-popover">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Columns visible to</div>
           <select id="col-role-select" onchange="setColEditRole(this.value)" style="width:100%;margin-bottom:4px;font-size:12px">
@@ -920,8 +1179,8 @@
         <button class="status-chip" data-type="damage"  onclick="toggleLogTypeChip('damage')"  style="border-color:var(--danger);color:var(--danger)">Damage</button>
       </div>
       <button id="btn-log-usage" class="btn btn-primary" onclick="openLogModal()">+ Log Usage</button>
-      <button class="btn btn-secondary" onclick="exportLogsCSV()" style="font-size:12px">⬇ Export CSV</button>
-      <button id="btn-clear-log" class="btn btn-danger btn-sm" onclick="clearLog()" style="font-size:12px;display:none">🗑 Clear Log</button>
+      <button class="btn btn-secondary" onclick="exportLogsCSV()" style="font-size:12px"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
+      <button id="btn-clear-log" class="btn btn-danger btn-sm" onclick="clearLog()" style="font-size:12px;display:none"><span class="em">🗑 </span><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3"/></svg>Clear Log</button>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:0 0 10px 0">
       <span style="font-size:12px;color:var(--muted);font-weight:600">Date range:</span>
@@ -949,10 +1208,10 @@
         <option value="received">Received</option>
       </select>
       <button id="btn-create-reorder" class="btn btn-primary" onclick="openReorderCreateModal()">+ Create Reorder</button>
-      <button id="btn-receive-dr" class="btn btn-secondary" onclick="openDrReceive()" title="Photograph a delivery receipt — SupplyBase reads it and fills in what to receive" style="display:none">📷 Receive from DR</button>
-      <button id="btn-po-history" class="btn btn-secondary" onclick="openPoHistoryModal()">📋 PO History</button>
+      <button id="btn-receive-dr" class="btn btn-secondary" onclick="openDrReceive()" title="Photograph a delivery receipt — SupplyBase reads it and fills in what to receive" style="display:none"><span class="em">📷 </span><svg class="i" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>Receive from DR</button>
+      <button id="btn-po-history" class="btn btn-secondary" onclick="openPoHistoryModal()"><span class="em">📋 </span><svg class="i" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 12h6M9 16h4"/></svg>PO History</button>
       <button id="btn-supplier-dir" class="btn btn-secondary" onclick="openSupplierDirectory()" style="display:none">🏢 Suppliers</button>
-      <button id="btn-import-suppliers" class="btn btn-secondary" onclick="openSupplierImportModal()" style="display:none">⬆ Import Suppliers</button>
+      <button id="btn-import-suppliers" class="btn btn-secondary" onclick="openSupplierImportModal()" style="display:none"><span class="em">⬆ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 20V8M6 14l6-6 6 6M4 4h16"/></svg>Import Suppliers</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -998,7 +1257,7 @@
         <option value="">All Categories</option>
       </select>
       <div class="rpt-export-wrap">
-        <button class="btn btn-secondary" id="rpt-export-btn" onclick="toggleRptExportMenu(event)" aria-haspopup="true">⬇ Export ▾</button>
+        <button class="btn btn-secondary" id="rpt-export-btn" onclick="toggleRptExportMenu(event)" aria-haspopup="true"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export<span class="em"> ▾</span><svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M6 9l6 6 6-6"/></svg></button>
         <div class="rpt-menu" id="rpt-export-menu">
           <button onclick="closeRptExportMenu();exportReportCSV()"><strong>Summary</strong><span>Totals per item for this period</span></button>
           <button onclick="closeRptExportMenu();exportDetailedCSV()"><strong>Detailed log</strong><span>Every entry matching the filters</span></button>
@@ -1053,10 +1312,10 @@
     <div class="empty hidden" id="rpt-empty"><div class="icon">💰</div><p>No consumption data for this period.</p></div>
 
     <!-- NON-CATALOG PURCHASES -->
-    <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
+    <div class="rpt-section" style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:10px">
-        <h3 style="margin:0;font-size:1rem;color:var(--text)">🧾 Non-catalog Purchases</h3>
-        <button class="btn btn-secondary" onclick="exportNonCatalogCSV()" style="font-size:12px">⬇ Export CSV</button>
+        <h3 style="margin:0;font-size:1rem;color:var(--text)"><span class="em">🧾 </span><svg class="i" viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Non-catalog Purchases</h3>
+        <button class="btn btn-secondary" onclick="exportNonCatalogCSV()" style="font-size:12px"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Items bought on a PO that aren't tracked in inventory, so they never appear in the consumption/restock figures above. Dated by delivery date once marked delivered, otherwise by PO date — follows the From / To dates above. Line amounts as on the PO (PO-level shipping, other charges and discounts not included).</div>
       <div class="summary" style="margin-bottom:14px">
@@ -1076,21 +1335,21 @@
     </div>
 
     <!-- VARIANCE SECTION -->
-    <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
+    <div class="rpt-section" style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
         <h3 style="margin:0;font-size:1rem;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:6px" onclick="toggleVarianceSection()">
-          <span id="var-collapse-chevron">▾</span> 📊 Variance Adjustments
+          <span id="var-collapse-chevron">▾</span><span class="em"> 📊</span><svg class="i" viewBox="0 0 24 24"><path d="M12 3v18M5 21h14M7 7h10"/><path d="M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/></svg> Variance Adjustments
         </h3>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-secondary" id="btn-compare-files" onclick="openCompareModal()" style="font-size:12px;display:none">⚖ Compare Count Files</button>
-          <button class="btn btn-secondary" id="btn-inv-snapshot" onclick="openSnapshotModal()" style="font-size:12px;display:none">🕒 Inventory Snapshot</button>
-          <button class="btn btn-secondary" id="btn-reconciliation" onclick="openReconListModal()" style="font-size:12px;display:none">🧾 Reconciliation</button>
+          <button class="btn btn-secondary" id="btn-compare-files" onclick="openCompareModal()" style="font-size:12px;display:none"><span class="em">⚖ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 3v18M5 21h14M7 7h10"/><path d="M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/></svg>Compare Count Files</button>
+          <button class="btn btn-secondary" id="btn-inv-snapshot" onclick="openSnapshotModal()" style="font-size:12px;display:none"><span class="em">🕒 </span><svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>Inventory Snapshot</button>
+          <button class="btn btn-secondary" id="btn-reconciliation" onclick="openReconListModal()" style="font-size:12px;display:none"><span class="em">🧾 </span><svg class="i" viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Reconciliation</button>
           <select id="var-type" onchange="renderVariance()" style="width:auto;flex:0 0 auto">
             <option value="">All Variances</option>
             <option value="negative">Negative (Shortage)</option>
             <option value="positive">Positive (Excess)</option>
           </select>
-          <button class="btn btn-secondary" onclick="exportVarianceCSV()">⬇ Export CSV</button>
+          <button class="btn btn-secondary" onclick="exportVarianceCSV()"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
           <button class="btn btn-secondary" id="var-collapse-btn" onclick="toggleVarianceSection()" style="font-size:12px">Collapse</button>
         </div>
       </div>
@@ -1128,13 +1387,13 @@
     </div>
 
     <div style="margin-top:28px">
-      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">📅 Monthly Spend (Last 6 Months)</div>
+      <div class="rpt-h" style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px"><span class="em">📅 </span><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Monthly Spend (Last 6 Months)</div>
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px">
         <div id="monthly-report-wrap"></div>
       </div>
     </div>
     <div style="margin-top:28px">
-      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">👤 Usage by User</div>
+      <div class="rpt-h" style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px"><span class="em">👤 </span><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Usage by User</div>
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px">
         <div id="user-report-wrap"></div>
       </div>
@@ -1561,7 +1820,7 @@
 
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('compare-modal')">Close</button>
-      <button class="btn btn-secondary" onclick="exportCompareCSV()" id="cmp-export-btn" style="display:none">⬇ Export Report</button>
+      <button class="btn btn-secondary" onclick="exportCompareCSV()" id="cmp-export-btn" style="display:none"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export Report</button>
     </div>
   </div>
 </div>
@@ -1607,7 +1866,7 @@
 
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('snapshot-modal')">Close</button>
-      <button class="btn btn-secondary" onclick="exportSnapshotCSV()" id="snap-export-btn" style="display:none">⬇ Export CSV</button>
+      <button class="btn btn-secondary" onclick="exportSnapshotCSV()" id="snap-export-btn" style="display:none"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
     </div>
   </div>
 </div>
@@ -1700,7 +1959,7 @@
         <div style="font-size:11px;color:var(--muted);margin-top:6px">Adjustments covers manual qty edits, physical-count corrections, and reconciliation sign-offs logged that day — the sign shows whether it increased (+) or decreased (−) inventory.</div>
       </div>
       <div style="margin-top:8px">
-        <button class="btn btn-secondary" onclick="exportReconDailyCSV()" id="recon-daily-export-btn" style="display:none;font-size:12px">⬇ Export Daily Activity CSV</button>
+        <button class="btn btn-secondary" onclick="exportReconDailyCSV()" id="recon-daily-export-btn" style="display:none;font-size:12px"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export Daily Activity CSV</button>
       </div>
     </div>
 
@@ -1742,7 +2001,7 @@
 
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('recon-modal')">Close</button>
-      <button class="btn btn-secondary" onclick="exportReconCSV(_reconEditingId)" id="recon-export-btn" style="display:none">⬇ Export CSV</button>
+      <button class="btn btn-secondary" onclick="exportReconCSV(_reconEditingId)" id="recon-export-btn" style="display:none"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
       <button class="btn btn-secondary" onclick="saveReconDraft()" id="recon-save-draft-btn" style="display:none">💾 Save Draft</button>
       <button class="btn btn-primary" onclick="finalizeReconciliation()" id="recon-finalize-btn" style="display:none">🔒 Finalize &amp; Sign Off</button>
     </div>
@@ -1887,7 +2146,7 @@
     <div id="idet-body" style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('item-detail-modal')">Close</button>
-      <button class="btn btn-primary" id="idet-edit-btn" style="display:none" onclick="openItemModalFromDetail()">✏️ Edit</button>
+      <button class="btn btn-primary" id="idet-edit-btn" style="display:none" onclick="openItemModalFromDetail()"><span class="em">✏️ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Edit</button>
     </div>
   </div>
 </div>
@@ -1906,7 +2165,7 @@
         <option value="damage">Damage/Loss</option>
         <option value="adjust">Adjustment</option>
       </select>
-      <button class="btn btn-secondary" style="font-size:12px" onclick="exportItemHistoryCSV()">⬇ Export CSV</button>
+      <button class="btn btn-secondary" style="font-size:12px" onclick="exportItemHistoryCSV()"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
     </div>
     <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -2064,7 +2323,7 @@
         <label>Delivery Date *</label>
         <div style="display:flex;gap:6px">
           <input type="text" id="pog-delivery" placeholder="MM/DD/YYYY — pick with 📅" style="flex:1">
-          <button type="button" class="btn btn-icon btn-sm" title="Pick a date" onclick="openPogDeliveryDatePicker()">📅</button>
+          <button type="button" class="btn btn-icon btn-sm" title="Pick a date" onclick="openPogDeliveryDatePicker()"><span class="em">📅 </span><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></button>
           <input type="date" id="pog-delivery-date-picker" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none" onchange="applyPogDeliveryDatePick()">
         </div>
       </div>
@@ -2102,7 +2361,7 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('po-generate-modal')">Cancel</button>
       <button class="btn btn-secondary" onclick="saveReorderCart(false)">Save as Needed</button>
-      <button class="btn btn-primary" onclick="saveReorderCart(true)">🧾 Generate PO</button>
+      <button class="btn btn-primary" onclick="saveReorderCart(true)"><span class="em">🧾 </span><svg class="i" viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Generate PO</button>
     </div>
   </div>
 </div>
@@ -2246,7 +2505,7 @@
     <div style="font-size:11px;color:var(--muted);margin-top:6px">Preview blank? Some phone browsers can't show PDFs inside a page — <a id="po-preview-newtab" href="#" target="_blank" rel="noopener">open it in a new tab</a> instead.</div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('po-preview-modal')">Close</button>
-      <button class="btn btn-primary" onclick="downloadPreviewedPo()">⬇ Download PDF</button>
+      <button class="btn btn-primary" onclick="downloadPreviewedPo()"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Download PDF</button>
     </div>
   </div>
 </div>
@@ -2257,7 +2516,7 @@
     <div id="rptd-body"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="rptd-history-btn">📜 Item History</button>
-      <button class="btn btn-secondary" onclick="exportRptDetailCSV()">⬇ Export CSV</button>
+      <button class="btn btn-secondary" onclick="exportRptDetailCSV()"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
       <button class="btn btn-primary" onclick="closeModal('rpt-detail-modal')">Close</button>
     </div>
   </div>
@@ -2269,9 +2528,9 @@
     <h2>🏢 Supplier Directory</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
       <input type="text" id="sd-search" placeholder="Search name, address or TIN…" oninput="renderSupplierDirectory()" style="flex:1;min-width:200px">
-      <button class="btn btn-secondary" onclick="openSupplierPerformance()" style="font-size:12px">📊 Performance</button>
+      <button class="btn btn-secondary" onclick="openSupplierPerformance()" style="font-size:12px"><span class="em">📊 </span><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Performance</button>
       <button class="btn btn-secondary" onclick="openPriceHistory()" style="font-size:12px">📈 Price History</button>
-      <button class="btn btn-secondary" onclick="exportSupplierDirectoryCSV()" style="font-size:12px">⬇ Export CSV</button>
+      <button class="btn btn-secondary" onclick="exportSupplierDirectoryCSV()" style="font-size:12px"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
       <button class="btn btn-primary" id="sd-add-btn" onclick="sdOpenForm(-1)" style="display:none">+ Add Supplier</button>
     </div>
     <div id="sd-form" style="display:none;background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:12px">
@@ -2325,7 +2584,7 @@
   <div class="modal" style="max-width:860px">
     <div id="health-body"></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="copyHealthReport()">📋 Copy report</button>
+      <button class="btn btn-secondary" onclick="copyHealthReport()"><span class="em">📋 </span><svg class="i" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 12h6M9 16h4"/></svg>Copy report</button>
       <button class="btn btn-secondary" id="health-run-btn" onclick="runHealthCheck(true)">↻ Run again</button>
       <button class="btn btn-primary" onclick="closeModal('health-modal')">Close</button>
     </div>
@@ -2343,7 +2602,7 @@
         <option value="30">POs from the last 30 days</option>
       </select>
       <span style="flex:1"></span>
-      <button class="btn btn-secondary" onclick="exportSupplierPerformanceCSV()" style="font-size:12px">⬇ Export CSV</button>
+      <button class="btn btn-secondary" onclick="exportSupplierPerformanceCSV()" style="font-size:12px"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
       <strong>Lead time</strong>: PO date → last delivery that completed the PO. <strong>On time</strong>: completed by the PO's delivery date (open POs past that date count as late).
@@ -2366,7 +2625,7 @@
   <div class="modal" style="max-width:1000px">
     <div id="ph-body"></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" id="ph-export-btn" onclick="exportPriceHistoryCSV()">⬇ Export CSV</button>
+      <button class="btn btn-secondary" id="ph-export-btn" onclick="exportPriceHistoryCSV()"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Export CSV</button>
       <button class="btn btn-primary" onclick="closeModal('price-history-modal')">Close</button>
     </div>
   </div>
@@ -2378,7 +2637,7 @@
     <div id="pod-body"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="pod-preview-btn">👁 Preview PDF</button>
-      <button class="btn btn-secondary" id="pod-edit-btn" style="display:none">✏️ Edit PO</button>
+      <button class="btn btn-secondary" id="pod-edit-btn" style="display:none"><span class="em">✏️ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Edit PO</button>
       <button class="btn btn-primary" onclick="closeModal('po-detail-modal')">Close</button>
     </div>
   </div>
@@ -2424,7 +2683,7 @@
       </div>
       <div class="form-group">
         <label>Delivery receipt</label>
-        <button type="button" class="btn btn-secondary" onclick="drPick('recv')" style="justify-content:center">📷 Scan DR</button>
+        <button type="button" class="btn btn-secondary" onclick="drPick('recv')" style="justify-content:center"><span class="em">📷 </span><svg class="i" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>Scan DR</button>
       </div>
       <div class="form-group full" id="recv-dr-pages" style="display:none"></div>
     </div>
@@ -2678,12 +2937,12 @@
       <div>
         <div style="font-size:12px;font-weight:600;margin-bottom:2px">Daily — 6:00 PM</div>
         <div id="backup-status-daily" style="font-size:12px;color:var(--muted);margin-bottom:6px">Checking…</div>
-        <button class="btn btn-secondary" onclick="downloadBackup('inventory_backup.csv','backup-status-daily')" style="font-size:13px">⬇ Download</button>
+        <button class="btn btn-secondary" onclick="downloadBackup('inventory_backup.csv','backup-status-daily')" style="font-size:13px"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Download</button>
       </div>
       <div>
         <div style="font-size:12px;font-weight:600;margin-bottom:2px">Saturday — 4:00 PM (pre-count reference)</div>
         <div id="backup-status-saturday" style="font-size:12px;color:var(--muted);margin-bottom:6px">Checking…</div>
-        <button class="btn btn-secondary" onclick="downloadBackup('saturday_4pm_backup.csv','backup-status-saturday')" style="font-size:13px">⬇ Download</button>
+        <button class="btn btn-secondary" onclick="downloadBackup('saturday_4pm_backup.csv','backup-status-saturday')" style="font-size:13px"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Download</button>
       </div>
     </div>
 
@@ -2812,6 +3071,10 @@ function isReqVisible(r) {
   return !testModeActive || testModeItemIds.indexOf(r.itemId) !== -1;
 }
 
+
+// Line icons for the clean theme (sb2). SBI('name') → inline SVG.
+var SB_ICONS = {"lock": "<rect x=\"4\" y=\"11\" width=\"16\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 8 0v4\"/>", "unlock": "<rect x=\"4\" y=\"11\" width=\"16\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 7.8-1.3\"/>", "hist": "<path d=\"M3 12a9 9 0 1 0 3-6.7L3 8\"/><path d=\"M3 3v5h5\"/><path d=\"M12 7v5l3 2\"/>", "note": "<path d=\"M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z\"/><path d=\"M14 3v6h6M8 13h8M8 17h5\"/>", "scale": "<path d=\"M12 3v18M5 21h14M7 7h10\"/><path d=\"M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z\"/>", "pen": "<path d=\"M12 20h9\"/><path d=\"M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z\"/>", "trash": "<path d=\"M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3\"/>"};
+function SBI(n) { return '<svg class="i" viewBox="0 0 24 24">' + (SB_ICONS[n] || '') + '</svg>'; }
 // Hardcoded credentials — no setup required on new devices
 const HARDCODED_SUPABASE_URL = 'https://tkasifllaagsxhpcpzrf.supabase.co';
 const HARDCODED_SUPABASE_KEY = 'sb_publishable_eKsY9d1RsINGrGKx3SK6Fg_YrLK4aUn';
@@ -4907,7 +5170,7 @@ function switchTab(name) {
   document.body.classList.toggle('on-assets', name === 'assets');
   var titles = { inventory: 'Inventory', usage: 'Usage Log', reorder: 'Reorder', report: 'Cost Report', dashboard: 'Dashboard', requests: 'Requests', audit: 'Audit Log', ai: 'Shelfie', assets: 'Assets' };
   var titleEl = document.getElementById('page-title');
-  if (titleEl) titleEl.textContent = (titles[name] || name).toUpperCase();
+  if (titleEl) titleEl.textContent = (titles[name] || name);
   if (name === 'inventory') renderInventory();
   if (name === 'usage') { logVisibleCount = LOG_PAGE_SIZE; renderLogs(); }
   if (name === 'reorder') renderReorder();
@@ -5187,9 +5450,9 @@ function logCostOf(log, item) {
 function runwayHtml(item) {
   var r = getRunway(item);
   if (!r) return '<span style="color:var(--muted);font-size:12px">—</span>';
-  if (r.days === 0) return '<span style="color:#dc2626;font-weight:700;font-size:12px">⛔ 0 days</span>';
+  if (r.days === 0) return '<span style="color:#dc2626;font-weight:700;font-size:12px"><span class="em">⛔ </span>0 days</span>';
   var color = r.days <= 7 ? '#dc2626' : r.days <= 14 ? '#b45309' : 'var(--muted)';
-  var icon  = r.days <= 7 ? '🔴 ' : r.days <= 14 ? '⚠️ ' : '';
+  var icon  = r.days <= 7 ? '<span class="em">🔴 </span>' : r.days <= 14 ? '<span class="em">⚠️ </span>' : '';
   return '<span style="color:' + color + ';font-size:12px;font-weight:' + (r.days <= 14 ? '700' : '500') + '">' + icon + '~' + r.days + ' days</span>';
 }
 
@@ -5217,7 +5480,7 @@ function updateSummary() {
   const expCard = document.getElementById('card-expenses');
   if (expCard) {
     const lbl = expCard.querySelector('.label');
-    if (lbl) lbl.textContent = "📅 This Week's Cost";
+    if (lbl) lbl.innerHTML = "<span class=\"em\">📅 </span>This Week's Cost";
     expCard.title = 'Week ' + opWeekLabel(wk) + '\nUsage ' + fmtPHP(r2(wc.usage)) + ' + Damage ' + fmtPHP(r2(wc.damage))
       + ' + Shortage ' + fmtPHP(r2(wc.shortage)) + ' − Excess ' + fmtPHP(r2(wc.excess)) + '\nClick for the Cost Report';
   }
@@ -5259,7 +5522,7 @@ function renderInventory() {
     items.forEach(function(item) {
       var status = stockStatus(item);
       var badgeClass = status === 'danger' ? 'badge-danger' : status === 'warn' ? 'badge-warn' : 'badge-ok';
-      var badgeLabel = status === 'danger' ? '⛔ Out of stock' : status === 'warn' ? '⚡ Low stock' : '✓ In stock';
+      var badgeLabel = status === 'danger' ? '<span class="em">⛔ </span>Out of stock' : status === 'warn' ? '<span class="em">⚡ </span>Low stock' : '<span class="em">✓ </span>In stock';
       var card = document.createElement('div');
       card.className = 'inv-mobile-card s-' + status;
       card.onclick = function() { openItemDetail(item.id); };
@@ -5296,7 +5559,7 @@ function renderInventory() {
     const pct = Math.min(100, Math.round((item.qty / max) * 100));
     const barColor = status === 'danger' ? 'var(--danger)' : status === 'warn' ? 'var(--warn)' : 'var(--ok)';
     const badgeClass = status === 'danger' ? 'badge-danger' : status === 'warn' ? 'badge-warn' : 'badge-ok';
-    const badgeLabel = status === 'danger' ? '⛔ Out' : status === 'warn' ? '⚡ Low' : '✓ OK';
+    const badgeLabel = status === 'danger' ? '<span class="em">⛔ </span>Out' : status === 'warn' ? '<span class="em">⚡ </span>Low' : '<span class="em">✓ </span>OK';
     const canDrag = currentRole === 'superuser' && sortField === 'seq' && sortDir === 1;
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
@@ -5339,11 +5602,11 @@ function renderInventory() {
     }
     tr.onclick = function() { openItemDetail(item.id); };
     var actionsHtml = '<div class="actions-cell">';
-    actionsHtml += '<button class="btn btn-icon btn-sm" title="Item history" onclick="event.stopPropagation();openItemHistory(\'' + item.id + '\')">📋</button>';
-    if (can('log')) actionsHtml += '<button class="btn btn-icon btn-sm" title="Log usage" onclick="event.stopPropagation();openLogForItem(\'' + item.id + '\')">📝</button>';
-    if (can('adjust')) actionsHtml += '<button class="btn btn-icon btn-sm" title="Stock adjustment" onclick="event.stopPropagation();openAdjust(\'' + item.id + '\')">⚖</button>';
-    if (currentRole === 'superuser') actionsHtml += '<button class="btn btn-icon btn-sm" title="Edit item" onclick="event.stopPropagation();openItemModal(\'' + item.id + '\')">✏️</button>';
-    if (currentRole === 'superuser') actionsHtml += '<button class="btn btn-icon btn-sm btn-danger" title="Delete" onclick="event.stopPropagation();deleteItem(\'' + item.id + '\')">🗑</button>';
+    actionsHtml += '<button class="btn btn-icon btn-sm" title="Item history" onclick="event.stopPropagation();openItemHistory(\'' + item.id + '\')"><span class="em">📋</span>' + SBI('hist') + '</button>';
+    if (can('log')) actionsHtml += '<button class="btn btn-icon btn-sm" title="Log usage" onclick="event.stopPropagation();openLogForItem(\'' + item.id + '\')"><span class="em">📝</span>' + SBI('note') + '</button>';
+    if (can('adjust')) actionsHtml += '<button class="btn btn-icon btn-sm" title="Stock adjustment" onclick="event.stopPropagation();openAdjust(\'' + item.id + '\')"><span class="em">⚖</span>' + SBI('scale') + '</button>';
+    if (currentRole === 'superuser') actionsHtml += '<button class="btn btn-icon btn-sm" title="Edit item" onclick="event.stopPropagation();openItemModal(\'' + item.id + '\')"><span class="em">✏️</span>' + SBI('pen') + '</button>';
+    if (currentRole === 'superuser') actionsHtml += '<button class="btn btn-icon btn-sm btn-danger" title="Delete" onclick="event.stopPropagation();deleteItem(\'' + item.id + '\')"><span class="em">🗑</span>' + SBI('trash') + '</button>';
     actionsHtml += '</div>';
     tr.innerHTML = `
       <td class="tbl-seq" style="color:var(--muted);font-size:12px;text-align:center;white-space:nowrap">${canDrag ? '<span style="cursor:grab;font-size:14px;margin-right:4px;opacity:.4" title="Drag to reorder">⠿</span>' : ''}${i+1}</td>
@@ -5357,7 +5620,7 @@ function renderInventory() {
       <td class="col-cost inv-col-cost tbl-hide-mobile" style="${isBrand ? 'display:none' : ''}">${item.cost ? fmtPHP(item.cost) : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="col-status"><span class="badge ${badgeClass}">${badgeLabel}</span></td>
       <td class="col-location tbl-hide-mobile">${esc(item.location||'—')}</td>
-      <td>${actionsHtml}</td>`;
+      <td class="inv-actions">${actionsHtml}</td>`;
     tbody.appendChild(tr);
   });
   updateCatFilter();
@@ -9037,8 +9300,8 @@ function renderReport() {
     tr.onclick = () => openRptDetail(r.itemId, r.typeGroup);
     const isRestock = r.typeGroup === 'restock';
     const typeBadge = isRestock
-      ? '<span class="badge" style="background:rgba(22,163,74,.12);color:#16a34a;border:1px solid rgba(22,163,74,.25)">Restock</span>'
-      : '<span class="badge" style="background:rgba(220,38,38,.10);color:#dc2626;border:1px solid rgba(220,38,38,.2)">Consumption</span>';
+      ? '<span class="badge type-badge restock" style="background:rgba(22,163,74,.12);color:#16a34a;border:1px solid rgba(22,163,74,.25)">Restock</span>'
+      : '<span class="badge type-badge" style="background:rgba(220,38,38,.10);color:#dc2626;border:1px solid rgba(220,38,38,.2)">Consumption</span>';
     const costColor = isRestock ? 'var(--ok)' : 'var(--danger)';
     tr.innerHTML = `
       <td><strong>${esc(r.name)}</strong></td>
@@ -9047,7 +9310,7 @@ function renderReport() {
       <td>${esc(r.unit||'—')}</td>
       <td title="${r.rateKeys.length > 1 ? esc('Booked at: ' + r.rateKeys.map(k => fmtInt(r.rates[k]) + ' @ ₱' + k).join(', ') + ' · Current cost ₱' + (r.currentCost || 0)) : ''}">${r.costPerUnit ? fmtPHP(Math.round(r.costPerUnit * 100) / 100) + (r.rateKeys.length > 1 ? ' <span style="font-size:10px;color:var(--muted)">avg</span>' : '') : '<span style="color:var(--warn)">not set</span>'}${r.rateKeys.length > 1 ? '<div style="font-size:10px;color:var(--muted)">' + esc(r.rateKeys.map(k => fmtInt(r.rates[k]) + ' @ ₱' + k).join(' + ')) + '</div>' : ''}</td>
       <td style="font-weight:600">${fmt(r.totalQty)}</td>
-      <td style="font-weight:700;color:${costColor}">${r.costPerUnit ? fmtPHP(r.totalCost) : '—'}</td>
+      <td class="cost-cell${isRestock ? ' restock' : ''}" style="font-weight:700;color:${costColor}">${r.costPerUnit ? fmtPHP(r.totalCost) : '—'}</td>
       <td>${r.entries}</td>
       <td>
         <div class="stock-bar-wrap">
@@ -9061,10 +9324,11 @@ function renderReport() {
   // Grand total row
   const tfoot = document.createElement('tr');
   tfoot.style.cssText = 'background:var(--surface2);font-weight:700;border-top:2px solid var(--border)';
+  tfoot.className = 'total-row';
   tfoot.innerHTML = `
-    <td colspan="5" style="text-align:right;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em">TOTAL</td>
+    <td colspan="5" class="total-label" style="text-align:right;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em">Total</td>
     <td>${fmt(grandQty)}</td>
-    <td style="font-size:1.05rem"><span style="color:var(--danger)">${fmtPHP(consumeTotal)}</span> <span style="color:var(--muted);font-size:11px">consumed</span><br><span style="color:var(--ok)">${fmtPHP(restockTotal)}</span> <span style="color:var(--muted);font-size:11px">restocked</span></td>
+    <td style="font-size:1.05rem"><span class="cost-cell" style="color:var(--danger)">${fmtPHP(consumeTotal)}</span> <span style="color:var(--muted);font-size:11px">consumed</span><br><span style="color:var(--ok)">${fmtPHP(restockTotal)}</span> <span style="color:var(--muted);font-size:11px">restocked</span></td>
     <td>${fmtInt(logs.length)}</td>
     <td>100%</td>`;
   tbody.appendChild(tfoot);
@@ -11981,7 +12245,8 @@ function applyRoleUI() {
   var labels = { superuser: 'Superuser', user: 'User', viewer: 'Viewer', requestor: 'Requestor', brand: 'Brand' };
   var badge = document.getElementById('role-badge');
   var uname = currentUser ? currentUser.username : '';
-  badge.textContent = uname ? uname + ' · ' + (labels[currentRole] || currentRole) : (labels[currentRole] || currentRole);
+  var roleLbl = labels[currentRole] || currentRole || '';
+  badge.innerHTML = '<span class="sb-avatar">' + esc((uname || roleLbl || '?').replace(/[^a-z0-9]/gi, '').slice(0, 2)) + '</span><span>' + (uname ? esc(uname) + '<span class="em"> · </span><span class="sb-role">' + esc(roleLbl) + '</span>' : esc(roleLbl)) + '</span>';
 
   show('btn-add-item',      can('add_item'));
   show('btn-reset',         currentRole === 'superuser');
@@ -12110,7 +12375,7 @@ function applyStocktakeLock() {
   var sidebarLockBtn = document.getElementById('btn-stocktake-lock');
   if (sidebarLockBtn) {
     sidebarLockBtn.style.display = canManageStocktake() ? '' : 'none';
-    sidebarLockBtn.textContent = stocktakeLock ? '🔓 Unlock Stocktake' : '🔒 Lock for Stocktake';
+    sidebarLockBtn.innerHTML = stocktakeLock ? '<span class="em">🔓 </span>' + SBI('unlock') + '<span>Unlock Stocktake</span>' : '<span class="em">🔒 </span>' + SBI('lock') + '<span>Lock for Stocktake</span>';
   }
   // Force-logout any non-manager who is currently logged in when lock activates
   if (stocktakeLock && currentRole && !canManageStocktake()) {
@@ -17929,20 +18194,20 @@ async function aiApplyLogEntry(input) {
 <!-- MOBILE BOTTOM NAV -->
 <nav id="bottom-nav">
   <button class="bn-item active" id="bn-inventory" onclick="switchTab('inventory')">
-    <span class="bn-icon">📋</span>
+    <span class="bn-icon"><span class="em">📋</span><svg class="i" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span>
     <span>Inventory</span>
   </button>
   <button class="bn-item" id="bn-usage" onclick="switchTab('usage')">
-    <span class="bn-icon">📝</span>
+    <span class="bn-icon"><span class="em">📝</span><svg class="i" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r=".8"/><circle cx="4" cy="12" r=".8"/><circle cx="4" cy="18" r=".8"/></svg></span>
     <span>Log</span>
   </button>
   <button class="bn-item" id="bn-requests" onclick="switchTab('requests')">
-    <span class="bn-icon">🛒</span>
+    <span class="bn-icon"><span class="em">🛒</span><svg class="i" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></svg></span>
     <span>Requests</span>
     <span id="bn-req-badge" class="bn-badge" style="display:none">0</span>
   </button>
   <button class="bn-item" id="bn-more" onclick="openMobileMoreMenu()">
-    <span class="bn-icon">⋯</span>
+    <span class="bn-icon"><span class="em">⋯</span><svg class="i" viewBox="0 0 24 24" style="width:22px;height:22px"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg></span>
     <span>More</span>
   </button>
 </nav>

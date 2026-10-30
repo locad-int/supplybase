@@ -8,9 +8,93 @@
 <meta name="description" content="FC Asset Management">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧰</text></svg>">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ─── STAGING GUARD ──────────────────────────────────────────────────────────
+// Does nothing on the live site. When this page is opened from a /staging/
+// address (e.g. https://locad-int.github.io/supplybase/staging/), it turns the
+// page into a safe test copy:
+//   • reads live data as normal (items, logs, requests, realtime updates)
+//   • BLOCKS every save to Supabase (insert / update / upsert / delete /
+//     file uploads) and pretends it worked, so screens behave normally —
+//     simulated changes disappear on refresh
+//   • blocks DR uploads to Google Drive
+//   • keeps its own browser storage (drafts, caches) apart from the live app;
+//     only the login is shared
+// Must run before anything creates the Supabase client — keep it right after
+// the supabase-js <script> tag.
+(function () {
+  var IS_STAGING = /\/staging(\/|$)/i.test(location.pathname);
+  window.SB_STAGING = IS_STAGING;
+  if (!IS_STAGING) return;
+
+  // 1) Separate browser storage (login keys stay shared)
+  var SHARED = { consumables_tracker_session_role: 1, consumables_tracker_session_user: 1 };
+  var P = 'stg:';
+  var SP = Storage.prototype, _get = SP.getItem, _set = SP.setItem, _rem = SP.removeItem;
+  var isLocal = function (s) { try { return s === window.localStorage; } catch (e) { return false; } };
+  var k = function (s, key) { return isLocal(s) && !SHARED[key] ? P + key : key; };
+  SP.getItem = function (key) { return _get.call(this, k(this, key)); };
+  SP.setItem = function (key, v) { return _set.call(this, k(this, key), v); };
+  SP.removeItem = function (key) { return _rem.call(this, k(this, key)); };
+
+  // 2) Block writes at the network level
+  var blocked = 0;
+  var _fetch = window.fetch.bind(window);
+  var hdr = function (h, name) {
+    if (!h) return '';
+    if (typeof h.get === 'function') return h.get(name) || '';
+    var want = name.toLowerCase();
+    for (var x in h) if (x.toLowerCase() === want) return String(h[x]);
+    return '';
+  };
+  window.fetch = function (input, init) {
+    init = init || {};
+    var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+    var method = String(init.method || (input && input.method) || 'GET').toUpperCase();
+    var write = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+    // Google Drive DR uploader (Apps Script)
+    if (/script\.google(usercontent)?\.com/i.test(url) && write) {
+      blocked++; _stgBadge();
+      return Promise.resolve(new Response(JSON.stringify({ ok: false, error: 'Drive uploads are off in the staging copy' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    // Supabase database + file storage
+    if (/\.supabase\.co\/(rest|storage)\/v1\//i.test(url) && write) {
+      blocked++; _stgBadge();
+      var prefer = hdr(init.headers, 'Prefer'), accept = hdr(init.headers, 'Accept');
+      if (/return=minimal/i.test(prefer) || !/return=representation/i.test(prefer)) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      var body = null;
+      try { body = typeof init.body === 'string' ? JSON.parse(init.body) : null; } catch (e) {}
+      var rows = method === 'DELETE' ? [] : (Array.isArray(body) ? body : (body ? [body] : []));
+      var single = /vnd\.pgrst\.object/i.test(accept);
+      return Promise.resolve(new Response(JSON.stringify(single ? (rows[0] || null) : rows), { status: method === 'POST' ? 201 : 200, headers: { 'Content-Type': 'application/json' } }));
+    }
+    return _fetch(input, init);
+  };
+  if (navigator.sendBeacon) navigator.sendBeacon = function () { return true; };
+
+  // 3) Visible "STAGING" bar so nobody mistakes this for the live app
+  document.title = '[STAGING] ' + document.title;
+  function _stgBadge() {
+    var n = document.getElementById('stg-count');
+    if (n) n.textContent = blocked ? ' · ' + blocked + ' save' + (blocked === 1 ? '' : 's') + ' simulated (not saved)' : '';
+  }
+  window._stgBadge = _stgBadge;
+  document.addEventListener('DOMContentLoaded', function () {
+    if (/[?&]embed=1/.test(location.search)) return; // assets frame inside staging: the parent shows the bar
+    var bar = document.createElement('div');
+    bar.id = 'stg-bar';
+    bar.innerHTML = '🧪 <b>STAGING</b> — test copy with live data. Nothing you do here is saved.<span id="stg-count"></span>';
+    bar.style.cssText = 'position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:99999;background:#7c3aed;color:#fff;'
+      + 'font:600 12px/1.3 system-ui,sans-serif;padding:6px 14px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.25);pointer-events:none;max-width:92vw;text-align:center';
+    document.body.appendChild(bar);
+    _stgBadge();
+  });
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <style>
@@ -131,8 +215,38 @@
     .btn { min-height: 40px; }
   }
 </style>
+<style id="sb2-theme">
+/* SupplyBase clean theme (sb2) — matches index.html. Remove class="sb2" from <body> for the old look. */
+body.sb2 { --bg: #f6f7f9; --surface: #ffffff; --surface2: #f9fafb; --border: #e9ebef; --text: #111827; --muted: #6b7280; --radius: 12px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; letter-spacing: -0.005em; -webkit-font-smoothing: antialiased; }
+body.sb2 h3 { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; color: #374151; }
+body.sb2 .cards { gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+body.sb2 .card { border: 1px solid var(--border); border-left: 1px solid var(--border); border-radius: 12px; padding: 15px 18px; box-shadow: 0 1px 2px rgba(16,24,40,.04); min-width: 0; }
+body.sb2 .card .label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; text-transform: none; letter-spacing: 0; margin-bottom: 8px; font-weight: 500; }
+body.sb2 .card .label::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #cbd5e1; flex-shrink: 0; }
+body.sb2 .card.danger .label::before { background: var(--danger); } body.sb2 .card.warn .label::before { background: #f59e0b; }
+body.sb2 .card.ok .label::before { background: var(--accent); } body.sb2 .card.info .label::before { background: var(--info); }
+body.sb2 .card .value { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+body.sb2 .panel { border-radius: 12px; border-color: var(--border); box-shadow: 0 1px 2px rgba(16,24,40,.04); padding: 16px 18px; }
+body.sb2 .table-wrap { border-radius: 12px; border-color: var(--border); box-shadow: 0 1px 2px rgba(16,24,40,.04); max-width: 100%; }
+body.sb2 thead th { background: #fff; color: #6b7280; font-size: 12px; font-weight: 500; text-transform: none; letter-spacing: 0; padding: 11px 8px; }
+body.sb2 td { padding: 10px 8px; border-bottom-color: #f1f2f4; }
+body.sb2 tr.click:hover td { background: #fafbfc; }
+body.sb2 .badge { font-weight: 500; font-size: 12px; padding: 3px 9px; }
+body.sb2 .btn { border-radius: 9px; font-weight: 500; padding: 8px 14px; gap: 7px; }
+body.sb2 .btn-sm { padding: 5px 10px; }
+body.sb2 .btn-secondary { border-color: var(--border); color: #374151; }
+body.sb2 .btn-primary { box-shadow: 0 1px 2px rgba(22,163,74,.25); }
+body.sb2 input, body.sb2 select, body.sb2 textarea { border-radius: 9px; border-color: var(--border); }
+body.sb2 input:focus, body.sb2 select:focus, body.sb2 textarea:focus { border-color: #86efac; box-shadow: 0 0 0 3px rgba(22,163,74,.12); }
+body.sb2 .scan { border: 2px solid var(--accent); }
+body.sb2 .modal { border-radius: 16px; box-shadow: 0 20px 50px rgba(16,24,40,.18); }
+body.sb2.embed .beta-bar { background: #fffbeb; border-color: #fde68a; border-radius: 10px; }
+body.sb2 main { min-width: 0; }
+@media (max-width: 760px) { body.sb2 .card .value { font-size: 20px; } body.sb2 .card { padding: 11px 13px; } }
+</style>
 </head>
-<body>
+<body class="sb2">
 
 <div id="login" style="display:none">
   <div class="box">
