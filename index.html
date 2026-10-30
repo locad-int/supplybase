@@ -917,6 +917,15 @@
 .i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; vertical-align: -3px; }
 body:not(.sb2) .i { display: none; }
 body.sb2 .em { display: none; }
+/* Sliding switch thumb (see sbSegSync) */
+.sb-seg-thumb { display: none; }
+body.sb2 .sb-seg-anim { position: relative; }
+body.sb2 .sb-seg-anim > button { position: relative; z-index: 1; transition: color .25s ease; }
+body.sb2 .sb-seg-anim > button.on, body.sb2 .sb-seg-anim > button.active { background: transparent !important; box-shadow: none !important; }
+body.sb2 .sb-seg-thumb { display: block; position: absolute; left: 0; top: 0; z-index: 0; border-radius: 7px; background: var(--surface); pointer-events: none;
+  box-shadow: 0 1px 3px rgba(16,24,40,.14), 0 1px 1px rgba(16,24,40,.06);
+  transition: transform .42s cubic-bezier(.3,1.32,.5,1), width .42s cubic-bezier(.3,1.32,.5,1), height .2s ease; will-change: transform, width; }
+@media (prefers-reduced-motion: reduce) { body.sb2 .sb-seg-thumb { transition: none; } }
 /* Popups and forms */
 body.sb2 .modal h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 body.sb2 .form-grid { gap: 14px; }
@@ -3406,6 +3415,63 @@ function sbIconize(root) {
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
+// ─── SLIDING SWITCHES (macOS-style) ────────────────────────────────────────────
+// The two-to-five-option switches (Open / Received / All, This week / Last
+// week, Use / Restock…, the count sheet filters, the dashboard periods) get a
+// white "thumb" that glides to the option you pick instead of jumping. Works
+// even when a screen redraws the whole switch: the last position is
+// remembered per switch, so the thumb slides from where it was.
+var SB_SEGS = [
+  { sel: '.ro-seg', key: 'ro' }, { sel: '.cs-seg', key: 'cs' }, { sel: '.rpt-seg', key: 'rpt' },
+  { sel: '.lf-types', key: 'lf' }, { sel: 'body.sb2 .dash-period-bar', key: 'dash' }
+];
+var _sbSegLast = {};
+function _sbSegActive(box) {
+  var bs = box.querySelectorAll(':scope > button');
+  for (var i = 0; i < bs.length; i++) if (bs[i].classList.contains('on') || bs[i].classList.contains('active')) return bs[i];
+  return null;
+}
+function sbSegSync(instant) {
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  SB_SEGS.forEach(function(def) {
+    document.querySelectorAll(def.sel).forEach(function(box, n) {
+      var key = def.key + n;
+      var btn = _sbSegActive(box);
+      if (!btn || !box.offsetWidth) return; // nothing picked yet, or not on screen
+      box.classList.add('sb-seg-anim');
+      var th = box.querySelector(':scope > .sb-seg-thumb');
+      var fresh = false;
+      if (!th) { th = document.createElement('span'); th.className = 'sb-seg-thumb'; box.insertBefore(th, box.firstChild); fresh = true; }
+      var to = { x: btn.offsetLeft, y: btn.offsetTop, w: btn.offsetWidth, h: btn.offsetHeight };
+      var cur = th._pos;
+      if (cur && cur.x === to.x && cur.w === to.w && cur.y === to.y && cur.h === to.h) return;
+      var from = cur || (fresh ? _sbSegLast[key] : null);
+      var put = function(p) { th.style.transform = 'translate(' + p.x + 'px,' + p.y + 'px)'; th.style.width = p.w + 'px'; th.style.height = p.h + 'px'; };
+      if (from && !instant && !reduce) {
+        th.style.transition = 'none'; put(from);
+        void th.offsetWidth; // apply the start position before animating
+        th.style.transition = '';
+      } else {
+        th.style.transition = 'none';
+      }
+      put(to);
+      if (!from || instant || reduce) { void th.offsetWidth; th.style.transition = ''; }
+      th._pos = to; _sbSegLast[key] = to;
+    });
+  });
+}
+(function() {
+  var queued = false;
+  var run = function() { queued = false; sbSegSync(false); };
+  function start() {
+    sbSegSync(true);
+    new MutationObserver(function() { if (!queued) { queued = true; requestAnimationFrame(run); } })
+      .observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('resize', function() { sbSegSync(true); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+
 // Hardcoded credentials — no setup required on new devices
 const HARDCODED_SUPABASE_URL = 'https://tkasifllaagsxhpcpzrf.supabase.co';
 const HARDCODED_SUPABASE_KEY = 'sb_publishable_eKsY9d1RsINGrGKx3SK6Fg_YrLK4aUn';
@@ -14016,7 +14082,9 @@ function applyTestMode() {
   if (labelEl) labelEl.textContent = testModePreview ? '👁 Previewing Test Mode as your team sees it' : '🧪 Test Mode Active';
   var countEl = document.getElementById('testmode-count');
   var totalEl = document.getElementById('testmode-total');
-  if (countEl) countEl.textContent = fmtInt(testModeItemIds.length);
+  // Count items that still exist — the list can keep IDs of items deleted since
+  // they were added, which made the banner say 52 while the cards said 46.
+  if (countEl) countEl.textContent = fmtInt(_tmLiveIds().length);
   if (totalEl) totalEl.textContent = fmtInt(db.items.length);
   var sidebarBtn = document.getElementById('btn-testmode-settings');
   if (sidebarBtn) sidebarBtn.style.display = currentRole === 'superuser' ? '' : 'none';
@@ -14066,6 +14134,17 @@ function toggleTestModePreview() {
   applyTestMode();
 }
 
+function _tmLiveIds() {
+  return testModeItemIds.filter(function(id) { return db.items.some(function(i) { return i.id === id; }); });
+}
+function tmRemoveDeleted() {
+  var live = _tmLiveIds(), n = testModeItemIds.length - live.length;
+  if (!n) return;
+  setTestModeItems(live);
+  logAudit('Test Mode cleaned', n + ' deleted item(s) removed from the list');
+  renderTestModeSettings();
+}
+
 function setTestModeItems(ids) {
   testModeItemIds = ids.slice();
   applyTestMode();
@@ -14080,7 +14159,7 @@ function renderTestModeSettings() {
   if (!statusEl || !chipsEl || !btnEl) return; // settings modal not open yet
 
   statusEl.textContent = testModeActive
-    ? '🧪 Active — ' + testModeItemIds.length + ' of ' + db.items.length + ' items visible'
+    ? '🧪 Active — ' + _tmLiveIds().length + ' of ' + db.items.length + ' items visible'
     : 'Off — everyone sees the full catalog (' + db.items.length + ' items)';
   statusEl.style.color = testModeActive ? '#7c3aed' : 'var(--muted)';
 
@@ -14092,6 +14171,9 @@ function renderTestModeSettings() {
       + '<button onclick="removeTestModeItem(\'' + id + '\')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px" title="Remove">×</button>'
       + '</span>';
   }).join('') || '<span style="font-size:12px;color:var(--muted);font-style:italic">No items selected yet</span>';
+  var stale = testModeItemIds.length - _tmLiveIds().length;
+  if (stale) chipsEl.innerHTML += '<div style="width:100%;font-size:12px;color:#92400e;margin-top:6px">' + stale + ' item' + (stale === 1 ? ' on this list was' : 's on this list were') + ' deleted from the catalog. '
+    + '<button class="btn btn-secondary btn-sm" onclick="tmRemoveDeleted()">Remove ' + (stale === 1 ? 'it' : 'them') + '</button></div>';
 
   btnEl.textContent = testModeActive ? '🧪 Turn Test Mode Off' : 'Turn Test Mode On';
   btnEl.className = testModeActive ? 'btn btn-danger' : 'btn btn-secondary';
