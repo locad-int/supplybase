@@ -652,6 +652,10 @@
   .fm-days.red { color: #b91c1c; font-weight: 600; } .fm-days.amber { color: #b45309; font-weight: 600; }
   /* ─── COST REPORT TOOLBAR ────────────────────────────────────────────────── */
   .rpt-toolbar { margin-bottom: 16px; gap: 8px; }
+  .rpt-break { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+  .rpt-break:empty { display: none; }
+  .rpt-break div { display: flex; justify-content: space-between; gap: 8px; }
+  .rpt-break b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .rpt-toolbar > select { flex: 0 1 auto; min-width: 0; max-width: none; }
   .rpt-range { display: flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 8px; padding: 3px 4px 3px 8px; background: var(--surface); flex-wrap: wrap; }
   .rpt-range input[type="date"] { border: none; background: transparent; width: 132px; padding: 4px 2px; box-shadow: none; }
@@ -1589,6 +1593,7 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
       <div class="card">
         <div class="label">Total Cost Consumed</div>
         <div class="value" id="rpt-total-cost" style="color:var(--danger)">₱0.00</div>
+        <div class="rpt-break" id="rpt-total-break"></div>
       </div>
       <div class="card">
         <div class="label">Total Cost Restocked</div>
@@ -10154,7 +10159,19 @@ function renderReport() {
   });
 
   // Summary
-  document.getElementById('rpt-total-cost').textContent = fmtPHP(consumeTotal);
+  // Total consumed = recorded usage (use + damage logs) + unrecorded usage
+  // (count variance: shortages found at stocktake minus excess found) — the
+  // same basis as "This Week's Cost". Unrecorded applies when the report
+  // covers all consumption (All transactions, or Consumption).
+  var withVariance = typeVal === 'all' || typeVal === 'use,damage';
+  var vb = withVariance ? weeklyCostFor(bounds.from, bounds.to, { cat: cat || '', toInclusive: !bounds.exclusive }) : null;
+  var unrecorded = vb ? Math.round(vb.variance * 100) / 100 : 0;
+  document.getElementById('rpt-total-cost').textContent = fmtPHP(Math.round((consumeTotal + unrecorded) * 100) / 100);
+  var brk = document.getElementById('rpt-total-break');
+  if (brk) brk.innerHTML = vb
+    ? '<div><span>Recorded usage</span><b>' + fmtPHP(Math.round(consumeTotal * 100) / 100) + '</b></div>'
+      + '<div title="Count variance: shortages found at stocktake (' + fmtPHP(Math.round(vb.shortage * 100) / 100) + ') minus excess found (' + fmtPHP(Math.round(vb.excess * 100) / 100) + ')"><span>Unrecorded (count variance)</span><b>' + (unrecorded < 0 ? '−' : '') + fmtPHP(Math.abs(unrecorded)) + '</b></div>'
+    : '<div><span>Recorded usage only</span></div>';
   document.getElementById('rpt-total-restock-cost').textContent = fmtPHP(restockTotal);
   document.getElementById('rpt-total-qty').textContent = fmt(grandQty);
   document.getElementById('rpt-unique').textContent = [...new Set(rows.map(r => r.itemId))].length;
