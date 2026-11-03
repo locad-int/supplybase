@@ -189,6 +189,47 @@
   .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 28px; display: flex; align-items: center; position: sticky; top: 0; z-index: 40; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
   .page-title { font-size: 1rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--text); }
   .topbar-right { margin-left: auto; }
+  /* ─── GLOBAL SEARCH ─────────────────────────────────────────────────────── */
+  .gs-box { flex: 1; max-width: 460px; margin: 0 20px; display: flex; align-items: center; gap: 9px; background: var(--surface2); border: 1px solid transparent; border-radius: 10px; padding: 7px 12px; color: var(--muted); font: inherit; font-size: 13px; cursor: text; text-align: left; min-width: 0; }
+  .gs-box:hover { border-color: var(--border); }
+  .gs-box .gs-ph { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .gs-kbd { margin-left: auto; font: 500 11px ui-monospace, Menlo, monospace; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+  #gs-bg { position: fixed; inset: 0; background: rgba(17,24,39,.32); display: none; align-items: flex-start; justify-content: center; padding: 9vh 16px 16px; z-index: 300; }
+  #gs-bg.open { display: flex; animation: gsFade .14s ease-out; }
+  #gs-pal { width: 100%; max-width: 640px; background: var(--surface); color: var(--text); border-radius: 14px; box-shadow: 0 24px 60px rgba(16,24,40,.28); overflow: hidden; animation: gsDrop .16s ease-out; }
+  @keyframes gsFade { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes gsDrop { from { transform: translateY(-8px) scale(.98); opacity: 0 } to { transform: none; opacity: 1 } }
+  @media (prefers-reduced-motion: reduce) { #gs-bg.open, #gs-pal { animation: none; } }
+  .gs-in { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .gs-in .i { width: 18px; height: 18px; color: var(--muted); }
+  .gs-in input { flex: 1; border: none !important; outline: none; box-shadow: none !important; font-size: 16px; background: none !important; padding: 4px 0 !important; color: var(--text); min-width: 0; }
+  .gs-in input::-webkit-search-cancel-button { display: none; }
+  #gs-scope { background: #dcfce7; color: #15803d; border-radius: 99px; padding: 2px 10px; font-size: 12px; font-weight: 500; white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+  .gs-esc { font: 500 11px ui-monospace, Menlo, monospace; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; cursor: pointer; }
+  #gs-res { max-height: min(60vh, 480px); overflow-y: auto; padding: 4px 0 8px; }
+  .gs-grp { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 10px 16px 4px; }
+  .gs-row { display: flex; align-items: center; gap: 12px; padding: 8px 16px; cursor: pointer; }
+  .gs-row.sel { background: #f0fdf4; }
+  .gs-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--surface2); display: flex; align-items: center; justify-content: center; color: var(--muted); flex-shrink: 0; }
+  .gs-row.sel .gs-ic { background: #dcfce7; color: #15803d; }
+  .gs-tt { min-width: 0; flex: 1; } .gs-tt b { font-weight: 600; }
+  .gs-tt .gs-s { font-size: 12px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gs-row mark { background: #fef08a; color: inherit; border-radius: 3px; padding: 0 1px; }
+  .gs-pill { font-size: 11px; font-weight: 500; border-radius: 99px; padding: 2px 8px; white-space: nowrap; background: var(--surface2); color: var(--muted); }
+  .gs-pill.ok { background: #dcfce7; color: #15803d; } .gs-pill.warn { background: #fef3c7; color: #92400e; } .gs-pill.danger { background: #fee2e2; color: #b91c1c; }
+  .gs-go { color: #16a34a; font-size: 12px; white-space: nowrap; visibility: hidden; }
+  .gs-row.sel .gs-go { visibility: visible; }
+  .gs-foot { display: flex; gap: 14px; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted); }
+  .gs-foot b { font: 500 11px ui-monospace, Menlo, monospace; border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; margin-right: 4px; }
+  .gs-tips { padding: 14px 16px; color: var(--muted); font-size: 13px; line-height: 1.9; }
+  .gs-tips a { display: inline-block; margin: 0 4px 4px 0; background: var(--surface2); color: var(--text); border-radius: 99px; padding: 2px 10px; font-size: 12.5px; cursor: pointer; line-height: 1.6; text-decoration: none; }
+  .gs-empty { padding: 26px 16px; text-align: center; color: var(--muted); }
+  @media (max-width: 768px) {
+    .gs-box { flex: 0 0 auto; margin: 0 0 0 auto; padding: 8px; background: none; color: var(--text); }
+    .gs-box .gs-ph, .gs-box .gs-kbd { display: none; }
+    .gs-box + .topbar-right { margin-left: 8px; }
+    #gs-bg { padding: 10px; } .gs-go, .gs-foot { display: none; } .gs-row { gap: 10px; padding: 8px 12px; }
+  }
 
   /* Main content */
   main { padding: 20px 22px; }
@@ -222,6 +263,14 @@
   .stock-bar { flex: 1; height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
   .stock-bar-fill { height: 100%; border-radius: 99px; transition: width .3s; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+  /* Price change on receiving */
+  .pc-tag { display: inline-flex; align-items: center; white-space: nowrap; font-size: 11px; font-weight: 600; border-radius: 99px; padding: 1px 8px; background: #ffedd5; color: #9a3412; }
+  .pc-tag.dn { background: #dbeafe; color: #1e40af; }
+  .pc-alert { margin-top: 8px; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.45; background: #fff7ed; border: 1px solid #fed7aa; color: #7c2d12; }
+  .pc-alert.dn { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+  .pc-alert .pc-h { font-weight: 600; }
+  .pc-alert .pc-s { font-size: 12px; opacity: .85; margin-top: 2px; }
+  .pc-alert select { margin-top: 8px; }
   .badge-ok { background: #dcfce7; color: #15803d; }
   .badge-warn { background: #fef3c7; color: #92400e; }
   .badge-danger { background: #fee2e2; color: #991b1b; }
@@ -817,19 +866,28 @@
   @keyframes drcFlash { 0% { opacity: .85; } 100% { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .drc-line { animation: none; top: 50%; } .drc-shim::before { animation: none; } }
 
-  /* ─── TEST MODE BANNER ───────────────────────────────────────────────────── */
+  /* ─── TEST MODE CHIP (topbar) ───────────────────────────────────────────── */
   #testmode-banner {
-    display: none; background: #7c3aed; color: #fff;
-    text-align: center; font-size: 13px; font-weight: 700;
-    padding: 10px 16px; letter-spacing: .02em;
-    position: sticky; top: 0; z-index: 39;
+    display: none; position: relative; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+    background: #f5f3ff; color: #5b21b6; border: 1px solid #ddd6fe; border-radius: 99px;
+    padding: 3px 10px; font-size: 12px; font-weight: 600; white-space: nowrap;
   }
-  #testmode-banner.active { display: block; }
-  #testmode-banner button {
-    margin-left: 12px; background: rgba(255,255,255,.2); border: none;
-    color: #fff; font-weight: 700; font-size: 12px;
-    padding: 3px 10px; border-radius: 6px; cursor: pointer;
+  #testmode-banner.active { display: inline-flex; }
+  #testmode-banner:hover, #testmode-banner.open { background: #ede9fe; }
+  #testmode-banner .tm-dot { width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; }
+  #testmode-banner .tm-n { font-weight: 500; color: #7c3aed; font-variant-numeric: tabular-nums; }
+  #testmode-banner.preview { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+  #testmode-banner.preview .tm-dot { background: #fff; } #testmode-banner.preview .tm-n { color: #ede9fe; }
+  #tm-pop {
+    display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 260px; z-index: 210; cursor: default;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(16,24,40,.18); padding: 12px; font-weight: 400; white-space: normal;
   }
+  #testmode-banner.open #tm-pop { display: flex; flex-direction: column; gap: 6px; }
+  #tm-pop .tm-pop-t { font-weight: 600; font-size: 13px; }
+  #tm-pop .tm-pop-s { font-size: 12px; color: var(--muted); margin-bottom: 4px; line-height: 1.45; }
+  #tm-pop .btn { justify-content: center; width: 100%; }
+  @media (max-width: 600px) { #testmode-banner .tm-n { display: none; } #testmode-banner { padding: 3px 8px; } }
 
   /* ─── BIOMETRIC LOGIN BUTTON ─────────────────────────────────────────────── */
   #bio-login-btn {
@@ -1120,8 +1178,6 @@ body.sb2 .page-title { font-size: 17px; font-weight: 600; text-transform: none; 
 body.sb2 #online-badge { background: #f3f4f6 !important; border: none !important; color: #374151 !important; font-weight: 500 !important; }
 
 /* Banners: softer, same place */
-body.sb2 #testmode-banner { background: #f5f3ff; color: #5b21b6; border-bottom: 1px solid #ede9fe; font-weight: 500; letter-spacing: 0; padding: 8px 16px; }
-body.sb2 #testmode-banner button { background: #fff; color: #5b21b6; border: 1px solid #ddd6fe; font-weight: 500; }
 body.sb2 #stocktake-banner { background: #fffbeb; color: #92400e; border-bottom: 1px solid #fde68a; font-weight: 600; letter-spacing: 0; }
 body.sb2 #stocktake-banner button { background: #fff; color: #92400e; border: 1px solid #fcd34d; font-weight: 500; }
 
@@ -1344,7 +1400,21 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <h1 class="page-title" id="page-title">Inventory</h1>
+    <button type="button" id="gs-btn" class="gs-box" onclick="openSearch()" title="Search (/ or Ctrl K)" aria-label="Search" style="display:none">
+      <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span class="gs-ph">Search items, POs, DRs, invoices…</span><span class="gs-kbd" id="gs-kbd">Ctrl K</span>
+    </button>
     <div class="topbar-right" style="display:flex;align-items:center;gap:12px">
+      <!-- TEST MODE (superusers only): a small chip instead of a full-width banner -->
+      <div id="testmode-banner" role="button" tabindex="0" aria-haspopup="true" onclick="toggleTmPop(event)" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();toggleTmPop(event)}" title="Test Mode is on — click for options">
+        <span class="tm-dot"></span><span id="testmode-label">Test Mode</span><span class="tm-n"><span id="testmode-count">0</span>/<span id="testmode-total">0</span></span>
+        <div id="tm-pop" onclick="event.stopPropagation()">
+          <div class="tm-pop-t">Test Mode is on</div>
+          <div class="tm-pop-s">Your team only sees the <b id="tm-pop-n">0</b> items in the test list. You still see everything.</div>
+          <button id="testmode-preview-btn" class="btn btn-secondary btn-sm" onclick="toggleTestModePreview();closeTmPop()" style="display:none" title="Only changes what you see on this screen — nobody else is affected">Preview as team</button>
+          <button class="btn btn-secondary btn-sm" onclick="closeTmPop();openSettings()">Choose items…</button>
+          <button id="testmode-off-btn" class="btn btn-danger btn-sm" onclick="closeTmPop();toggleTestMode()" style="display:none">Turn off</button>
+        </div>
+      </div>
       <span id="last-refreshed" style="font-size:11px;color:var(--muted);display:none">Last refreshed: <span id="last-refreshed-time">—</span></span>
       <span id="realtime-dot" title="Realtime: connecting…" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;cursor:default"></span>
       <span id="online-badge" style="display:none;position:relative;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--ok);cursor:default;padding:3px 10px;border-radius:99px;background:rgba(22,163,74,.1);border:1px solid rgba(22,163,74,.25)"
@@ -1376,12 +1446,6 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
   <!-- STOCKTAKE / WEEKLY CUTOFF REMINDERS (users + superusers) -->
   <div id="ops-reminder-banner" style="display:none;background:#fef3c7;color:#92400e;border-bottom:1px solid #fcd34d;padding:4px 20px;font-size:13px"></div>
 
-  <!-- TEST MODE BANNER -->
-  <div id="testmode-banner">
-    <span id="testmode-label">🧪 Test Mode Active</span> — showing <span id="testmode-count">0</span> of <span id="testmode-total">0</span> items
-    <button id="testmode-preview-btn" onclick="toggleTestModePreview()" style="display:none" title="Only changes what you see on this screen — nobody else is affected">👁 Preview as team</button>
-    <button id="testmode-off-btn" onclick="toggleTestMode()" style="display:none">Turn Off</button>
-  </div>
   <main>
 
   <!-- Summary Cards -->
@@ -2976,6 +3040,18 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
   </div>
 </div>
 
+<!-- GLOBAL SEARCH -->
+<div id="gs-bg" onclick="if(event.target===this)closeSearch()">
+  <div id="gs-pal" role="dialog" aria-label="Search">
+    <div class="gs-in"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <span id="gs-scope" style="display:none"></span>
+      <input id="gs-q" type="search" placeholder="Search items, POs, DRs, invoices, suppliers…" autocomplete="off" spellcheck="false" oninput="_gsSel=0;renderSearch()" onkeydown="gsKeys(event)">
+      <button type="button" class="gs-esc" onclick="closeSearch()">Esc</button></div>
+    <div id="gs-res"></div>
+    <div class="gs-foot"><span><b>↑↓</b>move</span><span><b>Enter</b>open</span><span><b>Esc</b>close</span></div>
+  </div>
+</div>
+
 <!-- PO DETAILS MODAL (staggered deliveries) -->
 <div class="modal-bg" id="po-detail-modal">
   <div class="modal" style="max-width:860px">
@@ -3018,7 +3094,12 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
       <div class="form-group full">
         <label>Delivery Cost per Unit (₱)</label>
         <input type="number" id="recv-cost" min="0" step="0.01" placeholder="e.g. 12.50 · 0 if free" oninput="updateRecvButton()">
-        <div style="font-size:11px;color:var(--muted);margin-top:3px">Brand / client-supplied stock that Locad doesn't pay for: enter <b>0</b>.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px"><span id="recv-price-ref"></span>Brand / client-supplied stock that Locad doesn't pay for: enter <b>0</b>.</div>
+        <div id="recv-price-alert" class="pc-alert" style="display:none">
+          <div class="pc-h" id="recv-pa-h"></div>
+          <div class="pc-s" id="recv-pa-s"></div>
+          <select id="recv-price-reason" onchange="updateRecvButton()"></select>
+        </div>
       </div>
       <div class="form-group full">
         <label>Notes</label>
@@ -4322,7 +4403,15 @@ function _priceHistoryPoints(itemId) {
     // Already represented by a priced PO line it was delivered against
     // (linked by reference, or an older unlinked delivery the app counts
     // toward that line) — don't list the same purchase twice.
-    if (poLines.some(function(r) { return _logCountsTowardReorder(l, r); })) return;
+    var pcTag = _priceTagOf(l.notes);
+    if (poLines.some(function(r) { return _logCountsTowardReorder(l, r); })) {
+      // …unless it was received at a different price than the PO: then the
+      // price actually paid is a purchase price of its own
+      if (!pcTag) return;
+      var sp0 = _rptSupplierFor(l);
+      pts.push({ date: l.date, supplier: sp0.supplier || '', price: l.costAmount / l.qty, qty: l.qty, source: 'Received', ref: sp0.po || '', reason: pcTag.reason });
+      return;
+    }
     var sp = _rptSupplierFor(l);
     pts.push({ date: l.date, supplier: sp.supplier || '', price: l.costAmount / l.qty, qty: l.qty, source: 'Delivery', ref: sp.po || '' });
   });
@@ -4356,10 +4445,47 @@ function openPriceHistory(itemId) {
 
 function setPriceHistorySort(v) { _phSort = v; renderPriceHistory(); }
 
+var _phMode = 'items'; // 'items' | 'changes'
+function setPriceHistoryMode(m) { _phMode = m; renderPriceHistory(); }
+function _phModeBar() {
+  var n = priceChangeLogs().filter(isLogVisible).length;
+  return '<div class="seg-ctl" style="display:inline-flex;background:var(--surface2);border-radius:10px;padding:3px;margin-bottom:10px">'
+    + [['items', 'Items'], ['changes', 'Price changes on receiving' + (n ? ' (' + n + ')' : '')]].map(function(o) {
+      var on = _phMode === o[0];
+      return '<button type="button" onclick="setPriceHistoryMode(\'' + o[0] + '\')" style="border:none;background:' + (on ? 'var(--surface)' : 'none') + ';box-shadow:' + (on ? '0 1px 2px rgba(16,24,40,.12)' : 'none') + ';color:' + (on ? 'var(--text)' : 'var(--muted)') + ';padding:6px 12px;border-radius:8px;font:500 13px inherit;font-family:inherit;cursor:pointer">' + esc(o[1]) + '</button>';
+    }).join('') + '</div>';
+}
+function _priceChangesHtml() {
+  var q = ((document.getElementById('ph-search') || {}).value || '').trim().toLowerCase();
+  var rows = priceChangeLogs().filter(isLogVisible).map(function(l) {
+    var pc = _priceTagOf(l.notes), item = db.items.find(function(i) { return i.id === l.itemId; }), sp = _rptSupplierFor(l);
+    return { l: l, pc: pc, item: item, name: item ? item.name : 'Deleted Item', supplier: sp.supplier ? _supDisplayName(sp.supplier) : '', po: sp.po || '' };
+  }).filter(function(x) {
+    return !q || [x.name, x.supplier, x.po, x.pc.reason, x.pc.by].some(function(v) { return String(v || '').toLowerCase().indexOf(q) !== -1; });
+  });
+  return '<h2>📈 Price History</h2>' + _phModeBar()
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
+    + '<input type="text" id="ph-search" placeholder="Search item, supplier, PO or reason…" value="' + esc(q) + '" oninput="renderPriceHistory();var e=document.getElementById(\'ph-search\');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="flex:1;min-width:200px"></div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Deliveries received at a different price than their PO, with the reason the receiver gave. Newest first.</div>'
+    + '<div class="table-wrap" style="max-height:58vh;overflow-y:auto"><table><thead><tr><th>Date</th><th>Item</th><th>Supplier</th><th>PO</th><th style="text-align:right">PO Price</th><th style="text-align:right">Received At</th><th style="text-align:right">Change</th><th>Reason</th><th>By</th></tr></thead><tbody>'
+    + (rows.length ? rows.map(function(x) {
+      var up = x.pc.price > x.pc.poPrice;
+      return '<tr><td style="white-space:nowrap">' + _fmtYmd(_phYmd(new Date(x.l.date))) + '</td>'
+        + '<td>' + (x.item ? '<a href="#" onclick="event.preventDefault();_phMode=\'items\';openPriceHistoryItem(\'' + esc(x.item.id) + '\')"><strong>' + esc(x.name) + '</strong></a>' : esc(x.name)) + '</td>'
+        + '<td>' + esc(x.supplier || '—') + '</td>'
+        + '<td style="white-space:nowrap">' + (x.po ? '<a href="#" onclick="event.preventDefault();openPoDetail(\'' + esc(x.po) + '\')">' + esc(x.po) + '</a>' : '—') + '</td>'
+        + '<td style="text-align:right">' + fmtPHP(x.pc.poPrice) + '</td><td style="text-align:right">' + fmtPHP(x.pc.price) + '</td>'
+        + '<td style="text-align:right;font-weight:600;color:' + (up ? 'var(--danger)' : 'var(--ok)') + '">' + (up ? '▲ +' : '▼ −') + Math.abs(x.pc.pct) + '%</td>'
+        + '<td>' + esc(x.pc.reason) + '</td><td>' + esc(x.pc.by || '—') + '</td></tr>';
+    }).join('') : '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:16px">No price changes recorded' + (q ? ' for "' + esc(q) + '"' : ' yet') + '.</td></tr>')
+    + '</tbody></table></div>';
+}
+
 function renderPriceHistory() {
   var body = document.getElementById('ph-body');
   if (!body) return;
   if (_phItemId) { body.innerHTML = _priceHistoryDetailHtml(_phItemId); return; }
+  if (_phMode === 'changes') { body.innerHTML = _priceChangesHtml(); return; }
   var q = ((document.getElementById('ph-search') || {}).value || '').trim().toLowerCase();
   var rows = priceHistoryOverview().filter(function(r) {
     return !q || [r.item.name, r.item.category, r.last.supplierName].some(function(v) { return String(v || '').toLowerCase().indexOf(q) !== -1; });
@@ -4369,7 +4495,7 @@ function renderPriceHistory() {
     if (_phSort === 'recent') return String(b.last.date).localeCompare(String(a.last.date));
     return (b.changePct === null ? -1e9 : b.changePct) - (a.changePct === null ? -1e9 : a.changePct);
   });
-  var html = '<h2>📈 Price History</h2>'
+  var html = '<h2>📈 Price History</h2>' + _phModeBar()
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
     + '<input type="text" id="ph-search" placeholder="Search item, category or supplier…" value="' + esc(q) + '" oninput="renderPriceHistory();var e=document.getElementById(\'ph-search\');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="flex:1;min-width:200px">'
     + '<select onchange="setPriceHistorySort(this.value)" style="width:auto;flex:0 0 auto">'
@@ -4467,7 +4593,9 @@ function _priceHistoryDetailHtml(itemId) {
       var before = rev[i + 1];
       var diff = before ? Math.round((p.price - before.price) / before.price * 1000) / 10 : null;
       return '<tr><td style="white-space:nowrap">' + _fmtYmd(_phYmd(new Date(p.date))) + '</td><td>' + esc(p.supplierName) + '</td>'
-        + '<td style="font-size:12px">' + (p.source === 'PO' ? '<a href="#" onclick="event.preventDefault();openPoDetail(\'' + esc(p.ref) + '\')">' + esc(p.ref) + '</a>' : 'Delivery' + (p.ref ? ' (' + esc(p.ref) + ')' : '')) + '</td>'
+        + '<td style="font-size:12px">' + (p.source === 'PO' ? '<a href="#" onclick="event.preventDefault();openPoDetail(\'' + esc(p.ref) + '\')">' + esc(p.ref) + '</a>'
+          : p.source === 'Received' ? '<span class="pc-tag">Received ≠ PO</span> ' + (p.ref ? esc(p.ref) + ' · ' : '') + '<span style="color:var(--muted)">' + esc(p.reason || '') + '</span>'
+          : 'Delivery' + (p.ref ? ' (' + esc(p.ref) + ')' : '')) + '</td>'
         + '<td style="text-align:right">' + fmtInt(p.qty) + '</td><td style="text-align:right">' + fmtPHP(p.price) + '</td>'
         + '<td style="text-align:right">' + (diff === null || diff === 0 ? '<span style="color:var(--muted)">—</span>' : '<span style="color:' + (diff > 0 ? 'var(--danger)' : 'var(--ok)') + '">' + (diff > 0 ? '+' : '') + diff + '%</span>') + '</td></tr>';
     }).join('') + '</tbody></table></div>';
@@ -4475,6 +4603,15 @@ function _priceHistoryDetailHtml(itemId) {
 }
 
 function exportPriceHistoryCSV() {
+  if (!_phItemId && _phMode === 'changes') {
+    var out = [['Date', 'Item', 'Supplier', 'PO', 'Qty', 'PO Price', 'Received At', 'Change %', 'Reason', 'By'].join(',')];
+    priceChangeLogs().filter(isLogVisible).forEach(function(l) {
+      var pc = _priceTagOf(l.notes), item = db.items.find(function(i) { return i.id === l.itemId; }), sp = _rptSupplierFor(l);
+      out.push([_phYmd(new Date(l.date)), _csvQ(item ? item.name : 'Deleted Item'), _csvQ(sp.supplier ? _supDisplayName(sp.supplier) : ''), _csvQ(sp.po || ''), l.qty, pc.poPrice, pc.price, pc.pct, _csvQ(pc.reason), _csvQ(pc.by || '')].join(','));
+    });
+    _csvDownload(out, 'price_changes_' + new Date().toISOString().slice(0, 10) + '.csv');
+    return;
+  }
   var rows = [['Item', 'Category', 'Unit', 'Date', 'Supplier', 'Source', 'Reference', 'Qty', 'Unit Price (VAT-inc)'].join(',')];
   var items = _phItemId ? db.items.filter(function(i) { return i.id === _phItemId; }) : catalogItems();
   items.forEach(function(item) {
@@ -4575,8 +4712,67 @@ function _drUrlOf(notes) { var m = String(notes || '').match(DR_LINK_RE); return
 // Notes as safe HTML with the DR link shown as a 📎 link instead of a long URL
 function _notesHtml(notes) {
   var url = _drUrlOf(notes);
-  var text = esc(String(notes || '').replace(DR_LINK_RE, '').trim());
-  return text + (url ? (text ? ' ' : '') + '<a href="' + esc(url) + '" target="_blank" rel="noopener" title="Open the scanned delivery receipt" style="white-space:nowrap">📎 DR</a>' : '');
+  var pc = _priceTagOf(notes);
+  var text = esc(String(notes || '').replace(DR_LINK_RE, '').replace(PRICE_TAG_RE, '').trim());
+  return text + (pc ? (text ? ' ' : '') + _priceTagHtml(pc) : '')
+    + (url ? (text || pc ? ' ' : '') + '<a href="' + esc(url) + '" target="_blank" rel="noopener" title="Open the scanned delivery receipt" style="white-space:nowrap">📎 DR</a>' : '');
+}
+
+// ─── PRICE CHANGES ON RECEIVING ───────────────────────────────────────────────
+// When the cost entered on Receive Delivery differs from the PO price, the
+// receiver must pick a reason. The change is kept on the delivery's log
+// entry as a tag in its notes (no database change), e.g.
+//   [Price change: ₱3,750.00 vs PO ₱1,800.00, +108% · Supplier price increase · larry.capacete]
+// and shown as a pill wherever deliveries appear, in Price History, and in
+// the Audit Log.
+var PRICE_TAG_RE = /\s*\[Price change: ₱([\d,.]+) vs PO ₱([\d,.]+), ([+−-][\d.]+)% · ([^\]·]+?)(?: · ([^\]]+?))?\]/;
+var PRICE_REASONS = ['Supplier price increase', 'Supplier discount / promo', 'PO price was wrong', 'Different size or variant delivered', 'Other (explain in notes)'];
+var PRICE_TOLERANCE = 0.005; // under 0.5% is rounding, not a price change
+function _num2(n) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function _priceTagOf(notes) {
+  var m = String(notes || '').match(PRICE_TAG_RE);
+  if (!m) return null;
+  return { price: parseFloat(m[1].replace(/,/g, '')), poPrice: parseFloat(m[2].replace(/,/g, '')), pct: parseFloat(m[3].replace('−', '-')), reason: m[4].trim(), by: (m[5] || '').trim() };
+}
+function _priceTag(price, poPrice, reason, by) {
+  var pct = Math.round((price - poPrice) / poPrice * 1000) / 10;
+  return '[Price change: ₱' + _num2(price) + ' vs PO ₱' + _num2(poPrice) + ', ' + (pct >= 0 ? '+' : '−') + Math.abs(pct) + '% · ' + String(reason).replace(/[\[\]·]/g, ' ').trim() + (by ? ' · ' + String(by).replace(/[\[\]·]/g, ' ').trim() : '') + ']';
+}
+function _priceTagHtml(pc) {
+  var up = pc.price > pc.poPrice;
+  return '<span class="pc-tag' + (up ? '' : ' dn') + '" title="' + esc(pc.reason + (pc.by ? ' · ' + pc.by : '')) + '">'
+    + fmtPHP(pc.price) + ' vs PO ' + fmtPHP(pc.poPrice) + ' · ' + (up ? '+' : '−') + Math.abs(pc.pct) + '%</span>'
+    + ' <span style="font-size:11px;color:var(--muted)">' + esc(pc.reason) + '</span>';
+}
+// Is this cost a price change against the PO line? (null when not)
+function _priceChangeFor(r, cost) {
+  var po = parseFloat(r && r.cost);
+  if (!(po > 0) || !(cost > 0)) return null; // no PO price, or a ₱0 (free) delivery
+  if (Math.abs(cost - po) / po < PRICE_TOLERANCE) return null;
+  return { price: cost, poPrice: po, pct: Math.round((cost - po) / po * 1000) / 10 };
+}
+// Last price actually paid for an item (newest costed delivery)
+function _lastPaid(itemId) {
+  var best = null;
+  db.logs.forEach(function(l) {
+    if (l.itemId !== itemId || l.type !== 'restock' || !(l.costAmount > 0) || !(l.qty > 0)) return;
+    if (l.by === 'Initial' || /opening stock|Item created/i.test(l.notes || '')) return;
+    if (!best || String(l.date) > String(best.date)) best = l;
+  });
+  return best ? { price: Math.round(best.costAmount / best.qty * 100) / 100, date: best.date } : null;
+}
+// Price changes recorded on deliveries, newest first (optionally for one PO)
+var _pcCache = { key: '', list: [] };
+function priceChangeLogs(poNumber) {
+  // Cached: the Reorder list asks once per PO row
+  var key = db.logs.length + '|' + (db.logs.length ? db.logs[db.logs.length - 1].id + (db.logs[db.logs.length - 1].notes || '').length : '');
+  if (_pcCache.key !== key) {
+    _pcCache.key = key;
+    _pcCache.list = db.logs.filter(function(l) {
+      return l.type === 'restock' && String(l.notes || '').indexOf('[Price change:') !== -1 && PRICE_TAG_RE.test(l.notes);
+    }).sort(function(a, b) { return String(b.date).localeCompare(String(a.date)); });
+  }
+  return poNumber ? _pcCache.list.filter(function(l) { return _logRefsPo(l, poNumber); }) : _pcCache.list.slice();
 }
 
 function drPick(ctx) {
@@ -4937,6 +5133,243 @@ function _poInvoicesHtml(poNumber, complete) {
     }).join('')
     + '</tbody></table></div>';
 }
+
+// ─── GLOBAL SEARCH (/ or Ctrl/⌘ K) ────────────────────────────────────────────
+// One box for items, POs, DR numbers, sales invoices and suppliers. It only
+// searches what's already loaded in the app, so results are instant and it
+// shows nothing a person couldn't already reach from their own tabs.
+var _gsIndex = [], _gsShown = [], _gsSel = 0, _gsSupplier = null;
+var GS_ICONS = {
+  item: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+  po: '<circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2 3h3l2.5 12.5h12L22 7H6.2"/>',
+  dr: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/>',
+  si: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  sup: '<path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6"/>'
+};
+var GS_GROUPS = [['item', 'Items'], ['po', 'POs'], ['dr', 'Deliveries (DR)'], ['si', 'Invoices'], ['sup', 'Suppliers']];
+
+function _gsCanItems() { return !!currentRole && !isTabHidden('inventory'); }
+function _gsCanPurchasing() { return !!currentRole && currentRole !== 'brand' && !isTabHidden('reorder'); }
+function _gsShort(d) { return d ? new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : ''; }
+
+function _gsBuildIndex() {
+  var out = [];
+  if (_gsCanItems()) {
+    var brand = currentRole === 'brand';
+    catalogItemsForSearch().forEach(function(i) {
+      if (brand && typeof itemMatchesBrand === 'function' && !itemMatchesBrand(i)) return;
+      // Only the columns this role can see in Inventory
+      out.push({ k: 'item', id: i.id, t: i.name || '', s: [isColHidden('sku') ? '' : i.sku, isColHidden('category') ? '' : i.category, !brand && !isColHidden('cost') && i.cost ? fmtPHP(i.cost) + ' / ' + (i.unit || 'unit') : ''].filter(Boolean).join(' · '),
+        hay: [i.name, i.sku, i.category].join(' '), item: i });
+    });
+  }
+  if (_gsCanPurchasing()) {
+    var limited = testModeActive && !(currentRole === 'superuser' && !testModePreview);
+    var pos = _knownPos().filter(function(p) {
+      if (!limited) return true;
+      var lines = db.reorders.filter(function(r) { return String(r.poNumber) === p.poNumber; });
+      return !lines.length || lines.some(function(r) { return testModeItemIds.indexOf(r.itemId) !== -1; });
+    });
+    pos.forEach(function(p) {
+      var names = db.reorders.filter(function(r) { return String(r.poNumber) === p.poNumber; }).map(function(r) {
+        var it = db.items.find(function(i) { return i.id === r.itemId; }); return it ? it.name : '';
+      }).filter(Boolean);
+      var po = (db.purchaseOrders || []).find(function(x) { return String(x.poNumber) === p.poNumber; });
+      (po && po.customItems || []).forEach(function(c) { if (c.description) names.push(c.description); });
+      out.push({ k: 'po', id: p.poNumber, t: p.poNumber, s: [p.supplier, names.slice(0, 3).join(', ') + (names.length > 3 ? ' +' + (names.length - 3) : ''), _gsShort(p.date)].filter(Boolean).join(' · '),
+        hay: [p.poNumber, p.supplier, names.join(' ')].join(' '), date: p.date, supplier: p.supplier });
+    });
+    // Deliveries grouped by DR no. (one DR can cover several items)
+    var drs = {};
+    db.logs.forEach(function(l) {
+      if (l.type !== 'restock' || (limited && !isLogVisible(l))) return;
+      var m = String(l.ref || '').match(/DR\s*#?\s*([\w-]+)/i);
+      if (!m) return;
+      var po = (String(l.ref || '').match(PO_NUMBER_RE) || [''])[0].toUpperCase();
+      var key = m[1].toUpperCase() + '|' + po;
+      var it = db.items.find(function(i) { return i.id === l.itemId; });
+      var g = drs[key] || (drs[key] = { dr: m[1], po: po, logs: [], names: [], date: l.date, file: false });
+      g.logs.push(l); if (it) g.names.push(it.name + ' +' + fmtInt(l.qty) + (it.unit ? ' ' + it.unit : ''));
+      if (String(l.date) > String(g.date)) g.date = l.date;
+      if (_drUrlOf(l.notes)) g.file = true;
+    });
+    Object.keys(drs).forEach(function(k) {
+      var g = drs[k], sp = _rptSupplierFor(g.logs[0]);
+      out.push({ k: 'dr', id: k, t: 'DR ' + g.dr, s: [_gsShort(g.date), g.names.slice(0, 2).join(', ') + (g.names.length > 2 ? ' +' + (g.names.length - 2) + ' more' : ''), g.po, sp.supplier || ''].filter(Boolean).join(' · '),
+        hay: ['DR ' + g.dr, g.dr, g.po, sp.supplier, g.names.join(' ')].join(' '), date: g.date, g: g });
+    });
+    (db.invoices || []).forEach(function(inv) {
+      var pl = _invPoList(inv);
+      out.push({ k: 'si', id: inv.id, t: 'SI ' + inv.invoiceNo, s: [inv.supplier, inv.amount !== null && inv.amount !== undefined && inv.amount !== '' ? fmtPHP(Number(inv.amount)) : '', pl.join(', '), inv.drNos ? 'DR ' + inv.drNos : ''].filter(Boolean).join(' · '),
+        hay: ['SI ' + inv.invoiceNo, inv.invoiceNo, inv.supplier, pl.join(' '), inv.drNos, inv.notes].join(' '), date: inv.invoiceDate || inv.createdAt, inv: inv });
+    });
+    var sups = {};
+    pos.forEach(function(p) {
+      var k = _supKey(p.supplier); if (!k) return;
+      var s0 = sups[k] || (sups[k] = { name: p.supplier, n: 0, open: 0, last: '' });
+      s0.n++; if (String(p.date) > String(s0.last)) s0.last = p.date;
+      if (!_poIsComplete(p.poNumber)) s0.open++;
+    });
+    Object.keys(sups).forEach(function(k) {
+      var x = sups[k];
+      out.push({ k: 'sup', id: k, t: _supDisplayName(x.name), s: x.n + ' PO' + (x.n === 1 ? '' : 's') + (x.last ? ' · last PO ' + _gsShort(x.last) : '') + (x.open ? ' · ' + x.open + ' open' : ''), hay: x.name, supKey: k });
+    });
+  }
+  out.forEach(function(r) { r.lt = String(r.t).toLowerCase(); r.lh = (r.t + ' ' + r.hay + ' ' + r.s).toLowerCase(); });
+  return out;
+}
+
+// Every word must match. A bare number also matches inside PO / DR / SI numbers
+// (014 → PO-202610-014, 4512 → SI 004512); exact number endings rank first.
+function _gsScore(r, words) {
+  var sc = 0;
+  for (var i = 0; i < words.length; i++) {
+    var w = words[i];
+    if (r.lh.indexOf(w) === -1) return -1;
+    if (r.lt.indexOf(w) === 0) sc += 30; else if (r.lt.indexOf(w) !== -1) sc += 10;
+    if (/^\d+$/.test(w) && new RegExp('(^|\\D)0*' + w.replace(/^0+/, '') + '$').test(r.lt)) sc += 40;
+  }
+  if (r.k === 'item' && r.item && r.item.qty > 0) sc += 1;
+  return sc;
+}
+function _gsHl(text, words) {
+  var h = esc(text);
+  words.forEach(function(w) { if (w) h = h.replace(new RegExp('(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(?![^<]*>)', 'ig'), '<mark>$1</mark>'); });
+  return h;
+}
+// Status pill for a result (computed only for what's shown)
+function _gsPill(r) {
+  if (r.k === 'item') {
+    var it = r.item, st = stockStatus(it);
+    return [fmtInt(it.qty) + ' ' + (it.unit || '') + (st === 'danger' ? ' · out' : st === 'warn' ? ' · low' : ''), st];
+  }
+  if (r.k === 'po') {
+    var d = _poDetailData(r.id), done = d.lines.length > 0 && d.linesDone === d.lines.length;
+    if (done) { var n = invoicesForPo(r.id).length; return ['Received' + (_invTableOK === true ? (n ? ' · invoiced' : ' · invoice pending') : ''), n || _invTableOK !== true ? 'ok' : 'warn']; }
+    var pct = d.orderedValue > 0 ? Math.min(100, Math.round(d.receivedValue / d.orderedValue * 100)) : 0;
+    return [pct > 0 ? pct + '% received' : 'Ordered', 'warn'];
+  }
+  if (r.k === 'dr') return r.g.file ? ['DR on file', 'ok'] : ['no DR copy', 'warn'];
+  if (r.k === 'si') return [_gsShort(r.date), ''];
+  return ['', ''];
+}
+var GS_GO = { item: 'Item history', po: 'PO details', dr: 'PO details', si: 'Invoice copy', sup: 'Supplier’s POs' };
+
+function openSearch() {
+  if (!currentRole) return;
+  if (!_gsCanItems() && !_gsCanPurchasing()) return;
+  _gsIndex = _gsBuildIndex();
+  _gsSupplier = null; _gsSel = 0;
+  var q = document.getElementById('gs-q');
+  q.value = '';
+  document.getElementById('gs-scope').style.display = 'none';
+  document.getElementById('gs-bg').classList.add('open');
+  renderSearch();
+  setTimeout(function() { q.focus(); }, 10);
+}
+function closeSearch() { document.getElementById('gs-bg').classList.remove('open'); }
+function gsTry(t) { var q = document.getElementById('gs-q'); q.value = t; _gsSel = 0; renderSearch(); q.focus(); }
+
+function renderSearch() {
+  var box = document.getElementById('gs-res');
+  var q = document.getElementById('gs-q').value.trim().toLowerCase();
+  var words = q ? q.split(/\s+/) : [];
+  var pool = _gsIndex;
+  if (_gsSupplier) pool = pool.filter(function(r) { return r.k === 'po' && _supKey(r.supplier) === _gsSupplier; });
+  if (!q && !_gsSupplier) {
+    _gsShown = [];
+    var tips = (_gsCanItems() ? ['bubble', 'tape'] : []).concat(_gsCanPurchasing() ? ['PO number', 'DR number', 'invoice no.', 'supplier'] : []);
+    box.innerHTML = '<div class="gs-tips">Search ' + (_gsCanPurchasing() ? 'items (name or SKU), PO numbers, DR numbers, invoice numbers and suppliers.' : 'items by name or SKU.')
+      + (_gsCanPurchasing() ? ' Part of a number is enough (e.g. <b>014</b> for PO-202610-014).' : '')
+      + (_gsCanItems() ? '<br>Try: ' + ['bubble', 'tape', 'box'].map(function(t) { return '<a href="#" onclick="event.preventDefault();gsTry(\'' + t + '\')">' + t + '</a>'; }).join('') : '') + '</div>';
+    return;
+  }
+  var hits = pool.map(function(r) { return { r: r, sc: words.length ? _gsScore(r, words) : 1 }; }).filter(function(h) { return h.sc >= 0; });
+  // Groups in order of their best match; each shows its top 5 (all POs when browsing a supplier)
+  var groups = GS_GROUPS.map(function(g) {
+    var hs = hits.filter(function(h) { return h.r.k === g[0]; }).sort(function(a, b) { return b.sc - a.sc || String(b.r.date || '').localeCompare(String(a.r.date || '')) || a.r.lt.localeCompare(b.r.lt); });
+    return { key: g[0], label: g[1], hs: hs.slice(0, _gsSupplier ? 50 : 5), best: hs.length ? hs[0].sc : -1 };
+  }).filter(function(g) { return g.hs.length; });
+  groups.sort(function(a, b) { return (b.best >= 40) - (a.best >= 40); }); // exact number hits jump to the top
+  _gsShown = [];
+  var html = '';
+  groups.forEach(function(g) {
+    html += '<div class="gs-grp">' + g.label + '</div>';
+    g.hs.forEach(function(h) {
+      var n = _gsShown.length, r = h.r, pill = _gsPill(r);
+      _gsShown.push(r);
+      html += '<div class="gs-row' + (n === _gsSel ? ' sel' : '') + '" data-n="' + n + '" onmousemove="gsHover(' + n + ')" onclick="gsPick(' + n + ')">'
+        + '<div class="gs-ic"><svg class="i" viewBox="0 0 24 24">' + GS_ICONS[r.k] + '</svg></div>'
+        + '<div class="gs-tt"><b>' + _gsHl(r.t, words) + '</b><div class="gs-s">' + _gsHl(r.s, words) + '</div></div>'
+        + (pill[0] ? '<span class="gs-pill ' + pill[1] + '">' + esc(pill[0]) + '</span>' : '')
+        + '<span class="gs-go">' + GS_GO[r.k] + ' ↵</span></div>';
+    });
+  });
+  if (_gsSel >= _gsShown.length) _gsSel = 0;
+  box.innerHTML = html || '<div class="gs-empty">Nothing matches “' + esc(q) + '”.</div>';
+}
+function gsHover(n) {
+  if (n === _gsSel) return;
+  _gsSel = n;
+  document.querySelectorAll('#gs-res .gs-row').forEach(function(el) { el.classList.toggle('sel', +el.dataset.n === n); });
+}
+function gsKeys(e) {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!_gsShown.length) return;
+    _gsSel = (_gsSel + (e.key === 'ArrowDown' ? 1 : -1) + _gsShown.length) % _gsShown.length;
+    gsHover(_gsSel);
+    var el = document.querySelector('#gs-res .gs-row.sel'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (_gsShown[_gsSel]) gsPick(_gsSel);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    if (_gsSupplier) gsClearScope(); else closeSearch();
+  } else if (e.key === 'Backspace' && _gsSupplier && !e.target.value) {
+    gsClearScope();
+  }
+}
+function gsClearScope() { _gsSupplier = null; document.getElementById('gs-scope').style.display = 'none'; _gsSel = 0; renderSearch(); }
+function gsPick(n) {
+  var r = _gsShown[n];
+  if (!r) return;
+  if (r.k === 'sup') { // browse that supplier's POs inside the search box
+    _gsSupplier = r.supKey; _gsSel = 0;
+    var sc = document.getElementById('gs-scope'); sc.textContent = r.t; sc.style.display = '';
+    var q = document.getElementById('gs-q'); q.value = ''; q.focus();
+    renderSearch();
+    return;
+  }
+  closeSearch();
+  if (r.k === 'item') openItemHistory(r.id);
+  else if (r.k === 'po') openPoDetail(r.id);
+  else if (r.k === 'dr') { if (r.g.po) openPoDetail(r.g.po); else openLogDetail(r.g.logs[0].id); }
+  else if (r.k === 'si') {
+    if (r.inv.fileUrl) window.open(r.inv.fileUrl, '_blank', 'noopener');
+    else if (_invPoList(r.inv)[0]) openPoDetail(_invPoList(r.inv)[0]);
+  }
+}
+// Show the search box once someone is signed in (and can search something)
+function applySearchUI() {
+  var b = document.getElementById('gs-btn');
+  if (b) b.style.display = currentRole && (_gsCanItems() || _gsCanPurchasing()) ? '' : 'none';
+  var k = document.getElementById('gs-kbd');
+  if (k && /Mac|iPhone|iPad/.test(navigator.platform || '')) k.textContent = '⌘K';
+}
+document.addEventListener('keydown', function(e) {
+  if (!currentRole) return;
+  var bg = document.getElementById('gs-bg');
+  if (!bg) return;
+  var t = e.target, typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+  var isK = (e.ctrlKey || e.metaKey) && !e.altKey && String(e.key).toLowerCase() === 'k';
+  if (isK || (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey)) {
+    var login = document.getElementById('login-overlay');
+    if (login && login.style.display === 'flex') return;
+    e.preventDefault();
+    if (bg.classList.contains('open')) closeSearch(); else openSearch();
+  }
+});
 
 function toastMsg(m) {
   var t = document.getElementById('dr-toast');
@@ -7913,7 +8346,7 @@ function renderReorder() {
         + '<td style="white-space:nowrap;font-weight:600">' + fmtPHP(x.total) + '</td>'
         + '<td style="white-space:nowrap">' + due.txt + late + '</td>'
         + '<td>' + prog + '</td>'
-        + '<td><span class="badge badge-' + x.tone + '">' + esc(x.label) + '</span>' + _poInvChip(x.po, !x.open) + '</td>'
+        + '<td><span class="badge badge-' + x.tone + '">' + esc(x.label) + '</span>' + _poInvChip(x.po, !x.open) + _poPriceChip(x.po) + '</td>'
         + '<td><div class="actions-cell">' + rowMenuBtn('po', String(x.po)) + '</div></td>';
     } else {
       tr.innerHTML = '<td><strong>' + esc(x.name) + '</strong><div style="font-size:11px;color:var(--muted)">Not on a PO yet</div></td>'
@@ -7979,6 +8412,11 @@ function renderReorderGroupRow(tbody, group) {
   });
 }
 
+// Deliveries on this PO received at a different price than the PO
+function _poPriceChip(poNumber) {
+  var n = priceChangeLogs(poNumber).length;
+  return n ? ' <span class="pc-tag" title="Received at a different price than the PO — see PO details">' + n + ' price change' + (n === 1 ? '' : 's') + '</span>' : '';
+}
 // Invoice status next to a PO's status: filed, or pending once complete
 function _poInvChip(poNumber, complete) {
   if (_invTableOK !== true) return '';
@@ -8365,6 +8803,11 @@ function openReceiveModal(id) {
   document.getElementById('recv-remaining').textContent = fmtInt(remaining) + ' ' + unit;
   document.getElementById('recv-qty').value = remaining || '';
   document.getElementById('recv-cost').value = r.cost || '';
+  var lp = _lastPaid(r.itemId);
+  document.getElementById('recv-price-ref').textContent = (parseFloat(r.cost) > 0 ? 'PO price ' + fmtPHP(parseFloat(r.cost)) : 'No PO price')
+    + (lp ? ' · last received at ' + fmtPHP(lp.price) + ' on ' + new Date(lp.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '') + '. ';
+  document.getElementById('recv-price-reason').innerHTML = '<option value="">Why is the price different? *</option>'
+    + PRICE_REASONS.map(function(x) { return '<option>' + esc(x) + '</option>'; }).join('');
   document.getElementById('recv-notes').value = '';
   document.getElementById('recv-dr-no').value = '';
   _drPages.recv = [];
@@ -8378,6 +8821,20 @@ function updateRecvButton() {
   if (!btn || !r || _receiveInFlight) return;
   var item = db.items.find(function(i) { return i.id === r.itemId; });
   var q = parseFloat(document.getElementById('recv-qty').value), c = parseFloat(document.getElementById('recv-cost').value);
+  var pc = _priceChangeFor(r, c), box = document.getElementById('recv-price-alert');
+  if (box) {
+    box.style.display = pc ? '' : 'none';
+    if (pc) {
+      var up = pc.price > pc.poPrice, lp = _lastPaid(r.itemId);
+      box.className = 'pc-alert' + (up ? '' : ' dn');
+      document.getElementById('recv-pa-h').textContent = fmtPHP(pc.price) + ' is ' + Math.abs(pc.pct) + '% ' + (up ? 'higher' : 'lower') + ' than the PO price (' + fmtPHP(pc.poPrice) + ')';
+      document.getElementById('recv-pa-s').textContent = (!isNaN(q) && q > 0 ? 'Difference on this delivery: ' + (up ? '+' : '−') + fmtPHP(Math.round(Math.abs(pc.price - pc.poPrice) * q * 100) / 100) + '. ' : '')
+        + (lp ? 'Last received at ' + fmtPHP(lp.price) + '.' : '') + ' Pick a reason to receive.';
+    }
+  }
+  var needReason = !!pc && !document.getElementById('recv-price-reason').value;
+  btn.disabled = needReason;
+  btn.title = needReason ? 'Pick why the price is different from the PO' : '';
   btn.textContent = (!isNaN(q) && q > 0)
     ? 'Receive ' + fmtInt(q) + ' ' + (item ? (item.unit || '') : '') + (!isNaN(c) && c > 0 ? ' · ' + fmtPHP(Math.round(q * c * 100) / 100) : (!isNaN(c) && c === 0 ? ' · free' : ''))
     : 'Confirm Receipt';
@@ -8396,7 +8853,7 @@ async function confirmReceive() {
     await _confirmReceiveImpl();
   } finally {
     _receiveInFlight = false;
-    if (btn) { btn.disabled = false; btn.textContent = 'Confirm Receipt'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirm Receipt'; updateRecvButton(); }
   }
 }
 
@@ -8419,6 +8876,14 @@ async function _confirmReceiveImpl() {
   var cost = parseFloat(document.getElementById('recv-cost').value);
   var extraNotes = document.getElementById('recv-notes').value.trim();
   var drNo = (document.getElementById('recv-dr-no').value || '').trim();
+  // Price differs from the PO → a reason is required, and it's kept on the delivery
+  var pc = _priceChangeFor(r, cost), pcReason = document.getElementById('recv-price-reason').value;
+  if (pc) {
+    updateRecvButton();
+    if (!pcReason) { alert('The price is different from the PO (' + fmtPHP(pc.price) + ' vs ' + fmtPHP(pc.poPrice) + '). Pick a reason first.'); document.getElementById('recv-price-reason').focus(); return; }
+    if (/^Other/.test(pcReason) && !extraNotes) { alert('You picked "Other" — add a short note explaining the price difference.'); document.getElementById('recv-notes').focus(); return; }
+    extraNotes = (extraNotes ? extraNotes + ' ' : '') + _priceTag(pc.price, pc.poPrice, /^Other/.test(pcReason) ? 'Other' : pcReason, (currentUser && currentUser.username) || '');
+  }
 
   // Scanned DR → Google Drive first, so the link can go on the log entry.
   // An upload problem never blocks receiving — the DR can be attached later.
@@ -8436,6 +8901,8 @@ async function _confirmReceiveImpl() {
   }
 
   await _applyReceive(r, item, qty, cost, extraNotes, drNo, drUrl);
+  if (pc) logAudit('Price change on receiving', item.name + (r.poNumber ? ' · ' + r.poNumber : '') + ' · ' + fmtPHP(pc.price) + ' vs PO ' + fmtPHP(pc.poPrice)
+    + ' (' + (pc.pct >= 0 ? '+' : '−') + Math.abs(pc.pct) + '%) · ' + pcReason + (r.supplier ? ' · ' + r.supplier : ''));
   _drPages.recv = [];
   closeModal('receive-modal');
   renderReorder();
@@ -13488,6 +13955,7 @@ function applyRoleUI() {
   // the banner itself — applyTestMode() would re-render the whole app.
   var tmBanner = document.getElementById('testmode-banner');
   if (tmBanner) tmBanner.classList.toggle('active', testModeActive && currentRole === 'superuser');
+  if (typeof applySearchUI === 'function') applySearchUI();
 
   // Tab visibility is driven by the per-role config (see applyTabVisibility)
   show('btn-export-inv-csv', !isBrand);
@@ -14619,6 +15087,18 @@ function dismissOpsReminder(id) {
 setInterval(function() { if (typeof renderOpsReminders === 'function') renderOpsReminders(); }, 5 * 60 * 1000);
 
 // ─── TEST MODE ────────────────────────────────────────────────────────────────
+// The topbar chip's options popover
+function toggleTmPop(e) {
+  if (e) e.stopPropagation();
+  var c = document.getElementById('testmode-banner');
+  if (c) c.classList.toggle('open');
+}
+function closeTmPop() { var c = document.getElementById('testmode-banner'); if (c) c.classList.remove('open'); }
+document.addEventListener('click', function(e) {
+  var c = document.getElementById('testmode-banner');
+  if (c && c.classList.contains('open') && !c.contains(e.target)) c.classList.remove('open');
+});
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeTmPop(); });
 function applyTestMode() {
   var banner = document.getElementById('testmode-banner');
   var offBtn = document.getElementById('testmode-off-btn');
@@ -14630,10 +15110,13 @@ function applyTestMode() {
   var previewBtn = document.getElementById('testmode-preview-btn');
   if (previewBtn) {
     previewBtn.style.display = (testModeActive && currentRole === 'superuser') ? '' : 'none';
-    previewBtn.textContent = testModePreview ? 'Show all items' : '👁 Preview as team';
+    previewBtn.textContent = testModePreview ? 'Show all items again' : 'Preview as team';
   }
   var labelEl = document.getElementById('testmode-label');
-  if (labelEl) labelEl.textContent = testModePreview ? '👁 Previewing Test Mode as your team sees it' : '🧪 Test Mode Active';
+  if (labelEl) labelEl.textContent = testModePreview ? 'Previewing as team' : 'Test Mode';
+  if (banner) banner.classList.toggle('preview', !!testModePreview);
+  var popN = document.getElementById('tm-pop-n');
+  if (popN) popN.textContent = fmtInt(_tmLiveIds().length);
   var countEl = document.getElementById('testmode-count');
   var totalEl = document.getElementById('testmode-total');
   // Count items that still exist — the list can keep IDs of items deleted since
