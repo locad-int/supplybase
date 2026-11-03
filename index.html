@@ -3042,6 +3042,54 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
   </div>
 </div>
 
+<!-- FILE SALES INVOICE MODAL -->
+<div class="modal-bg" id="inv-modal">
+  <div class="modal" style="max-width:520px">
+    <h2>🧾 File Sales Invoice</h2>
+    <p style="color:var(--muted);margin-bottom:12px;font-size:13px">A copy is saved to Google Drive and linked to every PO it covers.</p>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Invoice no. *</label>
+        <input type="text" id="inv-no" placeholder="e.g. 004512" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Invoice date</label>
+        <input type="date" id="inv-date">
+      </div>
+      <div class="form-group">
+        <label>Supplier</label>
+        <input type="text" id="inv-supplier" autocomplete="off" oninput="invSupplierChanged()">
+      </div>
+      <div class="form-group">
+        <label>Amount (₱)</label>
+        <input type="number" id="inv-amount" min="0" step="0.01" placeholder="Optional">
+      </div>
+      <div class="form-group full">
+        <label>POs covered *</label>
+        <div id="inv-po-list" style="display:flex;flex-direction:column;gap:6px;max-height:190px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px"></div>
+      </div>
+      <div class="form-group full">
+        <label>DR no(s). covered</label>
+        <input type="text" id="inv-drs" placeholder="Only if the invoice is for specific deliveries, e.g. 0127, 0131" autocomplete="off">
+      </div>
+      <div class="form-group full">
+        <label>Notes</label>
+        <input type="text" id="inv-notes" placeholder="Optional">
+      </div>
+      <div class="form-group full">
+        <label>Invoice copy *</label>
+        <button type="button" class="btn btn-secondary" onclick="drPick('inv')" style="justify-content:center"><span class="em">📷 </span><svg class="i" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>Photo or PDF</button>
+      </div>
+      <div class="form-group full" id="inv-dr-pages" style="display:none"></div>
+    </div>
+    <div class="msg err" id="inv-err" style="color:var(--danger);font-size:12px;margin-top:6px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('inv-modal')">Cancel</button>
+      <button class="btn btn-primary" id="inv-save-btn" onclick="saveInvoice()">Save Invoice</button>
+    </div>
+  </div>
+</div>
+
 <!-- VARIANCE ADJUSTMENT MODAL -->
 <div class="modal-bg" id="adjust-modal">
   <div class="modal" style="max-width:480px">
@@ -3372,7 +3420,7 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
 <script>
 
 // ─── DATA STORE ────────────────────────────────────────────────────────────────
-let db = { items: [], logs: [], reorders: [], accounts: [], reconciliations: [], purchaseOrders: [] };
+let db = { items: [], logs: [], reorders: [], accounts: [], reconciliations: [], purchaseOrders: [], invoices: [] };
 let currentUser = null; // { username, role }
 let editItemId = null;
 let editReorderId = null;
@@ -3637,6 +3685,7 @@ async function refreshData() {
     if (r5.data) db.reconciliations = r5.data; // graceful — table may not exist yet
     if (r6.data) db.purchaseOrders  = r6.data; // graceful — table may not exist yet
     await loadRequests();
+    await loadInvoices();
     updateSummary();
     renderInventory(); renderLogs(); renderReorder(); renderRequests(); updateRequestBadge();
   } catch(e) { console.error('Refresh failed:', e); }
@@ -4510,7 +4559,7 @@ var DR_APP_KEY = 'supplybase-dr-v1'; // must match APP_KEY in the Apps Script
 var drUploadUrl = '';
 var DR_MAX_SIDE = 1600, DR_JPEG_Q = 0.72;
 var DR_LINK_RE = /\s*📎 DR: (https:\/\/\S+)/;
-var _drPages = { recv: [], attach: [], scan: [] };
+var _drPages = { recv: [], attach: [], scan: [], inv: [] };
 var _drAttachLogId = null;
 
 async function saveDrUploadUrl() {
@@ -4577,7 +4626,7 @@ async function drAddFiles(ctx, files) {
   }
   var hasPdf = _drPages[ctx].some(function(p) { return p.kind === 'pdf'; });
   if (hasPdf && _drPages[ctx].length > 1) {
-    alert('Use either photos (one per page) or a single PDF for a DR — not both. Keeping the PDF only.');
+    alert('Use either photos (one per page) or a single PDF — not both. Keeping the PDF only.');
     _drPages[ctx] = _drPages[ctx].filter(function(p) { return p.kind === 'pdf'; }).slice(0, 1);
   }
   if (ctx === 'attach') { await _drAttachUpload(); return; }
@@ -4603,7 +4652,7 @@ function renderDrPages(ctx) {
         + '<button type="button" onclick="drRemovePage(\'' + ctx + '\',' + i + ')" title="Remove" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#dc2626;color:#fff;font-size:12px;line-height:1;cursor:pointer">×</button></div>';
     }).join('')
     + (pages.some(function(p) { return p.kind === 'pdf'; }) ? '' : '<button type="button" class="btn btn-secondary btn-sm" onclick="drPick(\'' + ctx + '\')">+ page</button>')
-    + '<span style="font-size:11px;color:var(--muted)">' + pages.length + ' page' + (pages.length === 1 ? '' : 's') + ' · saved to Google Drive on Confirm</span></div>';
+    + '<span style="font-size:11px;color:var(--muted)">' + pages.length + ' page' + (pages.length === 1 ? '' : 's') + ' · saved to Google Drive on ' + (ctx === 'inv' ? 'Save' : 'Confirm') + '</span></div>';
 }
 
 function _drFileToBase64(file) {
@@ -4644,9 +4693,9 @@ async function _drUpload(pages, meta) {
   var payload = await _drPayload(pages);
   var d = new Date();
   var body = {
-    key: DR_APP_KEY, fileName: _drFileName(meta), mimeType: payload.mimeType, data: payload.data,
+    key: DR_APP_KEY, fileName: meta.fileName || _drFileName(meta), mimeType: payload.mimeType, data: payload.data,
     month: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'),
-    description: 'SupplyBase delivery receipt · ' + [meta.po, meta.supplier, meta.item, meta.drNo ? 'DR ' + meta.drNo : '', 'received by ' + ((currentUser && currentUser.username) || '')].filter(Boolean).join(' · '),
+    description: meta.description || 'SupplyBase delivery receipt · ' + [meta.po, meta.supplier, meta.item, meta.drNo ? 'DR ' + meta.drNo : '', 'received by ' + ((currentUser && currentUser.username) || '')].filter(Boolean).join(' · '),
   };
   // Plain-text body = a "simple" request, so the browser doesn't need a CORS
   // pre-check that Apps Script can't answer.
@@ -4688,6 +4737,207 @@ async function _drAttachUpload() {
     _drPages.attach = []; _drAttachLogId = null;
   }
 }
+// ─── SALES INVOICES (filed per PO) ────────────────────────────────────────────
+// Suppliers send the sales invoice once a PO is complete — sometimes one per
+// PO, sometimes one for several POs, sometimes one per DR. Staff photograph
+// or upload it; the copy goes to Google Drive through the same uploader as
+// DRs, and an "invoices" row links it to every PO (and optional DR nos.) it
+// covers. Filing only: nothing here changes stock or costs.
+var _invTableOK = null;      // false = invoices table not created yet
+var _invPoNumber = null;     // PO the modal was opened from
+
+async function loadInvoices() {
+  if (!sb) return;
+  try {
+    var r = await sb.from('invoices').select('*');
+    if (r.error) { _invTableOK = false; db.invoices = []; return; }
+    _invTableOK = true;
+    db.invoices = r.data || [];
+  } catch(e) { _invTableOK = false; db.invoices = db.invoices || []; }
+}
+
+function _invPoList(inv) {
+  var p = inv && inv.poNumbers;
+  if (typeof p === 'string') { try { p = JSON.parse(p); } catch(e) { p = p.split(/[,\s]+/); } }
+  return Array.isArray(p) ? p.filter(Boolean).map(String) : [];
+}
+function invoicesForPo(poNumber) {
+  var k = String(poNumber).toUpperCase();
+  return (db.invoices || []).filter(function(inv) {
+    return _invPoList(inv).some(function(p) { return p.toUpperCase() === k; });
+  }).sort(function(a, b) { return String(b.invoiceDate || b.createdAt || '').localeCompare(String(a.invoiceDate || a.createdAt || '')); });
+}
+// A PO counts as complete when every line is received or closed short
+function _poIsComplete(poNumber) {
+  var d = _poDetailData(poNumber);
+  return d.lines.length > 0 && d.linesDone === d.lines.length;
+}
+// Every PO number we know of with its supplier and date (POs created in
+// SupplyBase plus older reorder lines that only carry a PO number)
+function _knownPos() {
+  var map = {};
+  (db.purchaseOrders || []).forEach(function(p) {
+    if (p.poNumber) map[String(p.poNumber)] = { poNumber: String(p.poNumber), supplier: p.supplier || '', date: p.date || '' };
+  });
+  db.reorders.forEach(function(r) {
+    if (!r.poNumber) return;
+    var k = String(r.poNumber);
+    if (!map[k]) map[k] = { poNumber: k, supplier: r.supplier || '', date: r.orderedAt || r.createdAt || '' };
+    else if (!map[k].supplier) map[k].supplier = r.supplier || '';
+  });
+  return Object.keys(map).map(function(k) { return map[k]; });
+}
+var _invSupT = null;
+function invSupplierChanged() { clearTimeout(_invSupT); _invSupT = setTimeout(function() { renderInvoicePoList(document.getElementById('inv-supplier').value); }, 250); }
+function _supKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+function openInvoiceModal(poNumber) {
+  if (!can('mark_received')) return;
+  if (_invTableOK === false) { alert('Invoice filing isn\'t set up yet. A superuser needs to run invoices_setup.sql in Supabase (SQL Editor) once.'); return; }
+  if (!drUploadUrl) { alert('Invoice copies are saved to Google Drive, which isn\'t set up yet. A superuser needs to add the DR uploader URL in Settings.'); return; }
+  _invPoNumber = String(poNumber || '');
+  _drPages.inv = [];
+  renderDrPages('inv');
+  var known = _knownPos();
+  var here = known.find(function(p) { return p.poNumber === _invPoNumber; }) || { poNumber: _invPoNumber, supplier: '' };
+  var d = new Date();
+  document.getElementById('inv-no').value = '';
+  document.getElementById('inv-date').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  document.getElementById('inv-supplier').value = here.supplier || '';
+  document.getElementById('inv-amount').value = '';
+  document.getElementById('inv-drs').value = '';
+  document.getElementById('inv-notes').value = '';
+  document.getElementById('inv-err').textContent = '';
+  renderInvoicePoList(here.supplier);
+  openModal('inv-modal');
+  setTimeout(function() { var el = document.getElementById('inv-no'); if (el) el.focus(); }, 60);
+}
+
+// The PO checklist: this supplier's POs, newest first, with the one the modal
+// was opened from ticked. Complete POs without an invoice are flagged.
+function renderInvoicePoList(supplier) {
+  var box = document.getElementById('inv-po-list');
+  if (!box) return;
+  var key = _supKey(supplier);
+  var keep = {};
+  Array.prototype.forEach.call(box.querySelectorAll('.inv-po-cb:checked'), function(cb) { keep[cb.value] = 1; });
+  if (!box.querySelector('.inv-po-cb')) keep[_invPoNumber] = 1;
+  var list = _knownPos().filter(function(p) { return p.poNumber === _invPoNumber || (key && _supKey(p.supplier) === key); });
+  list.sort(function(a, b) {
+    if (a.poNumber === _invPoNumber) return -1;
+    if (b.poNumber === _invPoNumber) return 1;
+    return String(b.date).localeCompare(String(a.date));
+  });
+  list = list.slice(0, 25);
+  box.innerHTML = list.map(function(p) {
+    var done = _poIsComplete(p.poNumber), n = invoicesForPo(p.poNumber).length;
+    var tag = n ? '<span class="badge badge-ok" style="font-size:10px">' + n + ' invoice' + (n === 1 ? '' : 's') + ' filed</span>'
+      : (done ? '<span class="badge badge-warn" style="font-size:10px">complete · no invoice</span>' : '<span style="font-size:11px;color:var(--muted)">open</span>');
+    return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:400;margin:0;cursor:pointer">'
+      + '<input type="checkbox" class="inv-po-cb" value="' + esc(p.poNumber) + '"' + (keep[p.poNumber] ? ' checked' : '') + ' style="width:auto;margin:0">'
+      + '<strong>' + esc(p.poNumber) + '</strong>'
+      + '<span style="color:var(--muted);font-size:12px">' + (p.date ? esc(new Date(p.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })) : '') + '</span>'
+      + '<span style="margin-left:auto">' + tag + '</span></label>';
+  }).join('') || '<div style="font-size:12px;color:var(--muted)">No POs found for this supplier.</div>';
+}
+
+async function saveInvoice() {
+  var err = document.getElementById('inv-err');
+  err.textContent = '';
+  var no = document.getElementById('inv-no').value.trim();
+  var supplier = document.getElementById('inv-supplier').value.trim();
+  var date = document.getElementById('inv-date').value || null;
+  var amtRaw = document.getElementById('inv-amount').value;
+  var amount = amtRaw === '' ? null : Math.round(parseFloat(amtRaw) * 100) / 100;
+  var drs = document.getElementById('inv-drs').value.split(/[,;]+/).map(function(x) { return x.trim(); }).filter(Boolean).join(', ');
+  var notes = document.getElementById('inv-notes').value.trim();
+  var pos = Array.prototype.map.call(document.querySelectorAll('.inv-po-cb:checked'), function(cb) { return cb.value; });
+  var pages = _drPages.inv;
+  if (!no) { err.textContent = 'Enter the invoice number.'; return; }
+  if (amount !== null && !(amount >= 0)) { err.textContent = 'Amount must be a number (or leave it blank).'; return; }
+  if (!pos.length) { err.textContent = 'Tick at least one PO this invoice covers.'; return; }
+  if (!pages.length) { err.textContent = 'Add a photo or PDF of the invoice.'; return; }
+  var dup = (db.invoices || []).find(function(i) { return String(i.invoiceNo).trim().toLowerCase() === no.toLowerCase() && _supKey(i.supplier) === _supKey(supplier); });
+  if (dup && !confirm('Invoice ' + no + ' from ' + (supplier || 'this supplier') + ' is already filed (' + _invPoList(dup).join(', ') + '). File it again anyway?')) return;
+
+  var btn = document.getElementById('inv-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  var url = '';
+  try {
+    var sup3 = supplier.split(/\s+/).slice(0, 3).join(' ');
+    var poTxt = pos.length > 3 ? pos.slice(0, 3).join(' + ') + ' +' + (pos.length - 3) : pos.join(' + ');
+    url = await _drUpload(pages, {
+      fileName: ['SI ' + no, sup3, poTxt, date || ''].filter(Boolean).join(' · ') + '.pdf',
+      description: 'SupplyBase sales invoice · ' + ['SI ' + no, supplier, pos.join(', '), drs ? 'DR ' + drs : '', 'filed by ' + ((currentUser && currentUser.username) || '')].filter(Boolean).join(' · '),
+    });
+    var rec = {
+      id: 'inv-' + uid(), invoiceNo: no, supplier: supplier, invoiceDate: date, amount: amount,
+      poNumbers: pos, drNos: drs, fileUrl: url, notes: notes,
+      createdBy: (currentUser && currentUser.username) || '', createdAt: new Date().toISOString(),
+    };
+    var r = await sb.from('invoices').insert([rec]);
+    if (r && r.error) throw new Error('Saved to Drive but not linked: ' + r.error.message);
+    db.invoices = (db.invoices || []).concat([rec]);
+    logAudit('Invoice filed', 'SI ' + no + ' · ' + supplier + ' · ' + pos.join(', ') + (amount !== null ? ' · ' + fmtPHP(amount) : ''));
+    _drPages.inv = [];
+    closeModal('inv-modal');
+    toastMsg('Invoice ' + no + ' filed');
+    if (_poDetailNumber && document.getElementById('po-detail-modal').classList.contains('open')) renderPoDetail();
+    renderReorder();
+  } catch(e) {
+    err.innerHTML = esc(e.message) + (url ? ' — the copy is in Drive: <a href="' + esc(url) + '" target="_blank" rel="noopener">open</a>' : '');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Invoice';
+  }
+}
+
+async function deleteInvoice(id) {
+  var inv = (db.invoices || []).find(function(i) { return i.id === id; });
+  if (!inv) return;
+  if (!(currentRole === 'superuser' || (currentUser && inv.createdBy === currentUser.username))) return;
+  if (!confirm('Remove invoice ' + inv.invoiceNo + ' from ' + _invPoList(inv).join(', ') + '?\n\nThe copy stays in Google Drive.')) return;
+  try {
+    var r = await sb.from('invoices').delete().eq('id', id);
+    if (r && r.error) throw new Error(r.error.message);
+    db.invoices = db.invoices.filter(function(i) { return i.id !== id; });
+    logAudit('Invoice removed', 'SI ' + inv.invoiceNo + ' · ' + _invPoList(inv).join(', '));
+    renderPoDetail(); renderReorder();
+  } catch(e) { alert('Could not remove the invoice: ' + e.message); }
+}
+
+// "Sales invoices" block for PO Details
+function _poInvoicesHtml(poNumber, complete) {
+  var canFile = can('mark_received') && _invTableOK !== false;
+  var list = invoicesForPo(poNumber);
+  var h = '<div style="display:flex;align-items:center;gap:8px;margin:18px 0 8px">'
+    + '<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Sales invoices</div>'
+    + (!list.length && complete ? '<span class="badge badge-warn" style="font-size:10px">invoice pending</span>' : '')
+    + '<span style="flex:1"></span>'
+    + (canFile ? '<button class="btn btn-secondary btn-sm" onclick="openInvoiceModal(' + _q(poNumber) + ')"><span class="em">🧾 </span>' + SBI('receipt') + 'File invoice</button>' : '')
+    + '</div>';
+  if (_invTableOK === false) {
+    return h + '<div style="font-size:13px;color:var(--muted);padding:6px 0">Invoice filing isn\'t set up yet' + (currentRole === 'superuser' ? ' — run <b>invoices_setup.sql</b> in Supabase once.' : '.') + '</div>';
+  }
+  if (!list.length) {
+    return h + '<div style="font-size:13px;color:var(--muted);padding:6px 0">' + (complete ? 'No invoice filed yet.' : 'Suppliers usually send the invoice once the PO is complete.') + '</div>';
+  }
+  return h + '<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th style="text-align:right">Amount</th><th>Covers</th><th>Filed by</th><th></th></tr></thead><tbody>'
+    + list.map(function(inv) {
+      var others = _invPoList(inv).filter(function(p) { return p.toUpperCase() !== String(poNumber).toUpperCase(); });
+      var nw = function(t) { return '<span style="white-space:nowrap">' + esc(t) + '</span>'; };
+      var covers = [others.length ? 'also ' + others.map(nw).join(', ') : 'this PO', inv.drNos ? nw('DR ' + inv.drNos) : ''].filter(Boolean).join(' · ');
+      var canDel = currentRole === 'superuser' || (currentUser && inv.createdBy === currentUser.username);
+      return '<tr><td style="white-space:nowrap"><a href="' + esc(inv.fileUrl || '#') + '" target="_blank" rel="noopener" title="Open the invoice copy in Google Drive"><span class="em">📎 </span>' + SBI('clipp') + 'SI ' + esc(inv.invoiceNo) + '</a>'
+        + (inv.notes ? '<div style="font-size:11px;color:var(--muted)">' + esc(inv.notes) + '</div>' : '') + '</td>'
+        + '<td style="white-space:nowrap">' + (inv.invoiceDate ? esc(new Date(inv.invoiceDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })) : '—') + '</td>'
+        + '<td style="text-align:right">' + (inv.amount !== null && inv.amount !== undefined && inv.amount !== '' ? fmtPHP(Number(inv.amount)) : '<span style="color:var(--muted)">—</span>') + '</td>'
+        + '<td style="font-size:12px;color:var(--muted)">' + covers + '</td>'
+        + '<td>' + esc(inv.createdBy || '—') + '</td>'
+        + '<td style="text-align:right">' + (canDel ? '<button class="btn btn-icon btn-sm" title="Remove this invoice" onclick="deleteInvoice(' + _q(inv.id) + ')"><span class="em">🗑</span>' + SBI('trash') + '</button>' : '') + '</td></tr>';
+    }).join('')
+    + '</tbody></table></div>';
+}
+
 function toastMsg(m) {
   var t = document.getElementById('dr-toast');
   if (!t) { t = document.createElement('div'); t.id = 'dr-toast'; t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;z-index:400'; document.body.appendChild(t); }
@@ -5768,6 +6018,7 @@ async function load() {
     // Load credentials from Supabase before showing login screen (cross-device support)
     await loadGlobalSettings();
     await loadRequests();
+    await loadInvoices();
     db_audit = getAuditLocal();
     // First time — seed from Master List
     if (db.items.length === 0) {
@@ -6011,6 +6262,7 @@ function _rowMenuEntries(kind, a, b) {
   } else if (kind === 'po') { // a = PO number
     var po = (db.purchaseOrders || []).find(function(p) { return String(p.poNumber) === String(a); });
     E.push(['clip', '📋', 'PO details', 'openPoDetail(' + _q(a) + ')']);
+    if (can('mark_received') && _invTableOK !== false) E.push(['receipt', '🧾', 'File sales invoice', 'openInvoiceModal(' + _q(a) + ')']);
     if (po) E.push(['eye', '👁', 'Preview PO', 'previewPo(' + _q(po.id) + ')']);
     if (po) E.push(['down', '⬇', 'Download PO (PDF)', 'redownloadPo(' + _q(po.id) + ')']);
     if (po && currentRole === 'superuser') E.push(['pen', '✏️', 'Edit PO', 'openEditPoModal(' + _q(po.id) + ')']);
@@ -7661,7 +7913,7 @@ function renderReorder() {
         + '<td style="white-space:nowrap;font-weight:600">' + fmtPHP(x.total) + '</td>'
         + '<td style="white-space:nowrap">' + due.txt + late + '</td>'
         + '<td>' + prog + '</td>'
-        + '<td><span class="badge badge-' + x.tone + '">' + esc(x.label) + '</span></td>'
+        + '<td><span class="badge badge-' + x.tone + '">' + esc(x.label) + '</span>' + _poInvChip(x.po, !x.open) + '</td>'
         + '<td><div class="actions-cell">' + rowMenuBtn('po', String(x.po)) + '</div></td>';
     } else {
       tr.innerHTML = '<td><strong>' + esc(x.name) + '</strong><div style="font-size:11px;color:var(--muted)">Not on a PO yet</div></td>'
@@ -7712,7 +7964,7 @@ function renderReorderGroupRow(tbody, group) {
     <td colspan="2" style="color:var(--muted);font-size:12px">${items.length} item${items.length !== 1 ? 's' : ''}</td>
     <td>${fmtPHP(total)}</td>
     <td style="color:var(--muted);font-size:11px">—</td>
-    <td><span class="badge badge-${statusColor}">${esc(statusLabel)}</span></td>
+    <td><span class="badge badge-${statusColor}">${esc(statusLabel)}</span>${_poInvChip(group.poNumber, received === items.length)}</td>
     <td style="color:var(--muted);font-size:11px">—</td>
     <td><div class="actions-cell">${rowMenuBtn('po', String(group.poNumber))}</div></td>`;
   tbody.appendChild(headerTr);
@@ -7725,6 +7977,14 @@ function renderReorderGroupRow(tbody, group) {
     tr.innerHTML = reorderRowHtml(r);
     tbody.appendChild(tr);
   });
+}
+
+// Invoice status next to a PO's status: filed, or pending once complete
+function _poInvChip(poNumber, complete) {
+  if (_invTableOK !== true) return '';
+  var n = invoicesForPo(poNumber).length;
+  if (n) return ' <span class="badge badge-ok" style="font-size:10px" title="' + n + ' sales invoice' + (n === 1 ? '' : 's') + ' filed">invoiced</span>';
+  return complete ? ' <span class="badge badge-warn" style="font-size:10px" title="PO complete — no sales invoice filed yet">invoice pending</span>' : '';
 }
 
 function toggleReorderGroup(groupId, headerTr) {
@@ -8055,6 +8315,7 @@ function renderPoDetail() {
       }).join('')
       + '</tbody></table></div>';
   }
+  html += _poInvoicesHtml(poNumber, d.lines.length > 0 && d.linesDone === d.lines.length);
   body.innerHTML = html;
 
   var prevBtn = document.getElementById('pod-preview-btn');
