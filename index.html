@@ -1112,8 +1112,8 @@ body.sb2 .rl-nm { font-size: 12.5px !important; color: #e5e7eb !important; max-w
 body.sb2 #login-card { border-radius: 16px !important; padding: 26px 26px 24px !important; box-shadow: 0 24px 60px rgba(0,0,0,.5) !important; border: none !important; }
 
 /* ─── SEASON MODE (Christmas) · WRAPPED · FUN FACTS ────────────────────────── */
-.xm-only, .xm-lights, .xm-hat, .xm-fab-hat, #xm-count, .xm-greet, #lm-snow, .lm-inner .xm-parol { display: none; }
-body.xmas .xm-hat, body.xmas .xm-fab-hat, body.xmas .xm-greet, body.xmas .lm-inner .xm-parol { display: block; }
+.xm-only, .xm-lights, .xm-hat, #xm-count, .xm-greet, #lm-snow, .lm-inner .xm-parol { display: none; }
+body.xmas .xm-hat, body.xmas .xm-greet, body.xmas .lm-inner .xm-parol { display: block; }
 body.xmas-fx .xm-lights { display: flex; }
 body.xmas-fx #lm-snow { display: block; }
 .xm-lights { position: absolute; left: 0; right: 0; height: 12px; justify-content: space-around; pointer-events: none; overflow: hidden; z-index: 2; }
@@ -1131,7 +1131,6 @@ body.xmas #xm-count { display: inline-flex; }
 .sidebar-header { position: relative; }
 .xm-hat { position: absolute; left: 11px; top: 8px; width: 24px; height: 20px; transform: rotate(-14deg); pointer-events: none; }
 #ai-fab { overflow: visible; }
-.xm-fab-hat { position: absolute; left: 7px; top: -9px; width: 34px; height: 24px; pointer-events: none; transform: rotate(-8deg); }
 /* Login: map with a parol over the Philippines */
 .lm-inner { position: absolute; inset: 0; margin: auto; width: 100%; max-height: 100%; aspect-ratio: 1882 / 785; }
 .lm-inner .xm-parol { position: absolute; left: 90.2%; top: 37.6%; width: 46px; height: 70px; transform: translate(-50%, -50%); filter: drop-shadow(0 0 10px rgba(250,204,21,.85)); }
@@ -2052,7 +2051,7 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
 <!-- AI ASSISTANT — floating corner widget (not part of the tab flow) -->
 <!-- z-index 400 keeps it below #login-overlay (999), so it's automatically
      covered while logged out; applyTabVisibility() also hides it per-role. -->
-<button id="ai-fab" onclick="toggleAiPanel()" title="Shelfie" style="display:none;position:fixed;right:22px;bottom:22px;z-index:400;width:56px;height:56px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:24px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25);align-items:center;justify-content:center"><svg viewBox="0 0 64 52" width="30" height="24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polygon points="6,10 58,10 50,3 14,3" fill="#e0a35f"/><rect x="6" y="10" width="52" height="6" fill="#cf8f4a"/><rect x="6" y="16" width="52" height="32" rx="3" fill="#cf8f4a"/><rect x="16" y="23" width="32" height="19" rx="6" fill="#20456a"/><circle cx="25" cy="31.5" r="3.2" fill="#bfe0f0"/><circle cx="39" cy="31.5" r="3.2" fill="#bfe0f0"/><path d="M24 37 Q32 41.5 40 37" stroke="#bfe0f0" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg><svg class="xm-fab-hat" viewBox="0 0 34 24" aria-hidden="true"><path d="M3 16 C8 3 22 -1 29 6 C31 9 32 12 32 15 L20 13 Z" fill="#dc2626"/><rect x="1" y="14" width="25" height="7" rx="3.5" fill="#fff"/><circle cx="31.5" cy="15.5" r="3" fill="#fff"/></svg></button>
+<button id="ai-fab" onclick="toggleAiPanel()" title="Shelfie" style="display:none;position:fixed;right:22px;bottom:22px;z-index:400;width:56px;height:56px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:24px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25);align-items:center;justify-content:center"><svg id="ai-fab-svg" viewBox="0 0 64 52" width="30" height="24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polygon points="6,10 58,10 50,3 14,3" fill="#e0a35f"/><rect x="6" y="10" width="52" height="6" fill="#cf8f4a"/><rect x="6" y="16" width="52" height="32" rx="3" fill="#cf8f4a"/><rect x="16" y="23" width="32" height="19" rx="6" fill="#20456a"/><circle cx="25" cy="31.5" r="3.2" fill="#bfe0f0"/><circle cx="39" cy="31.5" r="3.2" fill="#bfe0f0"/><path d="M24 37 Q32 41.5 40 37" stroke="#bfe0f0" stroke-width="2.2" fill="none" stroke-linecap="round"/><g class="xm-svg-hat" style="display:none"><g transform="rotate(-10 32 4)"><path d="M14 3 Q30 -22 46 -6 Q52 -1 56 6 L46 3 Z" fill="#dc2626"/><rect x="10" y="0" width="40" height="7" rx="3.5" fill="#fff"/><circle cx="56" cy="7" r="4.4" fill="#fff"/></g></g></svg></button>
 
 <div id="ai-float-panel" class="sb-panel" style="display:none;flex-direction:column;position:fixed;right:22px;bottom:90px;z-index:400;width:380px;max-width:calc(100vw - 32px);height:min(620px, calc(100vh - 130px));border:1px solid var(--border);border-radius:18px;background:var(--surface2);box-shadow:0 24px 60px rgba(15,23,42,.22), 0 4px 12px rgba(15,23,42,.08);overflow:hidden">
   <div style="flex-shrink:0;display:flex;align-items:center;gap:10px;padding:12px 12px 12px 14px;border-bottom:1px solid var(--border);background:var(--surface)">
@@ -5333,6 +5332,13 @@ function applySeason() {
   document.body.classList.toggle('xmas', on);
   document.body.classList.toggle('xmas-fx', fx && !_reducedMotion());
   document.querySelectorAll('.xm-lights').forEach(function(el) { if (!el.childElementCount) el.innerHTML = new Array(61).join('<i></i>'); });
+  // Shelfie wears a Santa hat: make room above him in his picture and show it
+  var fs = document.getElementById('ai-fab-svg');
+  if (fs) {
+    fs.setAttribute('viewBox', on ? '0 -16 64 68' : '0 0 64 52');
+    fs.setAttribute('height', on ? '32' : '24');
+    var gh = fs.querySelector('.xm-svg-hat'); if (gh) gh.style.display = on ? '' : 'none';
+  }
   var chip = document.getElementById('xm-count');
   if (chip) { chip.style.display = on && currentRole ? '' : 'none'; chip.textContent = _xmCountText(); }
   var g = document.getElementById('xm-greet');
@@ -5379,7 +5385,7 @@ function _loginSnowStart() {
   var c = document.getElementById('lm-snow'), ov = document.getElementById('login-overlay');
   if (!c || !ov || !_xmFx()) return;
   _snowLoop(c, { n: 90, r0: 1, r1: 2.6, color: function(p) { return 'rgba(148,163,184,' + (.35 + p.r / 6) + ')'; },
-    alive: function() { return _xmFx() && ov.style.display !== 'none' && ov.offsetParent !== null; } });
+    alive: function() { return _xmFx() && ov.style.display !== 'none' && getComputedStyle(ov).display !== 'none'; } });
 }
 
 // ── Dashboard holiday / Wrapped banner ──
