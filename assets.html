@@ -518,9 +518,13 @@ body.sb2 main { min-width: 0; }
   <div class="form-grid">
     <div class="fg"><label>Label stock</label><select id="lb-stock"><option value="roll">2 × 1 in sticker roll (label printer)</option><option value="a4">A4 sheet (3 × 8)</option></select></div>
     <div class="fg"><label>Code</label><select id="lb-code"><option value="both">QR + Code 128</option><option value="qr">QR only</option><option value="c128">Code 128 only (1D scanners)</option></select></div>
+    <div class="fg"><label>Shift right (mm)</label><input id="lb-dx" type="number" step="0.5" min="-15" max="15" onchange="saveLabelCal()"></div>
+    <div class="fg"><label>Shift down (mm)</label><input id="lb-dy" type="number" step="0.5" min="-10" max="10" onchange="saveLabelCal()"></div>
   </div>
+  <div class="muted small" style="margin-top:8px">Printer cutting off one side? Print a test label: the number at the cut edge is how many mm are missing. Cut on the left → raise <b>Shift right</b> by that much; cut on the right → lower it. Same for top (raise <b>Shift down</b>) and bottom (lower it). Saved on this device.</div>
   <div class="modal-actions">
     <button class="btn btn-secondary" onclick="closeM('m-labels')">Cancel</button>
+    <button class="btn btn-secondary" onclick="printTestLabel()">Print test label</button>
     <button class="btn btn-primary" onclick="printLabels()">Open print view</button>
   </div>
 </div></div>
@@ -672,7 +676,27 @@ var me = null; // { username, role }
 var EMBED = (function() { try { return /[?&]embed=1\b/.test(location.search) && window.parent !== window; } catch (e) { return false; } })();
 var S = { assets: [], checkouts: [], maint: [], issues: [], audits: [], scans: [], log: [], people: [] };
 
-function can(action) { return !!(me && PERMS[me.role] && PERMS[me.role].indexOf(action) !== -1); }
+// Which roles may use Asset Management is set by a superuser in SupplyBase →
+// Settings ("assetsAccess" in the settings table): off / view / standard.
+var ASSETS_ACCESS_KEY = 'assetsAccess';
+var ACCESS = { user: 'standard', requestor: 'standard', viewer: 'standard', brand: 'off' };
+async function loadAccess() {
+  try {
+    var r = await sb.from('settings').select('value').eq('key', ASSETS_ACCESS_KEY).limit(1);
+    var v = r.data && r.data[0] ? JSON.parse(r.data[0].value) : null;
+    if (v && typeof v === 'object') Object.keys(ACCESS).forEach(function(k) { if (['off', 'view', 'standard'].indexOf(v[k]) !== -1) ACCESS[k] = v[k]; });
+  } catch (e) { /* keep defaults */ }
+}
+// The actions a role gets here (null = no access)
+function permsFor(role) {
+  if (role === 'superuser') return PERMS.superuser;
+  var lvl = ACCESS[role] || 'off';
+  if (lvl === 'off') return null;
+  if (lvl === 'view' || role === 'brand') return ['view'];
+  return PERMS[role] || ['view'];
+}
+var NO_ACCESS_MSG = 'Your account type doesn\'t have access to Asset Management. Ask a superuser to turn it on in SupplyBase → Settings.';
+function can(action) { var p = me && permsFor(me.role); return !!(p && p.indexOf(action) !== -1); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 function nowIso() { return new Date().toISOString(); }
@@ -884,7 +908,8 @@ async function doLogin() {
     var r = await sb.from('accounts').select('username,password,role').ilike('username', user).limit(1);
     var acct = r.data && r.data[0];
     if (!acct || acct.password !== pass) { err.textContent = 'Account not found or incorrect password.'; err.classList.add('show'); return; }
-    if (!PERMS[acct.role]) { err.textContent = 'Your account type does not have access to Asset Management.'; err.classList.add('show'); return; }
+    await loadAccess();
+    if (!permsFor(acct.role)) { err.textContent = NO_ACCESS_MSG; err.classList.add('show'); return; }
     me = { username: acct.username, role: acct.role };
     localStorage.setItem(SESSION_ROLE_KEY, acct.role);
     localStorage.setItem(SESSION_USER_KEY, JSON.stringify({ username: acct.username, role: acct.role, brand: '' }));
@@ -1853,7 +1878,69 @@ function openLabels() {
   if (!ids.length) ids = regRows().map(function(a) { return a.id; });
   document.getElementById('lb-info').textContent = ids.length + ' label(s): ' + ids.slice(0, 8).join(', ') + (ids.length > 8 ? '…' : '') + (Object.keys(_regSel).length ? '' : ' (everything currently shown — tick rows to print fewer)');
   _labelIds = ids;
+  var cal = labelCal();
+  document.getElementById('lb-dx').value = cal.dx;
+  document.getElementById('lb-dy').value = cal.dy;
   openM('m-labels');
+}
+// Per-device print calibration. The Cabuyao Zebra S4M printed 2×1 labels
+// about 5 mm too far left (QR cut off), so that's the starting value.
+var LABEL_CAL_KEY = 'sb_asset_label_cal';
+var LABEL_CAL_DEFAULT = { dx: 5, dy: 0 };
+function _clampMm(v, lim) { v = parseFloat(v); return isFinite(v) ? Math.max(-lim, Math.min(lim, Math.round(v * 2) / 2)) : 0; }
+function labelCal() {
+  try {
+    var c = JSON.parse(localStorage.getItem(LABEL_CAL_KEY) || 'null');
+    if (c && typeof c === 'object') return { dx: _clampMm(c.dx, 15), dy: _clampMm(c.dy, 10) };
+  } catch (e) { /* storage blocked or bad JSON: use default */ }
+  return { dx: LABEL_CAL_DEFAULT.dx, dy: LABEL_CAL_DEFAULT.dy };
+}
+function saveLabelCal() {
+  var c = { dx: _clampMm(document.getElementById('lb-dx').value, 15), dy: _clampMm(document.getElementById('lb-dy').value, 10) };
+  document.getElementById('lb-dx').value = c.dx;
+  document.getElementById('lb-dy').value = c.dy;
+  try { localStorage.setItem(LABEL_CAL_KEY, JSON.stringify(c)); } catch (e) { /* not saved; still used for this print */ }
+  return c;
+}
+function _labelPrintWindow(title, css, body) {
+  var w = window.open('', '_blank');
+  if (!w) { toast('Allow pop-ups to print labels.'); return false; }
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title><style>'
+    + '*{box-sizing:border-box;margin:0;padding:0}html,body{font-family:Arial,Helvetica,sans-serif;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}' + css
+    + '@media screen{body{padding:10px;background:#eee}.lb{background:#fff;margin:4px;outline:1px solid #ccc}}'
+    + '</style></head><body>' + body + '<script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script></body></html>');
+  w.document.close();
+  return true;
+}
+function printTestLabel() {
+  var c = saveLabelCal();
+  // 2×1 in label drawn in mm: border on the label edge, then mm ticks inward
+  // from each edge. Whatever number shows at a cut edge = mm missing there.
+  var W = 50.8, H = 25.4, s = '';
+  s += '<rect x="0.15" y="0.15" width="' + (W - 0.3) + '" height="' + (H - 0.3) + '" fill="none" stroke="#000" stroke-width="0.3"/>';
+  for (var i = 1; i <= 10; i++) {
+    var len = i % 2 ? 1.2 : 2.2;
+    s += '<line x1="' + i + '" y1="' + (H / 2 - len) + '" x2="' + i + '" y2="' + (H / 2 + len) + '" stroke="#000" stroke-width="0.2"/>';
+    s += '<line x1="' + (W - i) + '" y1="' + (H / 2 - len) + '" x2="' + (W - i) + '" y2="' + (H / 2 + len) + '" stroke="#000" stroke-width="0.2"/>';
+    if (i <= 6) {
+      s += '<line x1="' + (W / 2 - len) + '" y1="' + i + '" x2="' + (W / 2 + len) + '" y2="' + i + '" stroke="#000" stroke-width="0.2"/>';
+      s += '<line x1="' + (W / 2 - len) + '" y1="' + (H - i) + '" x2="' + (W / 2 + len) + '" y2="' + (H - i) + '" stroke="#000" stroke-width="0.2"/>';
+    }
+    if (i % 2 === 0 && i <= 8) {
+      s += '<text x="' + i + '" y="' + (H / 2 + 5) + '" font-size="2.2" text-anchor="middle">' + i + '</text>';
+      s += '<text x="' + (W - i) + '" y="' + (H / 2 + 5) + '" font-size="2.2" text-anchor="middle">' + i + '</text>';
+      if (i <= 6) {
+        s += '<text x="' + (W / 2 + 3.2) + '" y="' + (i + 0.8) + '" font-size="2.2">' + i + '</text>';
+        s += '<text x="' + (W / 2 + 3.2) + '" y="' + (H - i + 0.8) + '" font-size="2.2">' + i + '</text>';
+      }
+    }
+  }
+  s += '<text x="' + (W / 2) + '" y="' + (H / 2 - 1) + '" font-size="2.6" font-weight="bold" text-anchor="middle">TEST 2 × 1 in</text>';
+  s += '<text x="' + (W / 2) + '" y="' + (H / 2 + 2.2) + '" font-size="2" text-anchor="middle">right ' + (c.dx > 0 ? '+' : '') + c.dx + ' mm · down ' + (c.dy > 0 ? '+' : '') + c.dy + ' mm</text>';
+  var body = '<div class="lb"><div class="lb-in"><svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + 'mm" height="' + H + 'mm">' + s + '</svg></div></div>';
+  var css = '@page{size:2in 1in;margin:0}.lb{position:relative;width:2in;height:1in;overflow:hidden}'
+    + '.lb-in{position:absolute;left:0;top:0;width:2in;height:1in;transform:translate(' + c.dx + 'mm,' + c.dy + 'mm)}.lb-in svg{display:block}';
+  _labelPrintWindow('Test label', css, body);
 }
 var _labelIds = [];
 function qrSvg(text) {
@@ -1871,28 +1958,32 @@ function c128Svg(text) {
 function printLabels() {
   if (!_labelIds.length) return;
   var stock = document.getElementById('lb-stock').value, code = document.getElementById('lb-code').value;
+  var cal = saveLabelCal();
   var labels = _labelIds.map(function(id) {
     var a = assetById(id);
     var name = a ? a.name : '';
-    return '<div class="lb">'
+    return '<div class="lb"><div class="lb-in' + (code === 'c128' ? ' noqr' : '') + '">'
       + (code !== 'c128' ? '<div class="qr">' + qrSvg(id) + '</div>' : '')
-      + '<div class="tx"><div class="id">' + esc(id) + '</div><div class="nm">' + esc(name) + '</div>'
-      + (code !== 'qr' ? '<div class="bc">' + c128Svg(id) + '</div>' : '') + '<div class="own">LOCAD · Cabuyao FC</div></div></div>';
+      + '<div class="tx"><div class="id' + (id.length > 7 ? ' long' : '') + '">' + esc(id) + '</div><div class="nm">' + esc(name) + '</div>'
+      + (code !== 'qr' ? '<div class="bc">' + c128Svg(id) + '</div>' : '') + '<div class="own">LOCAD · Cabuyao FC</div></div></div></div>';
   }).join('');
+  // Content is a fixed-width block centred on the label (not hugging the left
+  // edge), so a small printer offset no longer clips the QR. The calibration
+  // shift moves it as a whole; anything past the label edge is hidden.
+  var shift = 'transform:translate(' + cal.dx + 'mm,' + cal.dy + 'mm);';
   var css = stock === 'roll'
-    ? '@page{size:2in 1in;margin:0}.lb{width:2in;height:1in;page-break-after:always;padding:1.5mm 2mm}'
-    : '@page{size:A4;margin:8mm 6mm}.sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:0}.lb{height:35mm;border:0.2mm dashed #bbb;padding:2.5mm}';
-  var w = window.open('', '_blank');
-  if (!w) { toast('Allow pop-ups to print labels.'); return; }
-  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Asset labels</title><style>'
-    + '*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,Helvetica,sans-serif;color:#000}' + css
-    + '.lb{display:flex;gap:2mm;align-items:center;overflow:hidden}.qr{width:19mm;height:19mm;flex:0 0 19mm}.qr svg{width:100%;height:100%}'
-    + '.tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:.6mm}.id{font-weight:700;font-size:11pt;letter-spacing:.03em}.nm{font-size:6.5pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
-    + '.bc{height:7mm}.bc svg{width:100%;height:100%}.own{font-size:5.5pt;color:#444}'
-    + '@media screen{body{padding:10px;background:#eee}.lb{background:#fff;margin:4px}}'
-    + '</style></head><body><div class="sheet">' + labels + '</div><script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script></body></html>');
-  w.document.close();
-  closeM('m-labels');
+    ? '@page{size:2in 1in;margin:0}.lb{width:2in;height:1in;break-after:page;page-break-after:always}.lb:last-child{break-after:auto;page-break-after:auto}'
+      + '.lb-in{padding:1.5mm 2.5mm;' + shift + '}'
+    : '@page{size:A4;margin:8mm 6mm}.sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:0}.lb{height:35mm;border:0.2mm dashed #bbb;break-inside:avoid}'
+      + '.lb-in{padding:2.5mm;' + shift + '}';
+  var ok = _labelPrintWindow('Asset labels', css
+    + '.lb{position:relative;overflow:hidden}.lb-in{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:2mm}'
+    + '.qr{width:18mm;height:18mm;flex:0 0 18mm}.qr svg{display:block;width:100%;height:100%}'
+    + '.tx{flex:0 0 24mm;width:24mm;min-width:0;display:flex;flex-direction:column;gap:.6mm}.noqr .tx{flex-basis:42mm;width:42mm}'
+    + '.id{font-weight:700;font-size:11.5pt;line-height:1.05;white-space:nowrap}.id.long{font-size:10pt}.nm{font-size:7pt;line-height:1.15;max-height:2.3em;overflow:hidden;word-break:break-word}'
+    + '.bc{height:6mm}.bc svg{display:block;width:100%;height:100%}.own{font-size:5.5pt;color:#333;white-space:nowrap}',
+    '<div class="sheet">' + labels + '</div>');
+  if (ok) closeM('m-labels');
 }
 
 // ─── BETA RESET (superuser) ─────────────────────────────────────────────────
@@ -1974,17 +2065,30 @@ async function startApp() {
   await Promise.all([reloadAll(), loadPeople()]);
   startRealtime();
   // Reload when the tab comes back into view (phones sleep the page)
-  document.addEventListener('visibilitychange', function() { if (!document.hidden) reloadAll(); });
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) return;
+    // Access may have been changed by a superuser while this page was open
+    loadAccess().then(function() {
+      if (!permsFor(me.role)) { _blockNoAccess(); return; }
+      applyPerms(); reloadAll();
+    });
+  });
 }
-window.addEventListener('load', function() {
+function _blockNoAccess() {
+  document.body.innerHTML = '<div style="max-width:420px;margin:12vh auto;padding:24px;font:14px -apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;color:#374151;text-align:center">'
+    + '<div style="font-size:16px;font-weight:600;color:#111827;margin-bottom:8px">No access to Asset Management</div>' + esc(NO_ACCESS_MSG) + '</div>';
+}
+window.addEventListener('load', async function() {
   if (EMBED) document.body.classList.add('embed');
   initSb();
   if (!sb) { document.body.innerHTML = '<div style="padding:30px">Could not load the database library. Check the internet connection and reload.</div>'; return; }
+  await loadAccess();
   var s = readSession();
-  if (s && PERMS[s.role]) { me = s; startApp(); }
+  if (s && permsFor(s.role)) { me = s; startApp(); }
+  else if (s && EMBED) { _blockNoAccess(); }
   else {
     document.getElementById('login').style.display = 'flex';
-    if (s && !PERMS[s.role]) showMsg('li-err', 'Your account type does not have access to Asset Management.');
+    if (s) showMsg('li-err', NO_ACCESS_MSG);
   }
 });
 </script>
