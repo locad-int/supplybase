@@ -5427,7 +5427,8 @@ function _shelfieGreet() {
   var key = 'sb_xm_greet_' + currentUser.username + '_' + new Date().toISOString().slice(0, 10);
   try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) { return; }
   var open = 0;
-  try { open = _knownPos().filter(function(p) { return !_poIsComplete(p.poNumber) && db.reorders.some(function(r) { return String(r.poNumber) === p.poNumber && r.status === 'ordered'; }); }).length; } catch (e) {}
+  // The PO reminder is only for the people who handle POs
+  if (currentRole === 'superuser' || currentRole === 'user') try { open = _knownPos().filter(function(p) { return !_poIsComplete(p.poNumber) && db.reorders.some(function(r) { return String(r.poNumber) === p.poNumber && r.status === 'ordered'; }); }).length; } catch (e) {}
   var b = document.getElementById('xm-bubble');
   if (!b) { b = document.createElement('div'); b.id = 'xm-bubble'; b.onclick = function() { b.style.display = 'none'; }; document.body.appendChild(b); }
   b.textContent = (_isNewYearPart() ? 'Happy New Year, ' : 'Merry Christmas, ') + _firstName() + '! 🎅' + (open ? ' ' + open + ' PO' + (open === 1 ? ' is' : 's are') + ' waiting on delivery.' : '');
