@@ -5315,7 +5315,12 @@ function holidayFxOn() { try { return localStorage.getItem(FX_OFF_KEY) !== '1'; 
 function _reducedMotion() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
 function _xmFx() { return seasonActive() && holidayFxOn() && !_reducedMotion(); }
 function _isNewYearPart() { var d = new Date(); return d.getMonth() === 0; }
-function _firstName() { var u = (currentUser && currentUser.username) || ''; return u.split(/[._\s]/)[0] || u; }
+// "larry.capacete" → "Larry", "mary-ann.cruz" → "Mary-Ann" (names in greetings)
+function _firstName() {
+  var u = (currentUser && currentUser.username) || '';
+  var f = u.split(/[._\s]/)[0] || u;
+  return f.toLowerCase().replace(/(^|[-'])([a-z\u00e0-\u00ff])/g, function(m, p, c) { return p + c.toUpperCase(); });
+}
 
 function _xmCountText() {
   var d = new Date(), y = d.getMonth() === 0 ? d.getFullYear() - 1 : d.getFullYear();
