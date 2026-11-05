@@ -3251,6 +3251,7 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
       <button class="btn btn-secondary" id="pod-preview-btn">👁 Preview PDF</button>
       <button class="btn btn-secondary" id="pod-edit-btn" style="display:none"><span class="em">✏️ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Edit PO</button>
       <button class="btn btn-secondary" id="pod-download-btn" style="display:none"><span class="em">⬇ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>Download PDF</button>
+      <button class="btn btn-secondary" id="pod-cancel-btn" style="display:none;order:-1;color:var(--danger)"><span class="em">⏹ </span><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Cancel PO</button>
       <button class="btn btn-danger" id="pod-delete-btn" style="display:none;margin-right:auto;order:-1"><span class="em">🗑 </span><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3"/></svg>Delete PO</button>
       <button class="btn btn-primary" onclick="closeModal('po-detail-modal')">Close</button>
     </div>
@@ -4427,6 +4428,7 @@ function _ymdDiff(a, b) { return Math.round((new Date(b + 'T00:00:00Z') - new Da
 
 // Timing and fill facts for one PO.
 function _poPerf(po, todayYmd) {
+  if (poCancelInfo(po.poNumber)) return null; // a cancelled PO says nothing about delivery speed or fill rate
   var d = _poDetailData(po.poNumber);
   if (!d.lines.length) return null;
   var orderedYmd = _phYmd(new Date(po.date || po.createdAt));
@@ -6285,6 +6287,7 @@ function _gsPill(r) {
   }
   if (r.k === 'po') {
     var d = _poDetailData(r.id), done = d.lines.length > 0 && d.linesDone === d.lines.length;
+    if (done && poCancelInfo(r.id)) return ['Cancelled', 'danger'];
     if (done) { var n = invoicesForPo(r.id).length; return ['Received' + (_invTableOK === true ? (n ? ' · invoiced' : ' · invoice pending') : ''), n || _invTableOK !== true ? 'ok' : 'warn']; }
     var pct = d.orderedValue > 0 ? Math.min(100, Math.round(d.receivedValue / d.orderedValue * 100)) : 0;
     return [pct > 0 ? pct + '% received' : 'Ordered', 'warn'];
@@ -7757,10 +7760,16 @@ function _rowMenuEntries(kind, a, b) {
   } else if (kind === 'po') { // a = PO number
     var po = (db.purchaseOrders || []).find(function(p) { return String(p.poNumber) === String(a); });
     E.push(['clip', '📋', 'PO details', 'openPoDetail(' + _q(a) + ')']);
-    if (can('mark_received') && _invTableOK !== false) E.push(['receipt', '🧾', 'File sales invoice', 'openInvoiceModal(' + _q(a) + ')']);
+    var _cxNoRecv = poCancelInfo(a) && !db.reorders.some(function(r) { return String(r.poNumber) === String(a) && _reorderReceivedSoFar(r) > 0; });
+    if (can('mark_received') && _invTableOK !== false && !_cxNoRecv) E.push(['receipt', '🧾', 'File sales invoice', 'openInvoiceModal(' + _q(a) + ')']);
     if (po) E.push(['eye', '👁', 'Preview PO', 'previewPo(' + _q(po.id) + ')']);
     if (po) E.push(['down', '⬇', 'Download PO (PDF)', 'redownloadPo(' + _q(po.id) + ')']);
     if (po && currentRole === 'superuser') E.push(['pen', '✏️', 'Edit PO', 'openEditPoModal(' + _q(po.id) + ')']);
+    if (_canCancelPo()) {
+      var Pm = _poOpenParts(a);
+      if (poCancelInfo(a)) E.push(['undo', '↩️', 'Reopen PO', 'reopenPo(' + _q(a) + ')']);
+      else if (Pm.openLines.length + Pm.openCustom.length) E.push(['stop', '⏹', 'Cancel PO', 'openCancelPo(' + _q(a) + ')', true]);
+    }
     if (currentRole === 'superuser') E.push(['trash', '🗑', 'Delete PO', 'deletePoByNumber(' + _q(a) + ')', true]);
   } else if (kind === 'rline') { // a = reorder line id
     var r = db.reorders.find(function(x) { return x.id === a; });
@@ -7791,7 +7800,7 @@ function _rowMenuEntries(kind, a, b) {
     var recvd = !!(a && b !== undefined && (function() {
       var p = (db.purchaseOrders || []).find(function(x) { return x.id === a; });
       var it = p && (p.customItems || [])[b];
-      return it && (it.status === 'received' || it.receivedAt);
+      return it && (it.status === 'received' || it.receivedAt || it.cancelled);
     })());
     if (!recvd && can('mark_received')) E.push(['tray', '📥', 'Mark delivered', 'markCustomItemReceived(' + _q(a) + ',' + Number(b) + ')']);
     if (recvd && currentRole === 'superuser') E.push(['undo', '↩️', 'Undo delivered', 'unmarkCustomItemReceived(' + _q(a) + ',' + Number(b) + ')']);
@@ -7834,18 +7843,29 @@ document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close
 window.addEventListener('scroll', closeRowMenu, true);
 window.addEventListener('resize', closeRowMenu);
 // ─── RUNWAY ─────────────────────────────────────────────────────────────────────
-// Returns { days, avgDaily } based on last 30 days of consumption logs,
-// or null if there is no usage history.
+// Returns { days, avgDaily, logged, unrecorded } from the last 30 days, or null
+// if there is no usage at all.
+// Usage = what was logged (Use + Damage) PLUS stock that went missing between
+// counts (count shortfalls minus stock found, never below 0). Much of the
+// floor's usage is only caught by the daily inventory count, so leaving it out
+// made runway look longer than it really is. Same idea as "Unrecorded (count
+// variance)" in the Cost Report.
+function _usage30(item) {
+  var cutoff = Date.now() - 30 * 86400000, logged = 0, short = 0, found = 0;
+  db.logs.forEach(function(l) {
+    if (l.itemId !== item.id || new Date(l.date).getTime() < cutoff) return;
+    if (l.type === 'use' || l.type === 'damage') logged += Math.abs(l.qty || 0);
+    else if (l.type === 'adjust') { var d = adjustDelta(l); if (d < 0) short += -d; else if (d > 0) found += d; }
+  });
+  return { logged: logged, unrecorded: Math.max(0, short - found) };
+}
 function getRunway(item) {
-  var cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 30);
-  var consumed = db.logs
-    .filter(function(l) { return l.itemId === item.id && (l.type === 'use' || l.type === 'damage') && new Date(l.date) >= cutoff; })
-    .reduce(function(s, l) { return s + Math.abs(l.qty || 0); }, 0);
+  var u = _usage30(item), consumed = u.logged + u.unrecorded;
   if (consumed === 0) return null;
   var avgDaily = consumed / 30;
-  if (item.qty <= 0) return { days: 0, avgDaily: avgDaily };
-  return { days: Math.round(item.qty / avgDaily), avgDaily: avgDaily };
+  var out = { avgDaily: avgDaily, logged: u.logged, unrecorded: u.unrecorded };
+  out.days = item.qty <= 0 ? 0 : Math.round(item.qty / avgDaily);
+  return out;
 }
 
 // ─── FIFO BATCH COSTING ──────────────────────────────────────────────────────
@@ -8624,7 +8644,8 @@ function openItemDetail(itemId) {
         if (r.days === 0) return row('Runway', '<span style="color:#dc2626;font-weight:700">⛔ Out of stock</span>');
         var color = r.days <= 7 ? '#dc2626' : r.days <= 14 ? '#b45309' : 'var(--ok)';
         var avgFmt = r.avgDaily < 1 ? (r.avgDaily * 30).toFixed(1) + '/mo' : r.avgDaily.toFixed(1) + '/day';
-        return row('Runway', `<span style="color:${color};font-weight:700">~${r.days} days</span> <span style="color:var(--muted);font-size:11px">(avg ${avgFmt})</span>`);
+        var split = r.unrecorded > 0 ? ` · ${fmtInt(r.logged)} logged + ${fmtInt(r.unrecorded)} missing at counts (30 days)` : '';
+        return row('Runway', `<span style="color:${color};font-weight:700">~${r.days} days</span> <span style="color:var(--muted);font-size:11px">(avg ${avgFmt}${split})</span>`);
       })())
     + (isColHidden('unit')     ? '' : row('Unit', esc(item.unit||'—')))
     + (isColHidden('cost')     ? '' : row('Unit Cost', item.cost ? fmtPHP(item.cost) + ' <span style="color:var(--muted);font-size:11px">(current batch)</span>' : ''))
@@ -9366,13 +9387,14 @@ function renderReorder() {
       var done = d.lines.length > 0 && d.linesDone === d.lines.length;
       var anyRecv = d.lines.some(function(L) { return L.received > 0 || L.status === 'received'; });
       var allNeeded = u.items.every(function(r) { return r.status === 'needed'; });
-      var label = done ? (d.lines.some(function(L) { return L.status === 'closed short'; }) ? 'Received (short)' : 'Received')
+      var cxd = done && !!poCancelInfo(u.poNumber);
+      var label = cxd ? 'Cancelled' : done ? (d.lines.some(function(L) { return L.status === 'closed short'; }) ? 'Received (short)' : 'Received')
         : (anyRecv ? 'Partly received' : (allNeeded ? 'Needed' : 'Ordered'));
       var dueRaw = (po && po.delivery) || (u.items.map(function(r) { return r.deliveryDate; }).filter(Boolean).sort()[0]) || '';
       var pct = d.orderedValue > 0 ? Math.min(100, Math.round(d.receivedValue / d.orderedValue * 100)) : (done ? 100 : 0);
       return { kind: 'po', po: u.poNumber, supplier: (po && po.supplier) || (u.items[0] && u.items[0].supplier) || '', n: nLines,
-        total: d.orderedValue, dueRaw: dueRaw, pct: pct, linesDone: d.linesDone, open: !done, label: label,
-        tone: done ? 'ok' : (allNeeded && !anyRecv ? 'danger' : 'warn') };
+        total: d.orderedValue, dueRaw: dueRaw, pct: pct, linesDone: d.linesDone, open: !done, label: label, cancelled: cxd, anyRecv: anyRecv,
+        tone: cxd ? 'danger' : done ? 'ok' : (allNeeded && !anyRecv ? 'danger' : 'warn') };
     }
     var r = u, item = db.items.find(function(i) { return i.id === r.itemId; });
     var recv = r.status === 'received';
@@ -9381,10 +9403,10 @@ function renderReorder() {
       label: recv ? 'Received' : (r.status === 'needed' ? 'Needed' : 'Ordered'), tone: recv ? 'ok' : (r.status === 'needed' ? 'danger' : 'warn') };
   });
   var counts = { open: 0, received: 0, all: rowsData.length };
-  rowsData.forEach(function(x) { counts[x.open ? 'open' : 'received']++; });
+  rowsData.forEach(function(x) { if (!x.cancelled) counts[x.open ? 'open' : 'received']++; }); // cancelled POs only show under All
   ['open', 'received', 'all'].forEach(function(k) { var c = document.getElementById('ro-c-' + k); if (c) c.textContent = counts[k] || ''; });
   var mode = f || 'open';
-  var shown = rowsData.filter(function(x) { return mode === 'all' || (mode === 'open' ? x.open : !x.open); });
+  var shown = rowsData.filter(function(x) { return mode === 'all' || (!x.cancelled && (mode === 'open' ? x.open : !x.open)); });
 
   if (shown.length === 0) {
     var msg = document.getElementById('reorder-empty-msg');
@@ -9415,7 +9437,7 @@ function renderReorder() {
         + '<td style="white-space:nowrap;font-weight:600">' + fmtPHP(x.total) + '</td>'
         + '<td style="white-space:nowrap">' + due.txt + late + '</td>'
         + '<td>' + prog + '</td>'
-        + '<td><span class="badge badge-' + x.tone + '">' + esc(x.label) + '</span>' + _poInvChip(x.po, !x.open) + _poPriceChip(x.po) + '</td>'
+        + '<td><span class="badge badge-' + x.tone + '">' + esc(x.label) + '</span>' + _poInvChip(x.po, !x.open && !(x.cancelled && !x.anyRecv)) + _poPriceChip(x.po) + '</td>'
         + '<td><div class="actions-cell">' + rowMenuBtn('po', String(x.po)) + '</div></td>';
     } else {
       tr.innerHTML = '<td><strong>' + esc(x.name) + '</strong><div style="font-size:11px;color:var(--muted)">Not on a PO yet</div></td>'
@@ -9694,6 +9716,120 @@ function reopenReorderLine(id) {
   }, { confirmLabel: 'Reopen' });
 }
 
+// ─── CANCEL A PO ───────────────────────────────────────────────────────────
+// Cancelling keeps the PO and its whole history (Delete wipes it). Every line
+// still open is closed at whatever has arrived, with a "PO cancelled" note on
+// it saying why, when and by whom; stock already received stays. It reuses
+// the "Closed short" marker, so everything that already understands a closed
+// line (remaining qty, open counts, reorder suggestions) treats it correctly
+// without a database change. Users and superusers can cancel and reopen.
+var PO_CANCEL_RE = / — PO cancelled: ([^\n]*)/;
+var PO_CANCEL_REASONS = ['Supplier can’t deliver', 'Price changed / too high', 'Ordered by mistake', 'No longer needed', 'Replaced by another PO', 'Other (add a note)'];
+function _canCancelPo() { return currentRole === 'superuser' || currentRole === 'user'; }
+function _isCancelledLine(r) { return !!r && _isClosedShort(r) && PO_CANCEL_RE.test(r.notes || ''); }
+function _poOpenParts(poNumber) {
+  var po = (db.purchaseOrders || []).find(function(p) { return String(p.poNumber) === String(poNumber); }) || null;
+  var lines = db.reorders.filter(function(r) { return String(r.poNumber) === String(poNumber); });
+  return { po: po, lines: lines, openLines: lines.filter(function(r) { return r.status !== 'received'; }),
+    custom: (po && po.customItems) || [], openCustom: ((po && po.customItems) || []).filter(function(c) { return !c.receivedAt && !c.cancelled; }) };
+}
+// { reason, when, by } when the PO was cancelled (nothing left open), else null
+function poCancelInfo(poNumber) {
+  var P = _poOpenParts(poNumber), info = null;
+  P.lines.forEach(function(r) {
+    if (info || !_isCancelledLine(r)) return;
+    var m = r.notes.match(PO_CANCEL_RE), h = r.notes.match(/^⛔ Closed short:[^(]*\(([^)]*)\)/);
+    var parts = h ? h[1].split(', ') : [], by = parts.length > 2 ? parts.pop() : '';
+    info = { reason: m[1], when: parts.join(', '), by: by };
+  });
+  P.custom.forEach(function(c) {
+    if (info || !c.cancelled) return;
+    info = { reason: c.cancelled.reason || '', when: new Date(c.cancelled.at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }), by: c.cancelled.by || '' };
+  });
+  if (!info || P.openLines.length || P.openCustom.length) return null;
+  return info;
+}
+function openCancelPo(poNumber) {
+  if (!_canCancelPo()) return;
+  var P = _poOpenParts(poNumber);
+  if (!P.openLines.length && !P.openCustom.length) { alert(poNumber + ' has nothing left open to cancel.'); return; }
+  var anyRecv = P.lines.some(function(r) { return _reorderReceivedSoFar(r) > 0; }) || P.custom.some(function(c) { return c.receivedAt; });
+  var rows = P.openLines.map(function(r) {
+    var it = db.items.find(function(i) { return i.id === r.itemId; }), got = _reorderReceivedSoFar(r), u = it ? (it.unit || '') : '';
+    return '<li><b>' + esc(it ? it.name : 'Item') + '</b> · ' + (got ? fmtInt(got) + ' of ' + fmtInt(r.qty) + ' ' + esc(_plural(u, r.qty)) + ' received, ' + fmtInt(Math.max(0, r.qty - got)) + ' cancelled' : fmtInt(r.qty) + ' ' + esc(_plural(u, r.qty)) + ' cancelled') + '</li>';
+  }).concat(P.openCustom.map(function(c) { return '<li><b>' + esc(c.description) + '</b> · ' + fmtInt(c.qty) + ' ' + esc(c.unit || '') + ' cancelled (non-catalog)</li>'; })).join('');
+  var bg = document.getElementById('po-cancel-modal');
+  if (!bg) {
+    bg = document.createElement('div'); bg.id = 'po-cancel-modal'; bg.className = 'modal-bg';
+    bg.addEventListener('click', function(e) { if (e.target === bg) closeModal('po-cancel-modal'); });
+    document.body.appendChild(bg);
+  }
+  bg.innerHTML = '<div class="modal" style="max-width:480px"><h2>Cancel ' + esc(poNumber) + '</h2>'
+    + '<div style="font-size:13px;color:var(--muted);margin:-2px 0 12px">' + esc((P.po && P.po.supplier) || (P.lines[0] && P.lines[0].supplier) || '') + '</div>'
+    + '<div style="font-size:13px;margin-bottom:6px">These will no longer be expected:</div><ul style="font-size:13px;margin:0 0 12px 18px;line-height:1.6">' + rows + '</ul>'
+    + (anyRecv ? '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Stock already received stays in inventory, and the PO keeps its history.</div>' : '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Nothing has been received on this PO. It stays on record as cancelled (unlike Delete).</div>')
+    + '<div class="form-group" style="margin-bottom:10px"><label>Reason *</label><select id="pc-reason"><option value="">Choose a reason…</option>' + PO_CANCEL_REASONS.map(function(r) { return '<option>' + esc(r) + '</option>'; }).join('') + '</select></div>'
+    + '<div class="form-group"><label>Note</label><input type="text" id="pc-note" placeholder="Optional, e.g. supplier out of stock until January"></div>'
+    + '<div id="pc-err" style="color:var(--danger);font-size:12px;min-height:16px;margin-top:6px"></div>'
+    + '<div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal(\'po-cancel-modal\')">Keep PO</button><button class="btn btn-danger" id="pc-go" onclick="doCancelPo(' + _q(poNumber).replace(/"/g, '&quot;') + ')">Cancel PO</button></div></div>';
+  if (typeof moInit === 'function') { var m = bg.querySelector('.modal'); if (m && !m.querySelector('.mo-grab')) { var g = document.createElement('div'); g.className = 'mo-grab'; m.insertBefore(g, m.firstChild); } }
+  openModal('po-cancel-modal');
+}
+var _poCancelBusy = false;
+async function doCancelPo(poNumber) {
+  if (!_canCancelPo() || _poCancelBusy) return;
+  var reason = document.getElementById('pc-reason').value, note = document.getElementById('pc-note').value.trim(), err = document.getElementById('pc-err');
+  if (!reason) { err.textContent = 'Choose a reason.'; return; }
+  if (/^Other/.test(reason) && !note) { err.textContent = 'Add a short note for "Other".'; document.getElementById('pc-note').focus(); return; }
+  _poCancelBusy = true;
+  var btn = document.getElementById('pc-go'); if (btn) { btn.disabled = true; btn.textContent = 'Cancelling…'; }
+  try {
+    var P = _poOpenParts(poNumber), now = new Date().toISOString(), by = (currentUser && currentUser.username) || '';
+    var stamp = new Date(now).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+    var why = (/^Other/.test(reason) ? 'Other' : reason) + (note ? ' · ' + note.replace(/\n/g, ' ') : '');
+    P.openLines.forEach(function(r) {
+      var got = _reorderReceivedSoFar(r);
+      var rest = (r.notes || '').replace(/^⚠️ Partial delivery:.*?\n?/, '').replace(CLOSED_SHORT_RE, '').trim();
+      r.notes = '⛔ Closed short: ' + fmtInt(got) + ' of ' + fmtInt(r.qty) + ' received (' + stamp + (by ? ', ' + by : '') + ') — PO cancelled: ' + why + (rest ? '\n' + rest : '');
+      r.status = 'received';
+      if (!r.orderedAt) r.orderedAt = now;
+      if (!r.receivedAt) r.receivedAt = now;
+      r.updatedAt = now;
+    });
+    P.openCustom.forEach(function(c) { c.cancelled = { at: now, by: by, reason: why }; });
+    await _sbSaveReorderStatus(P.openLines);
+    if (P.openCustom.length) save();
+    logAudit('PO cancelled', poNumber + ((P.po && P.po.supplier) ? ' — ' + P.po.supplier : '') + ' · ' + why + ' · ' + (P.openLines.length + P.openCustom.length) + ' open line(s) closed');
+    closeModal('po-cancel-modal');
+    renderReorder(); updateSummary();
+    if (_poDetailNumber === String(poNumber) && document.getElementById('po-detail-modal').classList.contains('open')) renderPoDetail();
+    if (typeof moToast === 'function') moToast(poNumber + ' cancelled', 'Undo', function() { reopenPo(poNumber, true); }, 8000); else toastMsg(poNumber + ' cancelled');
+  } catch (e) {
+    err.textContent = 'Could not cancel: ' + e.message;
+  } finally {
+    _poCancelBusy = false; if (btn) { btn.disabled = false; btn.textContent = 'Cancel PO'; }
+  }
+}
+function reopenPo(poNumber, skipConfirm) {
+  if (!_canCancelPo()) return;
+  var P = _poOpenParts(poNumber);
+  var lines = P.lines.filter(_isCancelledLine), custom = P.custom.filter(function(c) { return c.cancelled; });
+  if (!lines.length && !custom.length) return;
+  var go = async function() {
+    var now = new Date().toISOString();
+    lines.forEach(function(r) { r.notes = (r.notes || '').replace(CLOSED_SHORT_RE, '').trim(); r.status = 'ordered'; r.receivedAt = null; _syncReorderFromLogs(r, now); });
+    custom.forEach(function(c) { delete c.cancelled; });
+    await _sbSaveReorderStatus(lines);
+    if (custom.length) save();
+    logAudit('PO reopened', poNumber + ' (' + (lines.length + custom.length) + ' line(s) back to ordered)');
+    renderReorder(); updateSummary();
+    if (_poDetailNumber === String(poNumber) && document.getElementById('po-detail-modal').classList.contains('open')) renderPoDetail();
+    if (typeof moToast === 'function') moToast(poNumber + ' reopened');
+  };
+  if (skipConfirm) { go(); return; }
+  showConfirm('Reopen PO', 'Reopen ' + poNumber + '? The cancelled lines go back to "ordered" so they can be received again.', go, { confirmLabel: 'Reopen' });
+}
+
 // ─── PO DETAILS (staggered deliveries) ─────────────────────────────────────
 // One view of a whole PO: every line's ordered / received / remaining with a
 // progress bar, overall progress by value, and a dated list of every
@@ -9721,14 +9857,15 @@ function _poDetailData(poNumber) {
       pct: (r.qty ? Math.min(100, Math.round(counted / r.qty * 100)) : 0), cost: r.cost || 0,
       receivedValue: Math.min(counted, r.qty || 0) * (r.cost || 0),
       status: closed ? 'closed short' : (full ? 'received' : (received > 0 ? 'partial' : (r.status || 'ordered'))),
+      cancelled: _isCancelledLine(r),
     };
   });
   (po && po.customItems || []).forEach(function(c, idx) {
-    var done = !!c.receivedAt;
+    var done = !!c.receivedAt, cx = !done && !!c.cancelled;
     lines.push({
       kind: 'custom', poId: po.id, idx: idx, name: c.description, unit: c.unit || '',
-      ordered: c.qty || 0, received: done ? (c.qty || 0) : 0, remaining: done ? 0 : (c.qty || 0), pct: done ? 100 : 0,
-      cost: c.cost || 0, receivedValue: done ? (c.qty || 0) * (c.cost || 0) : 0, status: done ? 'received' : 'ordered',
+      ordered: c.qty || 0, received: done ? (c.qty || 0) : 0, remaining: (done || cx) ? 0 : (c.qty || 0), pct: done ? 100 : 0,
+      cost: c.cost || 0, receivedValue: done ? (c.qty || 0) * (c.cost || 0) : 0, status: done ? 'received' : (cx ? 'closed short' : 'ordered'), cancelled: cx,
       receivedAt: c.receivedAt || null, receivedBy: c.receivedBy || '',
     });
   });
@@ -9774,12 +9911,16 @@ function renderPoDetail() {
   var statusBadge = { 'received': 'badge-ok', 'partial': 'badge-warn', 'closed short': 'badge-warn', 'ordered': 'badge-warn', 'needed': 'badge-danger' };
   var canRecv = can('mark_received');
 
-  var html = '<h2 style="margin-bottom:4px">📦 ' + esc(poNumber) + (rev ? ' <span class="badge badge-info" style="font-size:11px;vertical-align:middle">Rev ' + rev + '</span>' : '') + '</h2>'
+  var cxInfo = poCancelInfo(poNumber);
+  var html = '<h2 style="margin-bottom:4px">📦 ' + esc(poNumber) + (rev ? ' <span class="badge badge-info" style="font-size:11px;vertical-align:middle">Rev ' + rev + '</span>' : '') + (cxInfo ? ' <span class="badge badge-danger" style="font-size:11px;vertical-align:middle">Cancelled</span>' : '') + '</h2>'
     + '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">' + esc(supplier)
     + (po ? ' · Ordered ' + fmtD(po.date) : '')
     + (po && po.delivery ? ' · Delivery: ' + esc(po.delivery) : '')
     + (po && _poIsVatEx(po) ? ' · Supplier prices VAT-exclusive' : '') + '</div>';
 
+  if (cxInfo) html += '<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+    + '<span><b>Cancelled</b>' + (cxInfo.when ? ' ' + esc(cxInfo.when) : '') + (cxInfo.by ? ' by ' + esc(cxInfo.by) : '') + ' · ' + esc(cxInfo.reason) + '</span>'
+    + (_canCancelPo() ? '<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="reopenPo(' + _q(poNumber).replace(/"/g, '&quot;') + ')">Reopen PO</button>' : '') + '</div>';
   // Overall progress
   html += '<div style="background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:16px">'
     + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><strong>' + overallPct + '% received</strong>'
@@ -9792,15 +9933,15 @@ function renderPoDetail() {
     + d.lines.map(function(L) {
       var act = '';
       if (L.kind === 'catalog' && canRecv && L.r.status !== 'received') act = '<button class="btn btn-secondary btn-sm pod-recv" title="Receive delivery" onclick="openReceiveModal(\'' + L.r.id + '\')"><span class="em">📥 </span>' + SBI('tray') + 'Receive</button>';
-      if (L.kind === 'custom' && canRecv && L.status !== 'received') act = '<button class="btn btn-secondary btn-sm pod-recv" title="Mark delivered" onclick="markCustomItemReceived(\'' + L.poId + '\',' + L.idx + ')"><span class="em">📥 </span>' + SBI('tray') + 'Mark delivered</button>';
+      if (L.kind === 'custom' && canRecv && L.status === 'ordered') act = '<button class="btn btn-secondary btn-sm pod-recv" title="Mark delivered" onclick="markCustomItemReceived(\'' + L.poId + '\',' + L.idx + ')"><span class="em">📥 </span>' + SBI('tray') + 'Mark delivered</button>';
       act += L.kind === 'catalog' ? rowMenuBtn('rline', L.r.id, 'detail') : rowMenuBtn('cline', L.poId, L.idx);
       return '<tr>'
         + '<td><strong>' + esc(L.name) + '</strong>' + (L.kind === 'custom' ? ' <span style="font-size:10px;color:var(--muted)">(non-catalog)</span>' : '') + '</td>'
         + '<td style="text-align:right">' + fmtInt(L.ordered) + ' ' + esc(L.unit) + '</td>'
         + '<td style="text-align:right">' + fmtInt(L.received) + '</td>'
-        + '<td style="text-align:right">' + (L.status === 'closed short' ? '<span style="color:var(--muted)">closed</span>' : fmtInt(L.remaining)) + '</td>'
+        + '<td style="text-align:right">' + (L.status === 'closed short' ? '<span style="color:var(--muted)">' + (L.cancelled ? 'cancelled' : 'closed') + '</span>' : fmtInt(L.remaining)) + '</td>'
         + '<td style="min-width:110px">' + _pctBar(L.pct, L.pct >= 100 ? 'var(--ok)' : 'var(--accent)') + '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + L.pct + '%</div></td>'
-        + '<td><span class="badge ' + (statusBadge[L.status] || 'badge-warn') + '">' + esc(L.status) + '</span></td>'
+        + '<td><span class="badge ' + (L.cancelled ? 'badge-danger' : (statusBadge[L.status] || 'badge-warn')) + '">' + esc(L.cancelled ? 'cancelled' : L.status) + '</span></td>'
         + '<td style="white-space:nowrap;text-align:right">' + act + '</td></tr>';
     }).join('')
     + '</tbody></table></div>';
@@ -9829,6 +9970,12 @@ function renderPoDetail() {
   if (prevBtn) { prevBtn.style.display = po ? '' : 'none'; prevBtn.onclick = po ? function() { previewPo(po.id); } : null; }
   var dlBtn = document.getElementById('pod-download-btn');
   if (dlBtn) { dlBtn.style.display = po ? '' : 'none'; dlBtn.onclick = po ? function() { redownloadPo(po.id); } : null; }
+  var cxBtn = document.getElementById('pod-cancel-btn');
+  if (cxBtn) {
+    var P0 = _poOpenParts(poNumber), canCx = _canCancelPo() && (P0.openLines.length + P0.openCustom.length) > 0;
+    cxBtn.style.display = canCx ? '' : 'none';
+    cxBtn.onclick = canCx ? function() { openCancelPo(poNumber); } : null;
+  }
   var delBtn = document.getElementById('pod-delete-btn');
   if (delBtn) {
     var canDel = currentRole === 'superuser';
@@ -10429,6 +10576,7 @@ function renderPoHistory() {
         + ((parseInt(po.revision, 10) || 0) > 0
           ? ' <span class="badge badge-info" title="' + esc((Array.isArray(po.revisions) ? po.revisions : []).map(function(v) { return 'Rev ' + v.rev + ': ' + (v.changes || []).join('; '); }).join('\n')) + '">Rev ' + parseInt(po.revision, 10) + '</span>'
           : '')
+        + (poCancelInfo(po.poNumber) ? ' <span class="badge badge-danger">Cancelled</span>' : '')
         + '</td>'
       + '<td>' + dateStr + '</td>'
       + '<td>' + esc(po.supplier || '—') + '</td>'
@@ -11021,6 +11169,13 @@ function buildPurchaseOrderPdf(po, lineItems, opts) {
   doc.text('Date: ' + new Date(po.date).toLocaleDateString('en-PH', { year:'numeric', month:'2-digit', day:'2-digit' }), pageWidth - margin, y, { align: 'right' });
   y += 14;
   doc.text('PO Number: ' + po.poNumber, pageWidth - margin, y, { align: 'right' });
+  var _cx = typeof poCancelInfo === 'function' ? poCancelInfo(po.poNumber) : null;
+  if (_cx) {
+    y += 16;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(185, 28, 28);
+    doc.text('CANCELLED' + (_cx.when ? ' · ' + _cx.when : ''), pageWidth - margin, y, { align: 'right' });
+    doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  }
   var revN = parseInt(po.revision, 10) || 0;
   if (revN > 0) {
     var lastRev = Array.isArray(po.revisions) && po.revisions.length ? po.revisions[po.revisions.length - 1] : null;
@@ -12553,7 +12708,8 @@ function renderFastMovers() {
   if (!el) return;
   var since = Date.now() - 30 * 86400000, uses = {};
   db.logs.forEach(function(l) {
-    if ((l.type === 'use' || l.type === 'damage') && isLogVisible(l) && new Date(l.date).getTime() >= since) uses[l.itemId] = (uses[l.itemId] || 0) + 1;
+    if (!isLogVisible(l) || new Date(l.date).getTime() < since) return;
+    if (l.type === 'use' || l.type === 'damage' || (l.type === 'adjust' && adjustDelta(l) < 0)) uses[l.itemId] = (uses[l.itemId] || 0) + 1; // count shortfalls are usage too
   });
   var list = catalogItems().filter(function(i) { return uses[i.id]; }).map(function(i) {
     var r = getRunway(i);
@@ -14848,7 +15004,9 @@ function showCriticalStockAlert() {
   // "used 18 times" is), then whichever runs out sooner.
   var since = Date.now() - 30 * 86400000, uses = {};
   db.logs.forEach(function(l) {
-    if ((l.type === 'use' || l.type === 'damage') && new Date(l.date).getTime() >= since) uses[l.itemId] = (uses[l.itemId] || 0) + 1;
+    if (new Date(l.date).getTime() < since) return;
+    // a count that came up short is usage too (much of it is only caught at the daily count)
+    if (l.type === 'use' || l.type === 'damage' || (l.type === 'adjust' && adjustDelta(l) < 0)) uses[l.itemId] = (uses[l.itemId] || 0) + 1;
   });
   var speed = function(i) { var r = getRunway(i); return { n: uses[i.id] || 0, days: r ? r.days : Infinity }; };
   var byFastest = function(a, b) { var x = speed(a), y = speed(b); return (y.n - x.n) || (x.days - y.days) || String(a.name).localeCompare(String(b.name)); };
