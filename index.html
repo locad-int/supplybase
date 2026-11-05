@@ -1111,6 +1111,19 @@ body.sb2 .rl-av { width: 26px !important; height: 26px !important; background: #
 body.sb2 .rl-nm { font-size: 12.5px !important; color: #e5e7eb !important; max-width: 140px !important; }
 body.sb2 #login-card { border-radius: 16px !important; padding: 26px 26px 24px !important; box-shadow: 0 24px 60px rgba(0,0,0,.5) !important; border: none !important; }
 
+/* DR receive: confirm the PO */
+.drc-po { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; transition: border-color .2s, background .2s; }
+.drc-po.ok { border-color: #86efac; background: #f0fdf4; }
+.drc-po-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.drc-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; font-weight: 400; }
+.drc-flag { font-size: 12.5px; border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; }
+.drc-flag.bad { background: #fee2e2; color: #991b1b; } .drc-flag.warn { background: #fef3c7; color: #92400e; }
+.drc-flag.info { background: var(--surface2); color: var(--muted); } .drc-flag.ok { background: #dcfce7; color: #166534; }
+.drc-lines { width: 100%; border-collapse: collapse; margin: 4px 0 8px; }
+.drc-lines td { padding: 7px 0; border-top: 1px solid #f1f2f4; font-size: 13px; vertical-align: top; }
+.drc-ok { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; background: var(--surface2); border-radius: 10px; padding: 10px 12px; cursor: pointer; margin: 0; }
+.drc-po.ok .drc-ok { background: #dcfce7; color: #14532d; }
+.drc-ok input { width: 18px; height: 18px; margin: 0; accent-color: #16a34a; }
 /* ─── MOTION & UX POLISH ───────────────────────────────────────────────────── */
 /* live change glow */
 tr.mo-glow > td, .inv-mobile-card.mo-glow { animation: moGlow 2s ease-out; }
@@ -3595,6 +3608,11 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
     <p style="color:var(--muted);font-size:13px;margin-bottom:4px">🎄 <strong>Season mode</strong></p>
     <p style="color:var(--muted);font-size:11px;margin-bottom:10px">Christmas look (login map, lights, Santa hats, countdown, Dashboard banner), SupplyBase Wrapped, and the Dashboard fun facts. Applies to everyone; each person can still turn the moving effects off for themselves.</p>
     <div id="season-settings" style="display:flex;flex-direction:column;gap:8px"></div>
+
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
+    <p style="color:var(--muted);font-size:13px;margin-bottom:4px">💬 <strong>Shelfie in Slack</strong></p>
+    <p style="color:var(--muted);font-size:11px;margin-bottom:10px">Who asked Shelfie in Slack and when. What they asked isn't recorded.</p>
+    <button type="button" class="btn btn-secondary" onclick="openShelfieUsage()" style="font-size:12px">View Slack usage</button>
 
     <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
     <p style="color:var(--muted);font-size:13px;margin-bottom:4px">🧪 <strong>Test Mode</strong></p>
@@ -6176,6 +6194,81 @@ function saveWrappedImage() {
   }, 'image/png');
 }
 
+// ─── SHELFIE IN SLACK · USAGE (superuser) ──────────────────────────────────
+// Reads shelfie_slack_log, which the shelfie-slack function fills: who asked
+// and when, where (DM / channel / thread), the outcome and reply time. The
+// question text is never stored.
+var _ssu = { rows: [], days: 30, who: '', missing: false };
+async function openShelfieUsage() {
+  if (currentRole !== 'superuser') return;
+  var bg = document.getElementById('ssu-modal');
+  if (!bg) {
+    bg = document.createElement('div'); bg.id = 'ssu-modal'; bg.className = 'modal-bg';
+    bg.innerHTML = '<div class="modal" style="max-width:860px"><div id="ssu-body"></div><div class="modal-actions">'
+      + '<button class="btn btn-secondary" onclick="exportShelfieUsageCSV()">Export CSV</button>'
+      + '<button class="btn btn-primary" onclick="closeModal(\'ssu-modal\')">Close</button></div></div>';
+    bg.addEventListener('click', function(e) { if (e.target === bg) closeModal('ssu-modal'); });
+    document.body.appendChild(bg);
+    var m = bg.querySelector('.modal'); var g = document.createElement('div'); g.className = 'mo-grab'; m.insertBefore(g, m.firstChild);
+  }
+  document.getElementById('ssu-body').innerHTML = '<h2>Shelfie in Slack</h2><div style="color:var(--muted);font-size:13px;padding:12px 0">Loading…</div>';
+  openModal('ssu-modal');
+  await loadShelfieUsage();
+}
+async function loadShelfieUsage() {
+  _ssu.missing = false;
+  try {
+    var since = new Date(Date.now() - _ssu.days * 86400000).toISOString(), all = [];
+    for (var from = 0; from < 20000; from += 1000) {
+      var r = await sb.from('shelfie_slack_log').select('at,slack_user_id,user_name,place,channel_id,outcome,ms').gte('at', since).order('at', { ascending: false }).range(from, from + 999);
+      if (r.error) throw r.error;
+      all = all.concat(r.data || []);
+      if (!r.data || r.data.length < 1000) break;
+    }
+    _ssu.rows = all;
+  } catch (e) { _ssu.rows = []; _ssu.missing = /does not exist|schema cache|relation/i.test(String(e.message || e)); _ssu.err = String(e.message || e); }
+  renderShelfieUsage();
+}
+function _ssuName(r) { return r.user_name || r.slack_user_id || 'Unknown'; }
+function renderShelfieUsage() {
+  var body = document.getElementById('ssu-body'); if (!body) return;
+  var head = '<h2>Shelfie in Slack</h2><div style="font-size:12px;color:var(--muted);margin:-4px 0 12px">Who asked and when. What they asked is not recorded.</div>';
+  if (_ssu.missing) { body.innerHTML = head + '<div style="font-size:13px;padding:8px 0">Usage logging isn\'t set up yet. Run <b>shelfie_slack_log.sql</b> in Supabase, add the <b>users:read</b> scope to the Shelfie Slack app, and redeploy the <b>shelfie-slack</b> function.</div>'; return; }
+  if (_ssu.err && !_ssu.rows.length) { body.innerHTML = head + '<div style="font-size:13px;color:var(--danger)">Could not load: ' + esc(_ssu.err) + '</div>'; _ssu.err = ''; return; }
+  var people = {}; _ssu.rows.forEach(function(r) { var k = _ssuName(r); var p = people[k] || (people[k] = { name: k, n: 0, dm: 0, ch: 0, last: r.at, errs: 0 }); p.n++; if (r.place === 'dm') p.dm++; else p.ch++; if (r.outcome === 'error') p.errs++; if (r.at > p.last) p.last = r.at; });
+  var plist = Object.keys(people).map(function(k) { return people[k]; }).sort(function(a, b) { return b.n - a.n || String(b.last).localeCompare(String(a.last)); });
+  var rows = _ssu.who ? _ssu.rows.filter(function(r) { return _ssuName(r) === _ssu.who; }) : _ssu.rows;
+  var answered = rows.filter(function(r) { return r.outcome === 'answered'; }), ms = answered.map(function(r) { return r.ms || 0; }).sort(function(a, b) { return a - b; });
+  var median = ms.length ? ms[Math.floor(ms.length / 2)] : 0;
+  var dt = function(iso) { return new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }); };
+  var stat = function(v, l) { return '<div style="background:var(--surface2);border-radius:10px;padding:10px 12px;flex:1;min-width:120px"><div style="font-size:20px;font-weight:700">' + v + '</div><div style="font-size:12px;color:var(--muted)">' + l + '</div></div>'; };
+  var place = { dm: 'DM', channel: 'Channel', thread: 'Thread' };
+  var html = head
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'
+    + '<select onchange="_ssu.days=+this.value;loadShelfieUsage()" style="width:auto">' + [[7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [365, 'Last 12 months']].map(function(o) { return '<option value="' + o[0] + '"' + (_ssu.days === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>'
+    + '<select onchange="_ssu.who=this.value;renderShelfieUsage()" style="width:auto;max-width:240px"><option value="">Everyone</option>' + plist.map(function(p) { return '<option' + (_ssu.who === p.name ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' + stat(fmtInt(rows.length), 'questions') + stat(fmtInt(_ssu.who ? 1 : plist.length), _ssu.who ? 'person' : 'people') + stat(rows.length ? Math.round(answered.length / rows.length * 100) + '%' : '—', 'answered') + stat(median ? (median / 1000).toFixed(1) + ' s' : '—', 'typical reply time') + '</div>';
+  if (!_ssu.rows.length) { body.innerHTML = html + '<div style="font-size:13px;color:var(--muted);padding:8px 0">Nobody has asked Shelfie in Slack in this period' + (_ssu.days <= 30 ? ' (logging starts from when the updated function was deployed)' : '') + '.</div>'; return; }
+  if (!_ssu.who) html += '<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Who uses it</div>'
+    + '<div class="table-wrap" style="margin-bottom:16px"><table><thead><tr><th>Person</th><th style="text-align:right">Questions</th><th style="text-align:right">In DMs</th><th style="text-align:right">In channels</th><th>Last asked</th></tr></thead><tbody>'
+    + plist.map(function(p) { return '<tr style="cursor:pointer" onclick="_ssu.who=' + _q(p.name).replace(/"/g, '&quot;') + ';renderShelfieUsage()"><td><strong>' + esc(p.name) + '</strong></td><td style="text-align:right">' + fmtInt(p.n) + '</td><td style="text-align:right">' + fmtInt(p.dm) + '</td><td style="text-align:right">' + fmtInt(p.ch) + '</td><td style="white-space:nowrap">' + dt(p.last) + '</td></tr>'; }).join('')
+    + '</tbody></table></div>';
+  html += '<div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">' + (_ssu.who ? esc(_ssu.who) + '\'s questions' : 'Latest') + '</div>'
+    + '<div class="table-wrap" style="max-height:38vh;overflow-y:auto"><table><thead><tr><th>When</th><th>Who</th><th>Where</th><th>Result</th><th style="text-align:right">Reply time</th></tr></thead><tbody>'
+    + rows.slice(0, 300).map(function(r) {
+      var tone = r.outcome === 'answered' || r.outcome === 'greeting' ? 'badge-ok' : r.outcome === 'error' ? 'badge-danger' : 'badge-warn';
+      return '<tr><td style="white-space:nowrap">' + dt(r.at) + '</td><td>' + esc(_ssuName(r)) + '</td><td>' + esc(place[r.place] || r.place || '—') + '</td><td><span class="badge ' + tone + '">' + esc(r.outcome || '—') + '</span></td><td style="text-align:right">' + (r.ms ? (r.ms / 1000).toFixed(1) + ' s' : '—') + '</td></tr>';
+    }).join('') + '</tbody></table></div>'
+    + (rows.length > 300 ? '<div style="font-size:11px;color:var(--muted);margin-top:6px">Showing the latest 300 of ' + fmtInt(rows.length) + '. Export CSV for all.</div>' : '');
+  body.innerHTML = html;
+}
+function exportShelfieUsageCSV() {
+  var rows = _ssu.who ? _ssu.rows.filter(function(r) { return _ssuName(r) === _ssu.who; }) : _ssu.rows;
+  var out = [['When', 'Person', 'Slack user ID', 'Where', 'Result', 'Reply seconds'].join(',')];
+  rows.forEach(function(r) { out.push([new Date(r.at).toISOString(), _csvQ(_ssuName(r)), _csvQ(r.slack_user_id || ''), r.place || '', _csvQ(r.outcome || ''), r.ms ? (r.ms / 1000).toFixed(1) : ''].join(',')); });
+  _csvDownload(out, 'shelfie_slack_usage_' + new Date().toISOString().slice(0, 10) + '.csv');
+}
+
 // ─── GLOBAL SEARCH (/ or Ctrl/⌘ K) ────────────────────────────────────────────
 // One box for items, POs, DR numbers, sales invoices and suppliers. It only
 // searches what's already loaded in the app, so results are instant and it
@@ -6655,6 +6748,7 @@ function renderDrScan() {
   var el = document.getElementById('drs-body');
   if (!el || !_drs) return;
   if (_drs.step === 'review') { el.innerHTML = _drReviewHtml(); _drUpdateWarnings(); return; }
+  if (_drs.step === 'confirm') { el.innerHTML = _drConfirmHtml(); return; }
   var n = _drPages.scan.length;
   el.innerHTML = '<h2 style="margin-bottom:4px">📷 Receive from DR</h2>'
     + '<div style="font-size:13px;color:var(--muted);margin-bottom:14px">Take a clear, flat photo of each page of the delivery receipt. SupplyBase reads it and fills in what to receive — you check everything before anything is saved.</div>'
@@ -6880,14 +6974,87 @@ function _drReviewHtml() {
     + '<button class="btn btn-secondary" onclick="_drs.step=\'capture\';renderDrScan()">← Retake</button>'
     + (_drCamSupported() ? '<button class="btn btn-secondary" onclick="drCamOpen()">+ Scan another page</button>' : '')
     + '<button class="btn btn-secondary" onclick="closeModal(\'dr-scan-modal\')">Cancel</button>'
-    + '<button class="btn btn-primary" id="drs-confirm-btn" onclick="drConfirmScan()"' + (n ? '' : ' disabled') + '>Receive ' + n + ' line' + (n === 1 ? '' : 's') + '</button>'
+    + '<button class="btn btn-primary" id="drs-confirm-btn" onclick="drGoConfirm()"' + (n ? '' : ' disabled') + '>Next: confirm PO' + '</button>'
     + '</div>';
+}
+
+// ── Confirm the PO before anything is received ──
+// After the lines are checked, one more step shows which PO each line goes
+// to (grouped by PO, with what's left due afterwards) and asks the receiver
+// to tick "Yes, this delivery is for PO-…" for every PO. Anything that
+// suggests the wrong PO is called out: a different PO number printed on the
+// DR, a different supplier, the same item still open on other POs, or more
+// than is due.
+function drGoConfirm() {
+  if (!_drs) return;
+  var rows = _drs.rows.filter(function(r) { return r.include; });
+  if (!rows.length) return;
+  if (rows.some(function(r) { return !r.lineId || !(r.qty > 0); })) { alert('Each ticked line needs a PO line and a quantity (or untick it).'); return; }
+  var ids = rows.map(function(r) { return r.lineId; });
+  if (ids.some(function(id, i) { return ids.indexOf(id) !== i; })) { alert('Two DR lines point to the same PO line. Combine them into one quantity or change one of them.'); return; }
+  _drs.poOk = {};
+  _drs.step = 'confirm';
+  renderDrScan();
+  var m = document.querySelector('#dr-scan-modal .modal'); if (m) m.scrollTop = 0;
+}
+function _drConfirmGroups() {
+  var open = drOpenLines(), groups = {}, order = [];
+  _drs.rows.filter(function(r) { return r.include; }).forEach(function(row) {
+    var l = open.find(function(x) { return x.line_id === row.lineId; }); if (!l) return;
+    var g = groups[l.po_number];
+    if (!g) { g = groups[l.po_number] = { po: l.po_number, supplier: l.supplier, date: l.po_date, rows: [] }; order.push(l.po_number); }
+    g.rows.push({ row: row, line: l });
+  });
+  return order.map(function(k) { return groups[k]; });
+}
+function drPoOk(po, on) {
+  _drs.poOk[po] = !!on;
+  var all = _drConfirmGroups().every(function(g) { return _drs.poOk[g.po]; });
+  var b = document.getElementById('drs-final-btn'); if (b) b.disabled = !all;
+  var card = document.querySelector('.drc-po[data-po="' + po + '"]'); if (card) card.classList.toggle('ok', !!on);
+}
+function _drConfirmHtml() {
+  var res = _drs.result || {}, groups = _drConfirmGroups(), drPo = String(res.po_number || '').toUpperCase();
+  var allOk = groups.length && groups.every(function(g) { return _drs.poOk[g.po]; });
+  var fmtD = function(ymd) { return ymd ? new Date(ymd + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : ''; };
+  var html = '<h2 style="margin-bottom:4px">Confirm the PO</h2>'
+    + '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">' + esc([_drs.drNo ? 'DR ' + _drs.drNo : '', res.supplier_name || '', res.dr_date ? fmtD(res.dr_date) : ''].filter(Boolean).join(' · '))
+    + '. Check this delivery goes to the right PO, then tick to confirm. Nothing is received until you press Receive.</div>';
+  groups.forEach(function(g) {
+    var flags = [];
+    if (drPo && drPo !== String(g.po).toUpperCase()) flags.push(['bad', 'The DR says ' + res.po_number + ', not ' + g.po + '.']);
+    if (res.supplier_name && g.supplier && !_drSameSupplier(g.supplier, res.supplier_name)) flags.push(['bad', 'This PO is with ' + g.supplier + ', but the DR is from ' + res.supplier_name + '.']);
+    var others = [];
+    g.rows.forEach(function(x) { (x.row.otherPos || []).forEach(function(o) { if (o !== g.po && others.indexOf(o) === -1) others.push(o); }); });
+    if (others.length && !drPo) flags.push(['warn', 'Also open on ' + others.join(', ') + '. The oldest PO was picked because the DR has no PO number.']);
+    if (!drPo && !others.length) flags.push(['info', 'The DR has no PO number. This is the only open PO for these items from this supplier.']);
+    if (drPo && drPo === String(g.po).toUpperCase()) flags.push(['ok', 'Matches the PO number printed on the DR.']);
+    html += '<div class="drc-po' + (_drs.poOk[g.po] ? ' ok' : '') + '" data-po="' + esc(g.po) + '">'
+      + '<div class="drc-po-h"><div><b>' + esc(g.po) + '</b><div class="drc-sub">' + esc(g.supplier || '') + (g.date ? ' · ordered ' + fmtD(g.date) : '') + '</div></div>'
+      + '<button type="button" class="btn btn-secondary btn-sm" onclick="openPoDetail(' + _q(g.po).replace(/"/g, '&quot;') + ')">View PO</button></div>'
+      + flags.map(function(f) { return '<div class="drc-flag ' + f[0] + '">' + (f[0] === 'ok' ? '✓ ' : f[0] === 'info' ? '' : '⚠️ ') + esc(f[1]) + '</div>'; }).join('')
+      + '<table class="drc-lines"><tbody>' + g.rows.map(function(x) {
+          var left = x.line.remaining - x.row.qty;
+          var after = left > 0 ? fmtInt(left) + ' ' + esc(_plural(x.line.unit, left)) + ' still due after this' : left === 0 ? '✓ completes this line' : '⚠️ ' + fmtInt(-left) + ' more than was due';
+          return '<tr><td><b>' + esc(x.line.item_name) + '</b><div class="drc-sub">' + after + '</div></td><td style="text-align:right;white-space:nowrap"><b>+' + fmtInt(x.row.qty) + '</b> ' + esc(_plural(x.line.unit, x.row.qty)) + '<div class="drc-sub">of ' + fmtInt(x.line.remaining) + ' due</div></td></tr>';
+        }).join('') + '</tbody></table>'
+      + '<label class="drc-ok"><input type="checkbox"' + (_drs.poOk[g.po] ? ' checked' : '') + ' onchange="drPoOk(' + _q(g.po).replace(/"/g, '&quot;') + ',this.checked)"> Yes, this delivery is for <b>' + esc(g.po) + '</b></label>'
+      + '</div>';
+  });
+  var n = groups.reduce(function(a, g) { return a + g.rows.length; }, 0);
+  html += '<div class="modal-actions">'
+    + '<button class="btn btn-secondary" onclick="_drs.step=\'review\';renderDrScan()">← Back to edit</button>'
+    + '<button class="btn btn-secondary" onclick="closeModal(\'dr-scan-modal\')">Cancel</button>'
+    + '<button class="btn btn-primary" id="drs-final-btn" onclick="_drs.confirmedPo=true;drConfirmScan()"' + (allOk ? '' : ' disabled') + '>Receive ' + n + ' line' + (n === 1 ? '' : 's') + (groups.length > 1 ? ' into ' + groups.length + ' POs' : ' into ' + esc(groups[0] ? groups[0].po : 'PO')) + '</button>'
+    + '</div>';
+  return html;
 }
 
 var _drConfirming = false;
 async function drConfirmScan() {
   if (_drConfirming || !_drs) return;
   if (checkStocktakeLock()) return;
+  if (_drs.step !== 'confirm' || !_drConfirmGroups().every(function(g) { return _drs.poOk && _drs.poOk[g.po]; })) { drGoConfirm(); return; }
   var rows = _drs.rows.filter(function(r) { return r.include; });
   var bad = rows.filter(function(r) { return !r.lineId || !(r.qty > 0); });
   if (bad.length) { alert('Each ticked line needs a PO line and a quantity (or untick it).'); return; }
@@ -6895,10 +7062,10 @@ async function drConfirmScan() {
   if (ids.some(function(id, i) { return ids.indexOf(id) !== i; })) { alert('Two DR lines point to the same PO line. Combine them into one quantity or change one of them.'); return; }
   var open = drOpenLines();
   var over = rows.filter(function(r) { var l = open.find(function(x) { return x.line_id === r.lineId; }); return l && r.qty > l.remaining; });
-  if (over.length && !confirm('These are more than what\'s still due on the PO:\n\n' + over.map(function(r) {
+  if (over.length && !_drs.confirmedPo && !confirm('These are more than what\'s still due on the PO:\n\n' + over.map(function(r) {
       var l = open.find(function(x) { return x.line_id === r.lineId; }); return '• ' + l.item_name + ': ' + fmtInt(r.qty) + ' (due ' + fmtInt(l.remaining) + ')'; }).join('\n') + '\n\nReceive anyway?')) return;
   _drConfirming = true;
-  var btn = document.getElementById('drs-confirm-btn');
+  var btn = document.getElementById('drs-final-btn') || document.getElementById('drs-confirm-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
     var res = _drs.result || {};
@@ -6928,7 +7095,7 @@ async function drConfirmScan() {
       if (sk && row.description) { drAliases[sk] = drAliases[sk] || {}; drAliases[sk][_drNorm(row.description)] = item.name; }
     }
     _saveDrAliases();
-    logAudit('Received from scanned DR', (_drs.drNo ? 'DR ' + _drs.drNo + ' · ' : '') + done.join(', '));
+    logAudit('Received from scanned DR', (_drs.drNo ? 'DR ' + _drs.drNo + ' · ' : '') + 'PO confirmed: ' + _drConfirmGroups().map(function(g) { return g.po; }).join(', ') + ' · ' + done.join(', '));
     _drPages.scan = [];
     closeModal('dr-scan-modal');
     toastMsg('Received ' + done.length + ' line' + (done.length === 1 ? '' : 's') + ' from the DR');
