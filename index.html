@@ -1111,6 +1111,13 @@ body.sb2 .rl-av { width: 26px !important; height: 26px !important; background: #
 body.sb2 .rl-nm { font-size: 12.5px !important; color: #e5e7eb !important; max-width: 140px !important; }
 body.sb2 #login-card { border-radius: 16px !important; padding: 26px 26px 24px !important; box-shadow: 0 24px 60px rgba(0,0,0,.5) !important; border: none !important; }
 
+/* PO history timeline */
+.poh { position: relative; padding-left: 4px; }
+.poh-e { display: flex; gap: 10px; font-size: 13px; padding: 7px 0; border-top: 1px solid #f1f2f4; }
+.poh-e:first-child { border-top: none; }
+.poh-dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.poh-m { font-size: 12px; color: var(--muted); font-weight: 400; }
+.poh-e ul { margin: 4px 0 0 16px; padding: 0; font-size: 12.5px; color: var(--text); opacity: .85; line-height: 1.5; }
 /* DR receive: confirm the PO */
 .drc-po { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; transition: border-color .2s, background .2s; }
 .drc-po.ok { border-color: #86efac; background: #f0fdf4; }
@@ -3570,6 +3577,10 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
         <span><strong>Confirm &amp; issue supply requests</strong><br><span style="color:var(--muted);font-size:11px">Approve and log issuances for pending requests</span></span>
       </label>
       <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="uperm-edit_po" style="width:16px;height:16px;margin-top:1px;flex-shrink:0" onchange="onUserPermChange()">
+        <span><strong>Edit Purchase Orders</strong><br><span style="color:var(--muted);font-size:11px">Revise a PO (qty, price, lines, terms). Every change needs a named approver and is kept in the PO's history</span></span>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
         <input type="checkbox" id="uperm-add_item" style="width:16px;height:16px;margin-top:1px;flex-shrink:0" onchange="onUserPermChange()">
         <span><strong>Add new items manually</strong><br><span style="color:var(--muted);font-size:11px">Create new inventory items from scratch</span></span>
       </label>
@@ -4010,7 +4021,8 @@ var userPermissions = {
   confirm_requests:       false,  // Confirm & issue supply requests
   import_inventory:       true,   // Upload inventory count files
   add_new_items_on_import: false, // Create new materials found in import file
-  add_item:               false   // Add new items manually
+  add_item:               false,  // Add new items manually
+  edit_po:                true    // Edit (revise) Purchase Orders
 };
 
 // ─── QC PACK STATION ─────────────────────────────────────────────────────────────
@@ -7931,7 +7943,7 @@ function _rowMenuEntries(kind, a, b) {
     if (can('mark_received') && _invTableOK !== false && !_cxNoRecv) E.push(['receipt', '🧾', 'File sales invoice', 'openInvoiceModal(' + _q(a) + ')']);
     if (po) E.push(['eye', '👁', 'Preview PO', 'previewPo(' + _q(po.id) + ')']);
     if (po) E.push(['down', '⬇', 'Download PO (PDF)', 'redownloadPo(' + _q(po.id) + ')']);
-    if (po && currentRole === 'superuser') E.push(['pen', '✏️', 'Edit PO', 'openEditPoModal(' + _q(po.id) + ')']);
+    if (po && _canEditPo() && !poCancelInfo(a)) E.push(['pen', '✏️', 'Edit PO', 'openEditPoModal(' + _q(po.id) + ')']);
     if (_canCancelPo()) {
       var Pm = _poOpenParts(a);
       if (poCancelInfo(a)) E.push(['undo', '↩️', 'Reopen PO', 'reopenPo(' + _q(a) + ')']);
@@ -9859,6 +9871,7 @@ function closeReorderShort(id) {
       if (!r.receivedAt) r.receivedAt = now;
       r.updatedAt = now;
       logAudit('PO line closed short', (item ? item.name : r.itemId) + (r.poNumber ? ' (' + r.poNumber + ')' : '') + ' — ' + fmtInt(got) + ' of ' + fmtInt(r.qty) + ' ' + unit + ' received');
+      if (r.poNumber) poHistoryAdd(r.poNumber, 'line closed short', { changes: [(item ? item.name : 'Item') + ': closed at ' + fmtInt(got) + ' of ' + fmtInt(r.qty) + ' ' + unit] });
       await _sbSaveReorderStatus([r]);
       renderReorder();
       updateSummary();
@@ -9877,6 +9890,7 @@ function reopenReorderLine(id) {
     r.receivedAt = null;
     _syncReorderFromLogs(r, now);
     logAudit('PO line reopened', (item ? item.name : r.itemId) + (r.poNumber ? ' (' + r.poNumber + ')' : ''));
+    if (r.poNumber) poHistoryAdd(r.poNumber, 'line reopened', { changes: [(item ? item.name : 'Item') + ' back to ordered'] });
     await _sbSaveReorderStatus([r]);
     renderReorder();
     updateSummary();
@@ -9967,6 +9981,7 @@ async function doCancelPo(poNumber) {
     await _sbSaveReorderStatus(P.openLines);
     if (P.openCustom.length) save();
     logAudit('PO cancelled', poNumber + ((P.po && P.po.supplier) ? ' — ' + P.po.supplier : '') + ' · ' + why + ' · ' + (P.openLines.length + P.openCustom.length) + ' open line(s) closed');
+    poHistoryAdd(poNumber, 'cancelled', { changes: [why].concat(P.openLines.map(function(r) { var it = db.items.find(function(i) { return i.id === r.itemId; }); return (it ? it.name : 'Item') + ': ' + fmtInt(Math.max(0, (r.qty || 0) - _reorderReceivedSoFar(r))) + ' no longer expected'; })) });
     closeModal('po-cancel-modal');
     renderReorder(); updateSummary();
     if (_poDetailNumber === String(poNumber) && document.getElementById('po-detail-modal').classList.contains('open')) renderPoDetail();
@@ -9989,12 +10004,88 @@ function reopenPo(poNumber, skipConfirm) {
     await _sbSaveReorderStatus(lines);
     if (custom.length) save();
     logAudit('PO reopened', poNumber + ' (' + (lines.length + custom.length) + ' line(s) back to ordered)');
+    poHistoryAdd(poNumber, 'reopened', { changes: [(lines.length + custom.length) + ' line(s) back to ordered'] });
     renderReorder(); updateSummary();
     if (_poDetailNumber === String(poNumber) && document.getElementById('po-detail-modal').classList.contains('open')) renderPoDetail();
     if (typeof moToast === 'function') moToast(poNumber + ' reopened');
   };
   if (skipConfirm) { go(); return; }
   showConfirm('Reopen PO', 'Reopen ' + poNumber + '? The cancelled lines go back to "ordered" so they can be received again.', go, { confirmLabel: 'Reopen' });
+}
+
+// ─── PO HISTORY (traceability) ──────────────────────────────────────────────
+// Every change to a PO — created, revised, cancelled, reopened, a line closed
+// short or reopened, deleted — is written to the po_history table in
+// Supabase (shared by every device, unlike the Audit Log which lives on each
+// computer). The table only accepts new rows: nobody can edit or delete
+// history from SupplyBase. PO Details shows it as a timeline.
+var _poHistOK = null;  // false = po_history table not created yet
+var _poHistCache = {};
+var PO_HIST_LABELS = { created: 'Created', revised: 'Revised', cancelled: 'Cancelled', reopened: 'Reopened', deleted: 'Deleted', 'line closed short': 'Line closed short', 'line reopened': 'Line reopened' };
+function _sameApprover(a, b) {
+  var n = function(x) { return String(x || '').toLowerCase().replace(/[^a-z]/g, ''); };
+  var A = n(a), B = n(b), first = n(String(b || '').split(/[._\s]/)[0]);
+  return !!A && (A === B || (first.length > 2 && (A === first || A.indexOf(first) === 0)));
+}
+async function poHistoryAdd(poNumber, action, extra) {
+  extra = extra || {};
+  var row = { po_number: String(poNumber), at: new Date().toISOString(), by: (currentUser && currentUser.username) || '', action: action,
+    rev: extra.rev != null ? extra.rev : null, approved_by: extra.approvedBy || null, changes: extra.changes || [],
+    total_before: extra.totalBefore != null ? Math.round(extra.totalBefore * 100) / 100 : null, total_after: extra.totalAfter != null ? Math.round(extra.totalAfter * 100) / 100 : null };
+  (_poHistCache[row.po_number] = _poHistCache[row.po_number] || []).unshift(row);
+  if (!sb || _poHistOK === false) return;
+  try {
+    var r = await sb.from('po_history').insert([row]);
+    if (r && r.error) { if (/does not exist|schema cache|relation/i.test(r.error.message)) _poHistOK = false; else console.warn('PO history not saved:', r.error.message); }
+    else _poHistOK = true;
+  } catch (e) { console.warn('PO history not saved:', e); }
+}
+async function loadPoHistory(poNumber) {
+  if (!sb) return _poHistCache[poNumber] || [];
+  try {
+    var r = await sb.from('po_history').select('*').eq('po_number', String(poNumber)).order('at', { ascending: false }).limit(200);
+    if (r.error) { if (/does not exist|schema cache|relation/i.test(r.error.message)) _poHistOK = false; return _poHistCache[poNumber] || []; }
+    _poHistOK = true;
+    _poHistCache[poNumber] = r.data || [];
+    return _poHistCache[poNumber];
+  } catch (e) { return _poHistCache[poNumber] || []; }
+}
+// Events before po_history existed: the PO's own revision list + creation
+function _poLegacyEvents(po) {
+  if (!po) return [];
+  var ev = (Array.isArray(po.revisions) ? po.revisions : []).map(function(v) {
+    return { at: v.at, by: v.by, action: 'revised', rev: v.rev, approved_by: v.approvedBy, changes: v.changes || [] };
+  });
+  if (po.createdAt || po.date) ev.push({ at: po.createdAt || po.date, by: po.createdBy || '', action: 'created', approved_by: null, changes: [] });
+  return ev;
+}
+function _poHistHtml(poNumber, rows) {
+  var po = (db.purchaseOrders || []).find(function(p) { return String(p.poNumber) === String(poNumber); });
+  // Merge: table rows win; legacy revisions fill in anything older
+  var list = (rows || []).slice(), revsSeen = {};
+  list.forEach(function(e) { if (e.action === 'revised' && e.rev) revsSeen[e.rev] = 1; if (e.action === 'created') revsSeen.created = 1; });
+  _poLegacyEvents(po).forEach(function(e) { if ((e.action === 'revised' && !revsSeen[e.rev]) || (e.action === 'created' && !revsSeen.created)) list.push(e); });
+  list.sort(function(a, b) { return String(b.at).localeCompare(String(a.at)); });
+  var head = '<div style="display:flex;align-items:center;gap:8px;margin:18px 0 8px"><div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">History</div>'
+    + '<span style="font-size:11px;color:var(--muted)">' + list.length + ' event' + (list.length === 1 ? '' : 's') + '</span></div>';
+  if (_poHistOK === false && currentRole === 'superuser') head += '<div style="font-size:12px;color:#92400e;background:#fef3c7;border-radius:8px;padding:6px 10px;margin-bottom:8px">Shared PO history isn\'t set up yet — run <b>po_history.sql</b> in Supabase. Until then only revisions saved on the PO are shown.</div>';
+  if (!list.length) return head + '<div style="font-size:13px;color:var(--muted)">No changes recorded yet.</div>';
+  var dt = function(iso) { return new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }); };
+  var tone = { created: '#16a34a', revised: '#2563eb', cancelled: '#dc2626', deleted: '#dc2626', reopened: '#16a34a', 'line closed short': '#d97706', 'line reopened': '#16a34a' };
+  return head + '<div class="poh">' + list.map(function(e) {
+    var ch = Array.isArray(e.changes) ? e.changes : (typeof e.changes === 'string' ? (function() { try { return JSON.parse(e.changes); } catch (x) { return [e.changes]; } })() : []);
+    var money = (e.total_before != null && e.total_after != null && Number(e.total_before) !== Number(e.total_after)) ? ' · total ' + fmtPHP(Number(e.total_before)) + ' → ' + fmtPHP(Number(e.total_after)) : '';
+    return '<div class="poh-e"><span class="poh-dot" style="background:' + (tone[e.action] || '#9ca3af') + '"></span><div>'
+      + '<div><b>' + esc(PO_HIST_LABELS[e.action] || e.action) + (e.rev ? ' · Rev ' + e.rev : '') + '</b> <span class="poh-m">' + dt(e.at) + ' · ' + esc(e.by || '—') + (e.approved_by ? ' · approved by ' + esc(e.approved_by) : '') + esc(money) + '</span></div>'
+      + (ch.length ? '<ul>' + ch.map(function(c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '')
+      + '</div></div>';
+  }).join('') + '</div>';
+}
+async function renderPoHistorySection(poNumber) {
+  var box = document.getElementById('pod-history'); if (!box) return;
+  box.innerHTML = _poHistHtml(poNumber, _poHistCache[poNumber] || []);
+  var rows = await loadPoHistory(poNumber);
+  if (_poDetailNumber === String(poNumber) && document.getElementById('pod-history')) document.getElementById('pod-history').innerHTML = _poHistHtml(poNumber, rows);
 }
 
 // ─── PO DETAILS (staggered deliveries) ─────────────────────────────────────
@@ -10131,7 +10222,9 @@ function renderPoDetail() {
       + '</tbody></table></div>';
   }
   html += _poInvoicesHtml(poNumber, d.lines.length > 0 && d.linesDone === d.lines.length);
+  html += '<div id="pod-history"></div>';
   body.innerHTML = html;
+  renderPoHistorySection(poNumber);
 
   var prevBtn = document.getElementById('pod-preview-btn');
   if (prevBtn) { prevBtn.style.display = po ? '' : 'none'; prevBtn.onclick = po ? function() { previewPo(po.id); } : null; }
@@ -10151,7 +10244,7 @@ function renderPoDetail() {
   }
   var editBtn = document.getElementById('pod-edit-btn');
   if (editBtn) {
-    var canEdit = po && currentRole === 'superuser';
+    var canEdit = po && _canEditPo() && !poCancelInfo(poNumber);
     editBtn.style.display = canEdit ? '' : 'none';
     editBtn.onclick = canEdit ? function() { closeModal('po-detail-modal'); openEditPoModal(po.id); } : null;
   }
@@ -10704,6 +10797,7 @@ async function saveReorderCart(generatePdf) {
         + '\n\nTotals and stock costs are already correct either way.');
     }
     logAudit('Purchase Order generated', poNumber + ' — ' + supplier + ' (' + poCart.length + ' item' + (poCart.length===1?'':'s') + ')');
+    poHistoryAdd(poNumber, 'created', { approvedBy: approvedBy, totalAfter: totalPayable, changes: [supplier + ' · ' + (poCart.length + customCart.length) + ' line(s)'] });
     buildPurchaseOrderPdf(poRecord, lineItems);
   } else {
     logAudit('Reorder created', supplier + ' — ' + newReorders.length + ' item' + (newReorders.length===1?'':'s'));
@@ -10752,7 +10846,7 @@ function renderPoHistory() {
       + '<td><button class="btn btn-secondary btn-sm" onclick="openPoDetail(\'' + esc(String(po.poNumber)) + '\')">📋 Details</button>'
       + ' <button class="btn btn-secondary btn-sm" onclick="previewPo(\'' + po.id + '\')">👁 Preview</button>'
       + ' <button class="btn btn-secondary btn-sm" onclick="redownloadPo(\'' + po.id + '\')">⬇ Download PDF</button>'
-      + (currentRole === 'superuser' ? ' <button class="btn btn-icon btn-sm" title="Edit PO" onclick="openEditPoModal(\'' + po.id + '\')">✏️</button>' : '')
+      + (_canEditPo() && !poCancelInfo(po.poNumber) ? ' <button class="btn btn-icon btn-sm" title="Edit PO" onclick="openEditPoModal(\'' + po.id + '\')">✏️</button>' : '')
       + (currentRole === 'superuser' ? ' <button class="btn btn-icon btn-sm btn-danger" title="Delete PO" onclick="deletePoByNumber(\'' + esc(String(po.poNumber)) + '\')">🗑</button>' : '')
       + '</td>'
       + '</tr>';
@@ -10890,7 +10984,7 @@ function _poEditChanges(before, afterHeader, afterLines, removedReorderIds) {
     changes.push(PO_HEADER_LABELS[k] + ': ' + fmtV(a) + ' → ' + fmtV(b));
   });
   function lineDiff(o, n) {
-    if (o.qty !== n.qty) changes.push(n.name + ': qty ' + fmtInt(o.qty) + ' → ' + fmtInt(n.qty) + (n.unit ? ' ' + n.unit : ''));
+    if (o.qty !== n.qty) changes.push(n.name + ': qty ' + fmtInt(o.qty) + ' → ' + fmtInt(n.qty) + (n.unit ? ' ' + _plural(n.unit, n.qty) : ''));
     if (o.cost !== n.cost) changes.push(n.name + ': unit cost ' + fmtPHP(o.cost) + ' → ' + fmtPHP(n.cost));
   }
   before.lines.forEach(function(o) {
@@ -10927,8 +11021,9 @@ function renderPoRevisionHistory(po) {
     }).join('');
 }
 
+function _canEditPo() { return currentRole === 'superuser' || (currentRole === 'user' && can('edit_po')); }
 function openEditPoModal(id) {
-  if (currentRole !== 'superuser') return;
+  if (!_canEditPo()) return;
   var po = (db.purchaseOrders || []).find(function(p) { return p.id === id; });
   if (!po) { alert('Purchase Order record not found.'); return; }
 
@@ -10958,6 +11053,7 @@ function openEditPoModal(id) {
   // Snapshot of the PO as opened, so saving can list exactly what changed
   // for the revision record (see _poEditChanges).
   poEditOriginal = {
+    rev: parseInt(po.revision, 10) || 0,
     header: _poHeaderSnapshot(po),
     lines: poEditLines.map(function(l) { return { source: l.source, reorderId: l.reorderId, origIdx: l.origIdx, name: l.name, unit: l.unit, qty: l.qty, cost: l.cost }; }),
   };
@@ -11160,6 +11256,11 @@ async function savePoEdit() {
   }, poEditLines, poEditRemovedReorderIds) : [];
   if (changes.length) {
     if (!approvedBy) { alert('Enter who approved this revision in "Approved by".'); return; }
+    // A User can't approve their own change (a superuser still can)
+    if (currentRole !== 'superuser' && _sameApprover(approvedBy, (currentUser && currentUser.username) || '')) {
+      alert('You can\'t approve your own PO change. Enter the name of the person who approved it (e.g. your supervisor).');
+      document.getElementById('poe-approved-by').focus(); return;
+    }
     var confirmEl = document.getElementById('poe-approval-confirm');
     if (confirmEl && !confirmEl.checked) {
       alert('Tick the box confirming ' + approvedBy + ' approved these changes:\n\n• ' + changes.join('\n• '));
@@ -11167,6 +11268,18 @@ async function savePoEdit() {
     }
   }
   var revColsOK = changes.length ? await _probePoRevCols() : _poRevColsOK;
+  // Someone else revised this PO after it was opened here? Don't overwrite their change.
+  if (changes.length && revColsOK && sb) {
+    try {
+      var fresh = await sb.from('purchase_orders').select('revision, revisions').eq('id', po.id).single();
+      var liveRev = fresh && fresh.data ? (parseInt(fresh.data.revision, 10) || 0) : 0;
+      if (poEditOriginal && liveRev > poEditOriginal.rev) {
+        var last = Array.isArray(fresh.data.revisions) && fresh.data.revisions.length ? fresh.data.revisions[fresh.data.revisions.length - 1] : null;
+        alert(po.poNumber + ' was changed by ' + ((last && last.by) || 'someone else') + ' (Rev ' + liveRev + ') after you opened it.\n\nNothing was saved. Close this, refresh, and make your change again on the latest version.');
+        return;
+      }
+    } catch (e) { /* offline: carry on, the history still records this save */ }
+  }
   var vatColOK = vatEx ? await _probePoVatCol() : _poVatColOK;
 
   rememberSupplier(supplier, supplierAddress, supplierTin);
@@ -11227,6 +11340,7 @@ async function savePoEdit() {
 
   var subtotal = _c2(poEditLines.reduce(function(s, l) { return s + _c2((l.qty || 0) * (l.cost || 0) * vf); }, 0));
   var total = subtotal + shipCost + other - discount;
+  var _poEditTotalBefore = parseFloat(po.total) || 0;
 
   po.supplier = supplier; po.supplierAddress = supplierAddress; po.supplierTin = supplierTin;
   po.shipMethod = shipMethod; po.shipTerms = shipTerms; po.delivery = delivery;
@@ -11252,6 +11366,7 @@ async function savePoEdit() {
       }]);
     }
     logAudit('Purchase Order revised', po.poNumber + ' Rev ' + rev + ' (approved by ' + approvedBy + '): ' + changes.join('; '));
+    poHistoryAdd(po.poNumber, 'revised', { rev: rev, approvedBy: approvedBy, changes: changes, totalBefore: _poEditTotalBefore, totalAfter: total });
     if (revColsOK === false) {
       alert('Changes saved, but the revision number and history could not be stored yet: the purchase_orders table needs two new columns. '
         + 'Ask whoever manages Supabase to run this in the SQL Editor, then future edits will be numbered:\n\n' + PO_REV_SQL
@@ -11302,6 +11417,7 @@ function deletePoByNumber(poNumber) {
         _sbDeletePurchaseOrder(po.id);
       }
       logAudit('Purchase Order deleted', poNumber + (supplier ? ' — ' + supplier : '') + ' (' + affected.length + ' item' + (affected.length === 1 ? '' : 's') + ')');
+      poHistoryAdd(poNumber, 'deleted', { totalBefore: po ? (parseFloat(po.total) || 0) : null, changes: [(supplier || '') + ' · ' + affected.length + ' line(s) removed'] });
       updateSummary();
       renderReorder();
       if (document.getElementById('po-history-tbody')) renderPoHistory();
@@ -21221,6 +21337,7 @@ async function aiGeneratePO(input) {
   };
   db.purchaseOrders.push(poRecord);
   logAudit('Purchase Order generated (Shelfie)', poNumber + ' — ' + supplier + ' (' + cart.length + ' item' + (cart.length === 1 ? '' : 's') + ')');
+  poHistoryAdd(poNumber, 'created', { approvedBy: approvedBy, totalAfter: totalPayable, changes: [supplier + ' · ' + cart.length + ' line(s) · created with Shelfie'] });
   save();
   renderReorder();
   updateSummary();
