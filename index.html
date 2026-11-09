@@ -16231,12 +16231,27 @@ function _chSessions() {
     if (d < 0) v.short += c; else if (d > 0) v.excess += c;
     v.byItem[l.itemId] = d < 0 ? -c : c;
   });
-  return (db.reconciliations || []).filter(_chIsCountSheet).filter(function(r) {
+  // Count sheets whose session record never reached the server (older
+  // versions, or a failed save) are rebuilt from their adjustments — only
+  // items that had a difference are known for those.
+  var recs = (db.reconciliations || []).filter(_chIsCountSheet), have = {};
+  recs.forEach(function(r) { have[r.id] = 1; });
+  var rebuilt = {};
+  db.logs.forEach(function(l) {
+    var m = /^count:(.+)$/.exec(String(l.ref || '')); if (!m || have[m[1]]) return;
+    var it = db.items.find(function(i) { return i.id === l.itemId; });
+    var R = rebuilt[m[1]] || (rebuilt[m[1]] = { id: m[1], asOfDate: l.date, createdBy: l.by || '', createdAt: l.date, partial: true, lines: [] });
+    var d = adjustDelta(l), counted = l.absQty != null ? l.absQty : l.qty;
+    R.lines.push({ itemId: l.itemId, itemName: it ? it.name : 'Deleted item', sku: it ? (it.sku || '') : '', unit: it ? (it.unit || '') : '',
+      systemQty: l.sysQty != null ? l.sysQty : counted - d, countedQty: counted, variance: d, reason: 'Count sheet' + (/recounted/.test(l.notes || '') ? ' — recounted' : '') });
+  });
+  Object.keys(rebuilt).forEach(function(k) { recs.push(rebuilt[k]); });
+  return recs.filter(function(r) {
     return new Date(r.asOfDate || r.createdAt).getTime() >= since;
   }).map(function(r) {
     var v = val[r.id] || { short: 0, excess: 0, byItem: {} };
     var lines = r.lines || [];
-    return { rec: r, at: r.asOfDate || r.createdAt, booked: r.createdAt, by: r.createdBy || '—', n: lines.length,
+    return { rec: r, partial: !!r.partial, at: r.asOfDate || r.createdAt, booked: r.createdAt, by: r.createdBy || '—', n: lines.length,
       adjusted: lines.filter(function(x) { return (x.variance || 0) !== 0; }).length,
       recounted: lines.filter(function(x) { return /recounted/.test(x.reason || ''); }).length,
       short: v.short, excess: v.excess, byItem: v.byItem };
@@ -16276,6 +16291,7 @@ function renderCountHistory() {
     body.innerHTML = '<div style="margin-bottom:6px"><a href="#" onclick="event.preventDefault();_ch.open=null;renderCountHistory()" style="font-size:13px">← All counts</a></div>'
       + '<h2 style="margin-bottom:2px">Count by ' + esc(S.by) + '</h2>'
       + '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Counted for ' + _chDt(S.at) + (S.booked && S.booked !== S.at ? ' · booked ' + _chDt(S.booked) : '') + '</div>'
+      + (S.partial ? '<div style="font-size:12px;background:#fef3c7;color:#92400e;border-radius:8px;padding:6px 10px;margin-bottom:10px">Rebuilt from its stock adjustments: only items that had a difference are shown. Items counted with no difference weren\'t recorded for this count.</div>' : '')
       + '<div class="ch-stats">' + [[fmtInt(S.n), 'items counted'], [fmtInt(S.adjusted), 'with a difference'], [_chPeso(S.short, -1), 'shortage'], [_chPeso(S.excess, 1), 'excess'], [fmtInt(S.recounted), 'recounted']].map(function(x) { return '<div><b>' + x[0] + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>'
       + '<input type="search" placeholder="Search item in this count…" value="' + esc(_ch.q) + '" oninput="_ch.q=this.value;renderCountHistory();var e=document.querySelector(\'#ch-body input[type=search]\');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="margin-bottom:10px">'
       + '<div class="table-wrap" style="max-height:52vh;overflow-y:auto"><table><thead><tr><th>Item</th><th style="text-align:right">System</th><th style="text-align:right">Counted</th><th style="text-align:right">Difference</th><th style="text-align:right">Value</th><th>Notes</th></tr></thead><tbody>'
@@ -16317,7 +16333,7 @@ function renderCountHistory() {
     var ss = days[k], s1 = ss.reduce(function(a, S) { a.n += S.n; a.s += S.short; a.e += S.excess; return a; }, { n: 0, s: 0, e: 0 });
     html += '<div class="ch-day"><div class="ch-day-h"><b>' + _chDt(ss[0].at, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + '</b><span>' + ss.length + ' count' + (ss.length === 1 ? '' : 's') + ' · ' + fmtInt(s1.n) + ' item' + (s1.n === 1 ? '' : 's') + ' · shortage ' + _chPeso(s1.s, -1) + ' · excess ' + _chPeso(s1.e, 1) + '</span></div>'
       + ss.map(function(S) {
-          return '<div class="ch-row" onclick="chOpen(' + _q(S.rec.id).replace(/"/g, '&quot;') + ')"><div class="ch-who"><span class="ch-av">' + esc(String(S.by).replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase()) + '</span><div><b>' + esc(S.by) + '</b><div class="ch-sub">' + _chDt(S.booked || S.at, { hour: 'numeric', minute: '2-digit', hour12: true }) + ' · ' + fmtInt(S.n) + ' item' + (S.n === 1 ? '' : 's') + ' · ' + fmtInt(S.adjusted) + ' with a difference' + (S.recounted ? ' · ' + S.recounted + ' recounted' : '') + '</div></div></div>'
+          return '<div class="ch-row" onclick="chOpen(' + _q(S.rec.id).replace(/"/g, '&quot;') + ')"><div class="ch-who"><span class="ch-av">' + esc(String(S.by).replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase()) + '</span><div><b>' + esc(S.by) + '</b><div class="ch-sub">' + _chDt(S.booked || S.at, { hour: 'numeric', minute: '2-digit', hour12: true }) + ' · ' + fmtInt(S.n) + ' item' + (S.n === 1 ? '' : 's') + ' · ' + fmtInt(S.adjusted) + ' with a difference' + (S.recounted ? ' · ' + S.recounted + ' recounted' : '') + (S.partial ? ' · differences only' : '') + '</div></div></div>'
             + '<div class="ch-val"><span style="color:var(--danger)">' + _chPeso(S.short, -1) + '</span><span style="color:var(--ok)">' + _chPeso(S.excess, 1) + '</span></div><span class="ch-go">›</span></div>';
         }).join('') + '</div>';
   });
