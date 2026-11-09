@@ -1111,6 +1111,20 @@ body.sb2 .rl-av { width: 26px !important; height: 26px !important; background: #
 body.sb2 .rl-nm { font-size: 12.5px !important; color: #e5e7eb !important; max-width: 140px !important; }
 body.sb2 #login-card { border-radius: 16px !important; padding: 26px 26px 24px !important; box-shadow: 0 24px 60px rgba(0,0,0,.5) !important; border: none !important; }
 
+/* Count history */
+.ch-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.ch-stats div { background: var(--surface2); border-radius: 10px; padding: 9px 12px; }
+.ch-stats b { display: block; font-size: 18px; } .ch-stats span { font-size: 12px; color: var(--muted); }
+.ch-day { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+.ch-day-h { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; padding: 9px 14px; background: var(--surface2); font-size: 13px; }
+.ch-day-h span { font-size: 12px; color: var(--muted); }
+.ch-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid #f1f2f4; cursor: pointer; }
+.ch-row:hover { background: var(--surface2); }
+.ch-who { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; font-size: 13px; }
+.ch-av { width: 30px; height: 30px; border-radius: 50%; background: #dcfce7; color: #15803d; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ch-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.ch-val { display: flex; flex-direction: column; align-items: flex-end; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.ch-go { color: var(--muted); font-size: 18px; }
 /* PO history timeline */
 .poh { position: relative; padding-left: 4px; }
 .poh-e { display: flex; gap: 10px; font-size: 13px; padding: 7px 0; border-top: 1px solid #f1f2f4; }
@@ -1561,6 +1575,7 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
   <div id="cons-tools" class="nav-tools">
     <button type="button" id="btn-stocktake-lock" class="nav-item nav-tool" onclick="toggleStocktakeLock()" style="display:none"><span class="em">🔒 </span><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Lock for Stocktake</span></button>
     <button type="button" id="btn-count-sheet" class="nav-item nav-tool" onclick="openCountSheet()" style="display:none"><span class="em">📋 </span><svg class="i" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 12h6M9 16h4"/></svg><span>Count Sheet</span></button>
+    <button type="button" id="btn-count-history" class="nav-item nav-tool" onclick="openCountHistory()" style="display:none"><span class="em">🕘 </span><svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg><span>Count History</span></button>
     <button type="button" id="btn-testmode-settings" class="nav-item nav-tool" onclick="openSettings()" style="display:none"><span class="em">🧪 </span><svg class="i" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3"/><path d="M7 15h10"/></svg><span>Test Mode</span></button>
   </div>
   <div id="ng-assets" style="display:none">
@@ -15640,6 +15655,8 @@ function applyStocktakeLock() {
   if (bannerCountBtn) bannerCountBtn.style.display = (stocktakeLock && canManageStocktake()) ? '' : 'none';
   var countSheetBtn = document.getElementById('btn-count-sheet');
   if (countSheetBtn) countSheetBtn.style.display = canManageStocktake() ? '' : 'none';
+  var countHistBtn = document.getElementById('btn-count-history');
+  if (countHistBtn) countHistBtn.style.display = canManageStocktake() ? '' : 'none';
   var sidebarLockBtn = document.getElementById('btn-stocktake-lock');
   if (sidebarLockBtn) {
     sidebarLockBtn.style.display = canManageStocktake() ? '' : 'none';
@@ -16195,6 +16212,127 @@ async function csBook() {
   if (typeof updateSummary === 'function') updateSummary();
 }
 
+// ─── COUNT HISTORY (every booked count sheet, every person) ─────────────────
+// Each booked count sheet is saved as a session (reconciliations table, shared
+// by all devices) with every item's system qty, counted qty and difference,
+// and its adjustments carry the exact FIFO peso value (logs ref "count:<id>").
+// This view lists them by count day and counter, opens any session line by
+// line, and follows one item across counts. Unbooked counts stay on the
+// counter's own phone until they're booked, so they don't appear here.
+var _ch = { days: 28, who: '', q: '', open: null };
+function _chIsCountSheet(rec) { return !!rec && Array.isArray(rec.lines) && rec.lines.length > 0 && /^Count sheet/.test(String(rec.lines[0].reason || '')); }
+function _chSessions() {
+  var since = _ch.days ? Date.now() - _ch.days * 86400000 : 0;
+  var val = {};
+  db.logs.forEach(function(l) {
+    var m = /^count:(.+)$/.exec(String(l.ref || '')); if (!m) return;
+    var v = val[m[1]] || (val[m[1]] = { short: 0, excess: 0, byItem: {} });
+    var c = Math.abs(parseFloat(l.costAmount) || 0), d = adjustDelta(l);
+    if (d < 0) v.short += c; else if (d > 0) v.excess += c;
+    v.byItem[l.itemId] = d < 0 ? -c : c;
+  });
+  return (db.reconciliations || []).filter(_chIsCountSheet).filter(function(r) {
+    return new Date(r.asOfDate || r.createdAt).getTime() >= since;
+  }).map(function(r) {
+    var v = val[r.id] || { short: 0, excess: 0, byItem: {} };
+    var lines = r.lines || [];
+    return { rec: r, at: r.asOfDate || r.createdAt, booked: r.createdAt, by: r.createdBy || '—', n: lines.length,
+      adjusted: lines.filter(function(x) { return (x.variance || 0) !== 0; }).length,
+      recounted: lines.filter(function(x) { return /recounted/.test(x.reason || ''); }).length,
+      short: v.short, excess: v.excess, byItem: v.byItem };
+  }).sort(function(a, b) { return String(b.at).localeCompare(String(a.at)); });
+}
+function openCountHistory() {
+  if (!canManageStocktake()) return;
+  var bg = document.getElementById('ch-modal');
+  if (!bg) {
+    bg = document.createElement('div'); bg.id = 'ch-modal'; bg.className = 'modal-bg';
+    bg.innerHTML = '<div class="modal" style="max-width:920px"><div id="ch-body"></div><div class="modal-actions">'
+      + '<button class="btn btn-secondary" onclick="exportCountHistoryCSV()">Export CSV</button>'
+      + '<button class="btn btn-primary" onclick="closeModal(\'ch-modal\')">Close</button></div></div>';
+    bg.addEventListener('click', function(e) { if (e.target === bg) closeModal('ch-modal'); });
+    document.body.appendChild(bg);
+    var m = bg.querySelector('.modal'), g = document.createElement('div'); g.className = 'mo-grab'; m.insertBefore(g, m.firstChild);
+  }
+  _ch.open = null;
+  renderCountHistory();
+  openModal('ch-modal');
+}
+function chOpen(id) { _ch.open = id; renderCountHistory(); var m = document.querySelector('#ch-modal .modal'); if (m) m.scrollTop = 0; }
+function _chDt(iso, opt) { return new Date(iso).toLocaleString('en-PH', opt || { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }); }
+function _chPeso(v, sign) { return v ? (sign < 0 ? '−' : '+') + fmtPHP(Math.round(v * 100) / 100) : '—'; }
+function renderCountHistory() {
+  var body = document.getElementById('ch-body'); if (!body) return;
+  var all = _chSessions();
+  var people = []; all.forEach(function(s) { if (people.indexOf(s.by) === -1) people.push(s.by); });
+  var list = _ch.who ? all.filter(function(s) { return s.by === _ch.who; }) : all;
+  // One session, line by line
+  if (_ch.open) {
+    var S = all.find(function(x) { return x.rec.id === _ch.open; });
+    if (!S) { _ch.open = null; return renderCountHistory(); }
+    var q = (_ch.q || '').toLowerCase();
+    var lines = (S.rec.lines || []).filter(function(l) { return !q || String(l.itemName + ' ' + (l.sku || '')).toLowerCase().indexOf(q) !== -1; })
+      .slice().sort(function(a, b) { return Math.abs(S.byItem[b.itemId] || 0) - Math.abs(S.byItem[a.itemId] || 0) || Math.abs(b.variance || 0) - Math.abs(a.variance || 0); });
+    body.innerHTML = '<div style="margin-bottom:6px"><a href="#" onclick="event.preventDefault();_ch.open=null;renderCountHistory()" style="font-size:13px">← All counts</a></div>'
+      + '<h2 style="margin-bottom:2px">Count by ' + esc(S.by) + '</h2>'
+      + '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Counted for ' + _chDt(S.at) + (S.booked && S.booked !== S.at ? ' · booked ' + _chDt(S.booked) : '') + '</div>'
+      + '<div class="ch-stats">' + [[fmtInt(S.n), 'items counted'], [fmtInt(S.adjusted), 'with a difference'], [_chPeso(S.short, -1), 'shortage'], [_chPeso(S.excess, 1), 'excess'], [fmtInt(S.recounted), 'recounted']].map(function(x) { return '<div><b>' + x[0] + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>'
+      + '<input type="search" placeholder="Search item in this count…" value="' + esc(_ch.q) + '" oninput="_ch.q=this.value;renderCountHistory();var e=document.querySelector(\'#ch-body input[type=search]\');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="margin-bottom:10px">'
+      + '<div class="table-wrap" style="max-height:52vh;overflow-y:auto"><table><thead><tr><th>Item</th><th style="text-align:right">System</th><th style="text-align:right">Counted</th><th style="text-align:right">Difference</th><th style="text-align:right">Value</th><th>Notes</th></tr></thead><tbody>'
+      + lines.map(function(l) {
+          var d = l.variance || 0, pv = S.byItem[l.itemId] || 0, col = d < 0 ? 'var(--danger)' : d > 0 ? 'var(--ok)' : 'var(--muted)';
+          var note = String(l.reason || '').replace(/^Count sheet\s*/, '').replace(/^—\s*/, '');
+          return '<tr><td><strong>' + esc(l.itemName) + '</strong>' + (l.sku ? '<div style="font-size:11px;color:var(--muted)">' + esc(l.sku) + '</div>' : '') + '</td>'
+            + '<td style="text-align:right">' + fmt(l.systemQty) + '</td><td style="text-align:right;font-weight:600">' + fmt(l.countedQty) + ' <span style="color:var(--muted);font-weight:400">' + esc(l.unit || '') + '</span></td>'
+            + '<td style="text-align:right;font-weight:600;color:' + col + '">' + (d > 0 ? '+' : d < 0 ? '−' : '') + fmt(Math.abs(d)) + '</td>'
+            + '<td style="text-align:right;color:' + col + '">' + (pv ? _chPeso(Math.abs(pv), pv) : '—') + '</td>'
+            + '<td style="font-size:12px;color:var(--muted)">' + esc(note.replace(/^\(|\)$/g, '')) + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    return;
+  }
+  var q2 = (_ch.q || '').trim().toLowerCase();
+  var head = '<h2 style="margin-bottom:2px">Count History</h2><div style="font-size:12px;color:var(--muted);margin-bottom:12px">Every booked count sheet from every counter. Counts that haven\'t been booked yet stay on the counter\'s phone.</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+    + '<select onchange="_ch.days=+this.value;renderCountHistory()" style="width:auto">' + [[7, 'Last 7 days'], [28, 'Last 4 weeks'], [90, 'Last 3 months'], [365, 'Last 12 months'], [0, 'All time']].map(function(o) { return '<option value="' + o[0] + '"' + (_ch.days === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>'
+    + '<select onchange="_ch.who=this.value;renderCountHistory()" style="width:auto;max-width:220px"><option value="">All counters</option>' + people.map(function(p) { return '<option' + (_ch.who === p ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select>'
+    + '<input type="search" placeholder="Follow one item across counts…" value="' + esc(_ch.q) + '" oninput="_ch.q=this.value;renderCountHistory();var e=document.querySelector(\'#ch-body input[type=search]\');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="flex:1;min-width:180px"></div>';
+  if (!list.length) { body.innerHTML = head + '<div style="color:var(--muted);font-size:13px;padding:10px 0">No booked counts in this period.</div>'; return; }
+  // Item mode: one item across every count
+  if (q2) {
+    var hits = [];
+    list.forEach(function(S) { (S.rec.lines || []).forEach(function(l) { if (String(l.itemName + ' ' + (l.sku || '')).toLowerCase().indexOf(q2) !== -1) hits.push({ S: S, l: l }); }); });
+    body.innerHTML = head + (hits.length ? '<div class="table-wrap" style="max-height:56vh;overflow-y:auto"><table><thead><tr><th>Counted for</th><th>Item</th><th>Counter</th><th style="text-align:right">System</th><th style="text-align:right">Counted</th><th style="text-align:right">Difference</th><th style="text-align:right">Value</th></tr></thead><tbody>'
+      + hits.map(function(h) { var d = h.l.variance || 0, pv = h.S.byItem[h.l.itemId] || 0, col = d < 0 ? 'var(--danger)' : d > 0 ? 'var(--ok)' : 'var(--muted)';
+          return '<tr style="cursor:pointer" onclick="chOpen(' + _q(h.S.rec.id).replace(/"/g, '&quot;') + ')"><td style="white-space:nowrap">' + _chDt(h.S.at) + '</td><td>' + esc(h.l.itemName) + '</td><td>' + esc(h.S.by) + '</td><td style="text-align:right">' + fmt(h.l.systemQty) + '</td><td style="text-align:right;font-weight:600">' + fmt(h.l.countedQty) + '</td>'
+            + '<td style="text-align:right;font-weight:600;color:' + col + '">' + (d > 0 ? '+' : d < 0 ? '−' : '') + fmt(Math.abs(d)) + '</td><td style="text-align:right;color:' + col + '">' + (pv ? _chPeso(Math.abs(pv), pv) : '—') + '</td></tr>'; }).join('')
+      + '</tbody></table></div>' : '<div style="color:var(--muted);font-size:13px">No counts of "' + esc(_ch.q) + '" in this period.</div>');
+    return;
+  }
+  // Grouped by count day
+  var tot = list.reduce(function(a, S) { a.n += S.n; a.s += S.short; a.e += S.excess; return a; }, { n: 0, s: 0, e: 0 });
+  var dayKey = function(S) { return _phYmd(new Date(S.at)); }, days = {}, order = [];
+  list.forEach(function(S) { var k = dayKey(S); if (!days[k]) { days[k] = []; order.push(k); } days[k].push(S); });
+  var html = head + '<div class="ch-stats">' + [[fmtInt(order.length), 'count days'], [fmtInt(list.length), 'counts booked'], [fmtInt(_ch.who ? 1 : people.length), _ch.who ? 'counter' : 'counters'], [_chPeso(tot.s, -1), 'shortage'], [_chPeso(tot.e, 1), 'excess']].map(function(x) { return '<div><b>' + x[0] + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>';
+  order.forEach(function(k) {
+    var ss = days[k], s1 = ss.reduce(function(a, S) { a.n += S.n; a.s += S.short; a.e += S.excess; return a; }, { n: 0, s: 0, e: 0 });
+    html += '<div class="ch-day"><div class="ch-day-h"><b>' + _chDt(ss[0].at, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + '</b><span>' + ss.length + ' count' + (ss.length === 1 ? '' : 's') + ' · ' + fmtInt(s1.n) + ' item' + (s1.n === 1 ? '' : 's') + ' · shortage ' + _chPeso(s1.s, -1) + ' · excess ' + _chPeso(s1.e, 1) + '</span></div>'
+      + ss.map(function(S) {
+          return '<div class="ch-row" onclick="chOpen(' + _q(S.rec.id).replace(/"/g, '&quot;') + ')"><div class="ch-who"><span class="ch-av">' + esc(String(S.by).replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase()) + '</span><div><b>' + esc(S.by) + '</b><div class="ch-sub">' + _chDt(S.booked || S.at, { hour: 'numeric', minute: '2-digit', hour12: true }) + ' · ' + fmtInt(S.n) + ' item' + (S.n === 1 ? '' : 's') + ' · ' + fmtInt(S.adjusted) + ' with a difference' + (S.recounted ? ' · ' + S.recounted + ' recounted' : '') + '</div></div></div>'
+            + '<div class="ch-val"><span style="color:var(--danger)">' + _chPeso(S.short, -1) + '</span><span style="color:var(--ok)">' + _chPeso(S.excess, 1) + '</span></div><span class="ch-go">›</span></div>';
+        }).join('') + '</div>';
+  });
+  body.innerHTML = html;
+}
+function exportCountHistoryCSV() {
+  var list = _chSessions(); if (_ch.who) list = list.filter(function(s) { return s.by === _ch.who; });
+  if (_ch.open) list = list.filter(function(s) { return s.rec.id === _ch.open; });
+  var out = [['Counted for', 'Booked', 'Counter', 'Item', 'SKU', 'Unit', 'System qty', 'Counted qty', 'Difference', 'Value (PHP)', 'Notes'].join(',')];
+  list.forEach(function(S) { (S.rec.lines || []).forEach(function(l) {
+    out.push([new Date(S.at).toISOString(), S.booked ? new Date(S.booked).toISOString() : '', _csvQ(S.by), _csvQ(l.itemName), _csvQ(l.sku || ''), _csvQ(l.unit || ''), l.systemQty, l.countedQty, l.variance || 0, Math.round((S.byItem[l.itemId] || 0) * 100) / 100, _csvQ(l.reason || '')].join(','));
+  }); });
+  _csvDownload(out, 'count_history_' + new Date().toISOString().slice(0, 10) + '.csv');
+}
+
 // Counts are dated just before the lock, which is the end of the week being
 // closed — once the lock has started a new week, that is "last week".
 function _csWeekPreset(dateIso) {
@@ -16211,6 +16349,7 @@ function _csDoneHtml() {
     + (r.failed && r.failed.length ? '<div style="background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 10px;font-size:13px;margin-top:10px">⚠️ Could not save to the server for: ' + r.failed.map(esc).join(', ') + '. They were saved locally and will retry on the next sync — check the Variance report after a refresh.</div>' : '')
     + (stocktakeLock ? '<div style="font-size:13px;margin-top:12px">Once every category is counted and booked, unlock the stocktake so issuing and receiving can resume.</div>' : '')
     + '<div class="modal-actions">'
+    + '<button class="btn btn-secondary" onclick="closeModal(\'count-sheet-modal\');openCountHistory()">Count History</button>'
     + '<button class="btn btn-secondary" onclick="closeModal(\'count-sheet-modal\');switchTab(\'report\');setRptPreset(\'' + _csWeekPreset(r.date) + '\')">View in Cost Report</button>'
     + (stocktakeLock ? '<button class="btn btn-secondary" onclick="closeModal(\'count-sheet-modal\');toggleStocktakeLock()">🔓 Unlock stocktake</button>' : '')
     + '<button class="btn btn-primary" onclick="closeModal(\'count-sheet-modal\')">Done</button></div>';
