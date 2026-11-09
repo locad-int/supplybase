@@ -12190,6 +12190,37 @@ function _rptSupplierFor(l) {
   return { supplier: n ? n[1].trim() : '', po: '' };
 }
 
+var _rptCountLogs = [];
+// Drill-down for a "Counted usage" row: every count that found a difference
+function openRptCountDetail(itemId) {
+  var item = db.items.find(function(i) { return i.id === itemId; }), unit = item ? (item.unit || '') : '';
+  var rows = _rptCountLogs.filter(function(l) { return l.itemId === itemId; }).sort(function(a, b) { return String(b.date).localeCompare(String(a.date)); });
+  var net = 0, val = 0;
+  var dt = function(iso) { return new Date(iso).toLocaleString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }); };
+  var body = rows.map(function(l) {
+    var d = adjustDelta(l), c = (l.costAmount != null) ? Math.abs(l.costAmount) : Math.abs(d) * (item ? (item.cost || 0) : 0);
+    net += -d; val += d < 0 ? c : -c;
+    var sys = l.sysQty != null ? l.sysQty : (l.absQty != null ? l.absQty - d : null), col = d < 0 ? 'var(--danger)' : 'var(--ok)';
+    return '<tr><td style="white-space:nowrap">' + dt(l.date) + '</td><td>' + esc(l.by || '—') + '</td><td>' + esc(/^count:/.test(l.ref || '') ? 'Count sheet' : (l.varianceReason || 'Adjustment')) + '</td>'
+      + '<td style="text-align:right">' + (sys != null ? fmt(sys) : '—') + '</td><td style="text-align:right">' + fmt(l.absQty != null ? l.absQty : l.qty) + '</td>'
+      + '<td style="text-align:right;font-weight:600;color:' + col + '">' + (d > 0 ? '+' : '−') + fmt(Math.abs(d)) + '</td><td style="text-align:right;color:' + col + '">' + (d < 0 ? '' : '−') + fmtPHP(Math.round(c * 100) / 100) + '</td></tr>';
+  }).join('');
+  var html = '<h2 style="margin-bottom:4px">' + esc(item ? item.name : 'Deleted Item') + '</h2>'
+    + '<div style="font-size:13px;color:var(--muted);margin-bottom:12px"><span class="badge" style="background:rgba(217,119,6,.10);color:#b45309">Counted usage</span> · ' + esc(_rptPeriodLabel()) + '</div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+    + [['Net used per counts', fmtInt(net) + ' ' + esc(unit)], ['Value', fmtPHP(Math.round(val * 100) / 100)], ['Counts with a difference', String(rows.length)]].map(function(c) { return '<div style="background:var(--surface2);border-radius:8px;padding:8px 12px;min-width:140px"><div style="font-size:11px;color:var(--muted)">' + c[0] + '</div><div style="font-size:16px;font-weight:700">' + c[1] + '</div></div>'; }).join('')
+    + '</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Stock that went missing between counts is treated as used (it wasn\'t logged as usage). Stock found at a count offsets it.</div>'
+    + '<div class="table-wrap" style="max-height:50vh;overflow-y:auto"><table><thead><tr><th>Counted</th><th>By</th><th>Source</th><th style="text-align:right">System</th><th style="text-align:right">Counted</th><th style="text-align:right">Difference</th><th style="text-align:right">Value</th></tr></thead><tbody>' + body + '</tbody></table></div>';
+  var bg = document.getElementById('rpt-count-modal');
+  if (!bg) {
+    bg = document.createElement('div'); bg.id = 'rpt-count-modal'; bg.className = 'modal-bg';
+    bg.innerHTML = '<div class="modal" style="max-width:820px"><div id="rpt-count-body"></div><div class="modal-actions"><button class="btn btn-primary" onclick="closeModal(\'rpt-count-modal\')">Close</button></div></div>';
+    bg.addEventListener('click', function(e) { if (e.target === bg) closeModal('rpt-count-modal'); });
+    document.body.appendChild(bg);
+  }
+  document.getElementById('rpt-count-body').innerHTML = html;
+  openModal('rpt-count-modal');
+}
 function openRptDetail(itemId, typeGroup) {
   var item = db.items.find(function(i) { return i.id === itemId; });
   var unit = item ? (item.unit || '') : '';
@@ -12386,6 +12417,27 @@ function renderReport() {
     map[key].entries++;
   });
 
+  // Usage caught by the count (count sheet / adjustments): one "Counted usage"
+  // row per item = shortages minus stock found, at the exact FIFO value booked.
+  // Much of the floor's usage is only recorded this way (daily counts), so
+  // without these rows the item table showed almost nothing.
+  var withCountRows = typeVal === 'all' || typeVal === 'use,damage';
+  _rptCountLogs = [];
+  if (withCountRows) db.logs.forEach(l => {
+    if (l.type !== 'adjust' || !isLogVisible(l) || !_rptInBounds(l.date, bounds)) return;
+    const item = db.items.find(i => i.id === l.itemId);
+    if (cat && item?.category !== cat) return;
+    const d = adjustDelta(l); if (!d) return;
+    const c = (l.costAmount !== undefined && l.costAmount !== null) ? Math.abs(l.costAmount) : Math.abs(d) * (item ? (item.cost || 0) : 0);
+    const key = l.itemId + '|count';
+    if (!map[key]) map[key] = { itemId: l.itemId, name: item?.name || 'Deleted Item', category: item?.category || '', unit: item?.unit || '', costPerUnit: item?.cost || 0, typeGroup: 'count', totalQty: 0, totalCost: 0, entries: 0, rates: {} };
+    map[key].totalQty += -d;                 // shortage counts as used, stock found offsets it
+    map[key].totalCost += d < 0 ? c : -c;
+    map[key].entries++;
+    _rptCountLogs.push(l);
+  });
+  Object.keys(map).forEach(k => { if (map[k].typeGroup === 'count' && !map[k].totalQty && Math.abs(map[k].totalCost) < 0.005) delete map[k]; });
+
   // Cost / Unit shows what was actually booked in this period (Total ÷ Qty),
   // not today's cost — the old column showed the current batch price, so
   // Qty × Cost/Unit didn't add up whenever earlier batches cost more or less.
@@ -12396,8 +12448,9 @@ function renderReport() {
   });
 
   let rows = Object.values(map);
-  const grandTotal = rows.reduce((s, r) => s + r.totalCost, 0);
-  const grandQty   = rows.filter(r => r.typeGroup === 'consumption').reduce((s, r) => s + r.totalQty, 0);
+  const grandTotal = rows.reduce((s, r) => s + Math.max(0, r.totalCost), 0);
+  const grandQty   = rows.filter(r => r.typeGroup === 'consumption' || r.typeGroup === 'count').reduce((s, r) => s + r.totalQty, 0);
+  const countTotal = rows.filter(r => r.typeGroup === 'count').reduce((s, r) => s + r.totalCost, 0);
   const restockTotal = rows.filter(r => r.typeGroup === 'restock').reduce((s, r) => s + r.totalCost, 0);
   const consumeTotal = rows.filter(r => r.typeGroup === 'consumption').reduce((s, r) => s + r.totalCost, 0);
 
@@ -12426,7 +12479,7 @@ function renderReport() {
   document.getElementById('rpt-total-restock-cost').textContent = fmtPHP(restockTotal);
   document.getElementById('rpt-total-qty').textContent = fmt(grandQty);
   document.getElementById('rpt-unique').textContent = [...new Set(rows.map(r => r.itemId))].length;
-  document.getElementById('rpt-entries').textContent = logs.length;
+  document.getElementById('rpt-entries').textContent = logs.length + (withCountRows && types.indexOf('adjust') === -1 ? _rptCountLogs.length : 0);
   // Before the early "no log data" return below, so non-catalog spend still
   // shows for a period with no inventory movements.
   renderNonCatalogExpenses();
@@ -12444,12 +12497,16 @@ function renderReport() {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
     tr.title = 'Click to see the entries behind this total';
-    tr.onclick = () => openRptDetail(r.itemId, r.typeGroup);
+    tr.onclick = () => r.typeGroup === 'count' ? openRptCountDetail(r.itemId) : openRptDetail(r.itemId, r.typeGroup);
     const isRestock = r.typeGroup === 'restock';
-    const typeBadge = isRestock
+    const typeBadge = r.typeGroup === 'count'
+      ? (r.totalCost < 0
+        ? '<span class="badge type-badge" title="More stock found at the count than the system expected" style="background:rgba(22,163,74,.10);color:#15803d;border:1px solid rgba(22,163,74,.2)">Found at count</span>'
+        : '<span class="badge type-badge" title="Usage caught by the inventory count (shortage), not logged as usage" style="background:rgba(217,119,6,.10);color:#b45309;border:1px solid rgba(217,119,6,.25)">Counted usage</span>')
+      : isRestock
       ? '<span class="badge type-badge restock" style="background:rgba(22,163,74,.12);color:#16a34a;border:1px solid rgba(22,163,74,.25)">Restock</span>'
       : '<span class="badge type-badge" style="background:rgba(220,38,38,.10);color:#dc2626;border:1px solid rgba(220,38,38,.2)">Consumption</span>';
-    const costColor = isRestock ? 'var(--ok)' : 'var(--danger)';
+    const costColor = isRestock ? 'var(--ok)' : (r.typeGroup === 'count' && r.totalCost < 0 ? 'var(--ok)' : 'var(--danger)');
     tr.innerHTML = `
       <td><strong>${esc(r.name)}</strong></td>
       <td>${r.category ? '<span class="badge badge-info">'+esc(r.category)+'</span>' : '<span style="color:var(--muted)">—</span>'}</td>
@@ -12457,7 +12514,7 @@ function renderReport() {
       <td>${esc(r.unit||'—')}</td>
       <td title="${r.rateKeys.length > 1 ? esc('Booked at: ' + r.rateKeys.map(k => fmtInt(r.rates[k]) + ' @ ₱' + k).join(', ') + ' · Current cost ₱' + (r.currentCost || 0)) : ''}">${r.costPerUnit ? fmtPHP(Math.round(r.costPerUnit * 100) / 100) + (r.rateKeys.length > 1 ? ' <span style="font-size:10px;color:var(--muted)">avg</span>' : '') : '<span style="color:var(--warn)">not set</span>'}${r.rateKeys.length > 1 ? '<div style="font-size:10px;color:var(--muted)">' + esc(r.rateKeys.map(k => fmtInt(r.rates[k]) + ' @ ₱' + k).join(' + ')) + '</div>' : ''}</td>
       <td style="font-weight:600">${fmt(r.totalQty)}</td>
-      <td class="cost-cell${isRestock ? ' restock' : ''}" style="font-weight:700;color:${costColor}">${r.costPerUnit ? fmtPHP(r.totalCost) : '—'}</td>
+      <td class="cost-cell${isRestock ? ' restock' : ''}" style="font-weight:700;color:${costColor}">${r.costPerUnit ? (r.totalCost < 0 ? '−' + fmtPHP(Math.abs(r.totalCost)) : fmtPHP(r.totalCost)) : '—'}</td>
       <td>${r.entries}</td>
       <td>
         <div class="stock-bar-wrap">
@@ -12475,7 +12532,7 @@ function renderReport() {
   tfoot.innerHTML = `
     <td colspan="5" class="total-label" style="text-align:right;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em">Total</td>
     <td>${fmt(grandQty)}</td>
-    <td style="font-size:1.05rem"><span class="cost-cell" style="color:var(--danger)">${fmtPHP(consumeTotal)}</span> <span style="color:var(--muted);font-size:11px">consumed</span><br><span style="color:var(--ok)">${fmtPHP(restockTotal)}</span> <span style="color:var(--muted);font-size:11px">restocked</span></td>
+    <td style="font-size:1.05rem"><span class="cost-cell" style="color:var(--danger)">${fmtPHP(Math.round((consumeTotal + countTotal) * 100) / 100)}</span> <span style="color:var(--muted);font-size:11px">consumed</span><br><span style="color:var(--ok)">${fmtPHP(restockTotal)}</span> <span style="color:var(--muted);font-size:11px">restocked</span></td>
     <td>${fmtInt(logs.length)}</td>
     <td>100%</td>`;
   tbody.appendChild(tfoot);
