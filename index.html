@@ -2683,6 +2683,13 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
         <label>Notes</label>
         <textarea id="f-notes" placeholder="Any additional info…"></textarea>
       </div>
+      <div class="form-group full" id="f-slack-wrap" style="display:none">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0"><input type="checkbox" id="f-slack" style="width:15px;height:15px;flex-shrink:0" onchange="_fSlackSync()"><span>💬 Show in Shelfie in Slack</span></label>
+        <div id="f-slack-brand-row" style="display:none;margin-top:8px">
+          <select id="f-slack-brand" style="font-size:13px" onchange="_fSlackSync()"></select>
+        </div>
+        <div id="f-slack-hint" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('item-modal')">Cancel</button>
@@ -3639,6 +3646,14 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
     <p style="color:var(--muted);font-size:13px;margin-bottom:4px">💬 <strong>Shelfie in Slack</strong></p>
     <p style="color:var(--muted);font-size:11px;margin-bottom:10px">Who asked Shelfie in Slack and when. What they asked isn't recorded.</p>
     <button type="button" class="btn btn-secondary" onclick="openShelfieUsage()" style="font-size:12px">View Slack usage</button>
+    <p style="color:var(--muted);font-size:12px;margin:14px 0 4px"><strong>Extra items Shelfie can see</strong></p>
+    <p style="color:var(--muted);font-size:11px;margin-bottom:8px">Shelfie in Slack already sees items whose name includes a partner brand. Add other items here (or tick "Show in Shelfie in Slack" when editing an item). <em>Shared</em> = general supplies CS can ask about; tagging a brand also lets that Brand account see the item in SupplyBase.</p>
+    <div style="position:relative;margin-bottom:8px">
+      <input type="text" id="ssi-search" placeholder="Type to add an item…" autocomplete="off"
+        oninput="filterSlackItemDropdown()" onfocus="filterSlackItemDropdown()" onblur="setTimeout(function(){var d=document.getElementById('ssi-dropdown');if(d)d.style.display='none';},180)">
+      <div id="ssi-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 8px 20px rgba(0,0,0,.15)"></div>
+    </div>
+    <div id="ssi-rows" style="display:flex;flex-direction:column;gap:6px"></div>
 
     <hr style="border:none;border-top:1px solid var(--border);margin:16px 0 12px">
     <p style="color:var(--muted);font-size:13px;margin-bottom:4px">🧪 <strong>Test Mode</strong></p>
@@ -6222,6 +6237,159 @@ function saveWrappedImage() {
 }
 
 // ─── SHELFIE IN SLACK · USAGE (superuser) ──────────────────────────────────
+// ─── Shelfie in Slack: extra items ───────────────────────────────────────────
+// Shelfie in Slack normally sees only items whose NAME contains a partner-brand
+// name. Superusers can add other items: tagged to one brand (that Brand account
+// then sees the item in SupplyBase too) or Shared ('' = general supplies CS can
+// ask about, not shown to Brand accounts). Stored in settings as
+// 'shelfieSlackItems' = {"<itemId>": "" | "<Brand>"}; the shelfie-slack
+// function reads the same key.
+var SLACK_ITEMS_KEY = 'shelfieSlackItems';
+var slackItems = {};
+function _normaliseSlackItems(v) {
+  var out = {};
+  if (v && typeof v === 'object' && !Array.isArray(v)) Object.keys(v).forEach(function(k) { if (k) out[k] = String(v[k] == null ? '' : v[k]).trim().slice(0, 80); });
+  return out;
+}
+function isSlackItem(id) { return !!id && Object.prototype.hasOwnProperty.call(slackItems, id); }
+// Brand choices: every brand on a Brand-role account (a "Brand Name" can list several, comma-separated)
+function slackBrandOptions() {
+  var seen = {};
+  (db.accounts || []).forEach(function(a) {
+    if (a && a.role === 'brand') String(a.brand || '').split(',').forEach(function(b) { b = b.trim(); if (b && !seen[b.toLowerCase()]) seen[b.toLowerCase()] = b; });
+  });
+  Object.keys(slackItems).forEach(function(id) { var b = slackItems[id]; if (b && !seen[b.toLowerCase()]) seen[b.toLowerCase()] = b; });
+  return Object.keys(seen).map(function(k) { return seen[k]; }).sort(function(a, b) { return a.localeCompare(b); });
+}
+function _slackBrandSelectHtml(cur, attrs) {
+  return '<select ' + attrs + ' style="font-size:13px">'
+    + '<option value=""' + (!cur ? ' selected' : '') + '>Shared (all brands)</option>'
+    + slackBrandOptions().map(function(b) { return '<option value="' + esc(b) + '"' + (b === cur ? ' selected' : '') + '>' + esc(b) + '</option>'; }).join('')
+    + '</select>';
+}
+// Does the item's name already include a partner brand? (Shelfie sees those anyway)
+function _slackNameBrand(item) {
+  var name = _brandKey(item && item.name);
+  if (!name) return '';
+  var hit = slackBrandOptions().filter(function(b) { return name.indexOf(_brandKey(b)) !== -1; })[0];
+  return hit || '';
+}
+async function saveSlackItems(next, auditDetail) {
+  if (currentRole !== 'superuser') return false;
+  var before = slackItems;
+  slackItems = _normaliseSlackItems(next);
+  try {
+    if (sb) {
+      await sb.from('settings').delete().eq('key', SLACK_ITEMS_KEY);
+      var r = await sb.from('settings').insert([{ key: SLACK_ITEMS_KEY, value: JSON.stringify(slackItems) }]);
+      if (r && r.error) throw new Error(r.error.message);
+    }
+    if (auditDetail) logAudit('Shelfie in Slack items', auditDetail);
+    if (typeof toastMsg === 'function') toastMsg('Shelfie in Slack items saved');
+  } catch(e) {
+    slackItems = before;
+    alert('Could not save Shelfie in Slack items: ' + e.message);
+    renderSlackItemsSettings();
+    return false;
+  }
+  renderSlackItemsSettings();
+  if (currentRole === 'brand') { renderInventory(); updateSummary(); }
+  return true;
+}
+function _slackLabel(b) { return b ? b : 'Shared'; }
+function renderSlackItemsSettings() {
+  var box = document.getElementById('ssi-rows');
+  if (!box) return;
+  var ids = Object.keys(slackItems);
+  var live = ids.map(function(id) { return db.items.find(function(i) { return i.id === id; }); }).filter(Boolean)
+    .sort(function(a, b) { return a.name.localeCompare(b.name); });
+  var stale = ids.length - live.length;
+  box.innerHTML = (live.length ? live.map(function(it) {
+    return '<div style="display:grid;grid-template-columns:1fr 170px auto;gap:8px;align-items:center;font-size:13px">'
+      + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(it.name) + '">' + esc(it.name) + '</span>'
+      + _slackBrandSelectHtml(slackItems[it.id], 'aria-label="Brand for ' + esc(it.name) + '" onchange="setSlackItemBrand(\'' + it.id + '\',this.value)"')
+      + '<button type="button" class="btn btn-secondary btn-sm" onclick="removeSlackItem(\'' + it.id + '\')" aria-label="Remove ' + esc(it.name) + '">Remove</button>'
+      + '</div>';
+  }).join('') : '<span style="font-size:12px;color:var(--muted);font-style:italic">No extra items yet</span>')
+    + (stale ? '<div style="font-size:12px;color:#92400e;margin-top:4px">' + stale + ' item' + (stale === 1 ? ' on this list was' : 's on this list were')
+      + ' deleted from the catalog. <button class="btn btn-secondary btn-sm" onclick="removeDeletedSlackItems()">Remove ' + (stale === 1 ? 'it' : 'them') + '</button></div>' : '');
+}
+function filterSlackItemDropdown() {
+  var inp = document.getElementById('ssi-search'), dd = document.getElementById('ssi-dropdown');
+  if (!inp || !dd) return;
+  var q = inp.value.toLowerCase().trim();
+  if (!q) { dd.style.display = 'none'; return; }
+  var matches = db.items.filter(function(i) {
+    return !isSlackItem(i.id) && (i.name.toLowerCase().indexOf(q) !== -1 || (i.sku || '').toLowerCase().indexOf(q) !== -1);
+  }).slice(0, 30);
+  dd.innerHTML = matches.length ? matches.map(function(i) {
+    var nb = _slackNameBrand(i);
+    return '<div onmousedown="event.preventDefault()" onclick="addSlackItem(\'' + i.id + '\')" style="padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)" '
+      + 'onmouseover="this.style.background=\'var(--surface2)\'" onmouseout="this.style.background=\'\'">' + esc(i.name)
+      + (nb ? ' <span style="color:var(--muted);font-size:11px">· already visible (' + esc(nb) + ')</span>' : '') + '</div>';
+  }).join('') : '<div style="padding:10px 14px;color:var(--muted);font-size:13px">No matching items</div>';
+  dd.style.display = 'block';
+}
+function addSlackItem(id) {
+  var it = db.items.find(function(i) { return i.id === id; });
+  if (!it || isSlackItem(id)) return;
+  var next = Object.assign({}, slackItems); next[id] = '';
+  var inp = document.getElementById('ssi-search'); if (inp) inp.value = '';
+  var dd = document.getElementById('ssi-dropdown'); if (dd) dd.style.display = 'none';
+  saveSlackItems(next, it.name + ': added (Shared)');
+}
+function setSlackItemBrand(id, brand) {
+  if (!isSlackItem(id)) return;
+  var it = db.items.find(function(i) { return i.id === id; });
+  var next = Object.assign({}, slackItems); var was = next[id]; next[id] = brand || '';
+  saveSlackItems(next, (it ? it.name : id) + ': ' + _slackLabel(was) + ' → ' + _slackLabel(brand));
+}
+function removeSlackItem(id) {
+  var it = db.items.find(function(i) { return i.id === id; });
+  var next = Object.assign({}, slackItems); delete next[id];
+  saveSlackItems(next, (it ? it.name : id) + ': removed');
+}
+function removeDeletedSlackItems() {
+  var next = {};
+  Object.keys(slackItems).forEach(function(id) { if (db.items.some(function(i) { return i.id === id; })) next[id] = slackItems[id]; });
+  saveSlackItems(next, 'removed deleted items');
+}
+// Item modal (superuser only)
+function _fSlackFill(item) {
+  var wrap = document.getElementById('f-slack-wrap');
+  if (!wrap) return;
+  var su = currentRole === 'superuser';
+  wrap.style.display = su ? '' : 'none';
+  if (!su) return;
+  var on = !!(item && isSlackItem(item.id));
+  document.getElementById('f-slack').checked = on;
+  document.getElementById('f-slack-brand').outerHTML = _slackBrandSelectHtml(on ? slackItems[item.id] : '', 'id="f-slack-brand" onchange="_fSlackSync()"');
+  _fSlackSync();
+}
+function _fSlackSync() {
+  var on = document.getElementById('f-slack').checked;
+  document.getElementById('f-slack-brand-row').style.display = on ? '' : 'none';
+  var b = document.getElementById('f-slack-brand').value;
+  var nb = _slackNameBrand({ name: document.getElementById('f-name').value });
+  var hint = document.getElementById('f-slack-hint');
+  hint.textContent = !on
+    ? (nb ? 'Shelfie in Slack already sees this item (its name includes ' + nb + ').' : 'Off: Shelfie in Slack can’t see this item (no partner brand in its name).')
+    : (b ? 'Shelfie answers for it under ' + b + ', and the ' + b + ' Brand account can see it in SupplyBase.' : 'Shared: CS can ask Shelfie about it; Brand accounts won’t see it in SupplyBase.');
+}
+async function _fSlackSave(id) {
+  if (currentRole !== 'superuser' || !id) return;
+  var wrap = document.getElementById('f-slack-wrap');
+  if (!wrap || wrap.style.display === 'none') return;
+  var on = document.getElementById('f-slack').checked;
+  var b = on ? document.getElementById('f-slack-brand').value : '';
+  var was = isSlackItem(id);
+  if (on === was && (!on || slackItems[id] === b)) return; // unchanged
+  var name = (db.items.find(function(i) { return i.id === id; }) || {}).name || id;
+  var next = Object.assign({}, slackItems);
+  if (on) next[id] = b; else delete next[id];
+  await saveSlackItems(next, name + ': ' + (!on ? 'removed' : was ? _slackLabel(slackItems[id]) + ' → ' + _slackLabel(b) : 'added (' + _slackLabel(b) + ')'));
+}
+
 // Reads shelfie_slack_log, which the shelfie-slack function fills: who asked
 // and when, where (DM / channel / thread), the outcome and reply time. The
 // question text is never stored.
@@ -7212,6 +7380,9 @@ async function loadGlobalSettings() {
       try { assetsAccess = _normaliseAssetsAccess(JSON.parse(settingsMap[ASSETS_ACCESS_KEY])); } catch(e) {}
       if (currentRole) applyAssetsAccess();
     }
+    if (settingsMap[SLACK_ITEMS_KEY] !== undefined) {
+      try { slackItems = _normaliseSlackItems(JSON.parse(settingsMap[SLACK_ITEMS_KEY])); } catch(e) {}
+    }
     if (settingsMap[TABS_KEY] !== undefined) {
       try {
         var tabsParsed = _normaliseTabs(JSON.parse(settingsMap[TABS_KEY]));
@@ -7354,6 +7525,11 @@ function startRealtime() {
           try { assetsAccess = _normaliseAssetsAccess(JSON.parse(row.value)); } catch(e) {}
           if (currentRole) applyAssetsAccess();
           renderAssetAccessSettings();
+        }
+        if (row.key === SLACK_ITEMS_KEY) {
+          try { slackItems = _normaliseSlackItems(JSON.parse(row.value)); } catch(e) {}
+          renderSlackItemsSettings();
+          if (currentRole === 'brand') { renderInventory(); updateSummary(); }
         }
         if (row.key === TABS_KEY) {
           try {
@@ -8380,6 +8556,7 @@ function openItemModal(id) {
   document.getElementById('f-supplier').value = item?.supplier || '';
   document.getElementById('f-sku').value = item?.sku || '';
   document.getElementById('f-notes').value = item?.notes || '';
+  _fSlackFill(item);
   updateCatFilter();
   openModal('item-modal');
 }
@@ -8469,6 +8646,7 @@ async function saveItem() {
   } else {
     save();
   }
+  await _fSlackSave(editItemId || data.id);
   closeModal('item-modal');
   renderInventory();
 }
@@ -15076,7 +15254,10 @@ function itemMatchesBrand(item) {
   var brands = getBrandNames();
   if (!brands.length) return false;
   var name = _brandKey(item && item.name);
-  return brands.some(function(b) { return name.indexOf(b) !== -1; });
+  if (brands.some(function(b) { return name.indexOf(b) !== -1; })) return true;
+  // Items a superuser tagged to this brand in "Shelfie in Slack" (Shared items stay hidden)
+  var tag = item && typeof slackItems !== 'undefined' && isSlackItem(item.id) ? _brandKey(slackItems[item.id]) : '';
+  return !!tag && brands.indexOf(tag) !== -1;
 }
 
 function doLogin() {
@@ -17148,6 +17329,7 @@ function getContactInfo() {
 
 function openSettings() {
   renderAssetAccessSettings();
+  renderSlackItemsSettings();
   renderSeasonSettings();
   document.getElementById('set-admin-username').value = getAdminUsername();
   document.getElementById('set-admin-pass').value = '';
