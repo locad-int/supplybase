@@ -1586,6 +1586,7 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
       <div class="nav-item" data-tab="assets" data-av="dashboard" onclick="openAssets('dashboard')"><span class="em">📊 </span><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Dashboard</span></div>
       <div class="nav-item" data-tab="assets" data-av="register" onclick="openAssets('register')"><span class="em">🗂 </span><svg class="i" viewBox="0 0 24 24"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg><span>Register</span></div>
       <div class="nav-item" data-tab="assets" data-av="checkout" onclick="openAssets('checkout')"><span class="em">🔁 </span><svg class="i" viewBox="0 0 24 24"><path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg><span>Check-out / in</span><span class="nav-unread-badge" id="anb-checkout" style="display:none"></span></div>
+      <div class="nav-item" data-tab="assets" data-av="station" id="nav-asset-station" onclick="openAssets('station')"><svg class="i" viewBox="0 0 24 24"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/></svg><span>Scan station</span></div>
       <div class="nav-item" data-tab="assets" data-av="maintenance" onclick="openAssets('maintenance')"><span class="em">🛠 </span><svg class="i" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span>Maintenance</span><span class="nav-unread-badge" id="anb-maintenance" style="display:none"></span></div>
       <div class="nav-item" data-tab="assets" data-av="issues" onclick="openAssets('issues')"><span class="em">⚠️ </span><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/></svg><span>Issues</span><span class="nav-unread-badge" id="anb-issues" style="display:none"></span></div>
       <div class="nav-item" data-tab="assets" data-av="audits" onclick="openAssets('audits')"><span class="em">📋 </span><svg class="i" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 12h6M9 16h4"/></svg><span>Audits</span></div>
@@ -2847,7 +2848,7 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
       </div>
       <div class="form-group">
         <label>Supplier</label>
-        <input type="text" id="rf-supplier" placeholder="Supplier name" list="rf-supplier-list" onblur="applySupplierDirectory()">
+        <input type="text" id="rf-supplier" placeholder="Supplier name" autocomplete="off" data-suppick="rf" onblur="applySupplierDirectory()">
         <datalist id="rf-supplier-list"></datalist>
       </div>
       <div class="form-group">
@@ -2902,7 +2903,7 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
       <div class="form-group full">
         <label>Supplier *</label>
         <div style="display:flex;gap:6px">
-          <input type="text" id="pog-supplier" placeholder="Supplier name" list="pog-supplier-list" onblur="applySupplierDirectoryFor('pog')" autocomplete="off" style="flex:1">
+          <input type="text" id="pog-supplier" placeholder="Supplier name" data-suppick="pog" onblur="applySupplierDirectoryFor('pog')" autocomplete="off" style="flex:1">
           <button type="button" class="btn btn-secondary" onclick="openSupplierDirectory('pog')" title="Browse all suppliers" style="white-space:nowrap">📖 Browse</button>
         </div>
         <datalist id="pog-supplier-list"></datalist>
@@ -3041,7 +3042,7 @@ body.sb2 .dash-kpi, body.sb2 .dash-section { border-color: var(--border); box-sh
       <div class="form-group full">
         <label>Supplier *</label>
         <div style="display:flex;gap:6px">
-          <input type="text" id="poe-supplier" placeholder="Supplier name" list="poe-supplier-list" onblur="applySupplierDirectoryFor('poe')" autocomplete="off" style="flex:1">
+          <input type="text" id="poe-supplier" placeholder="Supplier name" data-suppick="poe" onblur="applySupplierDirectoryFor('poe')" autocomplete="off" style="flex:1">
           <button type="button" class="btn btn-secondary" onclick="openSupplierDirectory('poe')" title="Browse all suppliers" style="white-space:nowrap">📖 Browse</button>
         </div>
         <datalist id="poe-supplier-list"></datalist>
@@ -4147,7 +4148,28 @@ async function removeQcStation(idx) {
 var SUPPLIER_DIR_KEY = 'supplierDirectory';
 var supplierDirectory = {}; // { [normalizedName]: { name, address, tin } }
 
-function _supKey(name) { return (name || '').trim().toLowerCase(); }
+// One key per supplier: case, spacing and stray dots/commas don't matter, so
+// "GTD Marketing Philippines Inc." and "GTD Marketing Philippines Inc" are the
+// same supplier (the directory had picked up both spellings as separate entries).
+function _supKey(name) { return String(name || '').toLowerCase().replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim(); }
+// Re-keys a saved directory with _supKey, merging entries that turn out to be
+// the same supplier (keeps the fuller name; fills gaps in address/TIN/VAT).
+function _normaliseSupplierDir(dir) {
+  var out = {};
+  Object.keys(dir || {}).forEach(function(k) {
+    var e = dir[k]; if (!e || typeof e !== 'object') return;
+    var nk = _supKey(e.name || k); if (!nk) return;
+    var cur = out[nk];
+    if (!cur) { out[nk] = Object.assign({}, e, { name: String(e.name || k).trim() }); return; }
+    var merged = Object.assign({}, e, cur);
+    if (String(e.name || '').trim().length > String(cur.name || '').length) merged.name = String(e.name).trim();
+    merged.address = cur.address || e.address || '';
+    merged.tin = cur.tin || e.tin || '';
+    if (typeof cur.vatExclusive !== 'boolean' && typeof e.vatExclusive === 'boolean') merged.vatExclusive = e.vatExclusive;
+    out[nk] = merged;
+  });
+  return out;
+}
 
 // Forces a Shelfie tool call's supplier field(s) back to the on-file
 // supplierDirectory record whenever the named supplier is already known —
@@ -4897,6 +4919,101 @@ function populateAllSupplierDatalists() {
   populateSupplierDatalist('pog-supplier-list');
   populateSupplierDatalist('poe-supplier-list');
 }
+
+
+// ─── SUPPLIER PICKER ─────────────────────────────────────────────────────────
+// Replaces the browser's own suggestion list on the PO/reorder Supplier fields
+// (it couldn't be positioned and opened beside the form, full height). Opens
+// right under the field, filters as you type, one row per supplier, and
+// hides short aliases saved for the same company (e.g. "Atsac" when "ATSAC
+// Consumer Goods Trading" has the same TIN) — typing the alias still finds it.
+function _tinDigits(t) { return String(t || '').replace(/\D/g, ''); }
+function supplierPickList() {
+  var all = Object.keys(supplierDirectory).map(function(k) { return Object.assign({ key: k }, supplierDirectory[k]); })
+    .filter(function(e) { return e.name; });
+  return all.filter(function(x) {
+    var tx = _tinDigits(x.tin);
+    if (!tx) return true;
+    return !all.some(function(y) { return y !== x && _tinDigits(y.tin) === tx && y.key.indexOf(x.key + ' ') === 0; });
+  });
+}
+var _supPkEl = null, _supPkInput = null, _supPkRows = [], _supPkIdx = -1;
+function _supPkEnsure() {
+  if (_supPkEl) return _supPkEl;
+  _supPkEl = document.createElement('div');
+  _supPkEl.id = 'sup-pick'; _supPkEl.setAttribute('role', 'listbox');
+  _supPkEl.style.cssText = 'position:fixed;display:none;z-index:4000;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.16);overflow-y:auto;padding:4px';
+  _supPkEl.addEventListener('mousedown', function(e) { e.preventDefault(); }); // keep focus in the field
+  document.body.appendChild(_supPkEl);
+  return _supPkEl;
+}
+function _supPkPlace() {
+  if (!_supPkEl || !_supPkInput) return;
+  var r = _supPkInput.getBoundingClientRect(), vh = window.innerHeight, below = vh - r.bottom - 12, above = r.top - 12;
+  var h = Math.min(280, Math.max(below, above));
+  _supPkEl.style.left = Math.max(8, r.left) + 'px';
+  _supPkEl.style.width = Math.max(240, r.width) + 'px';
+  _supPkEl.style.maxHeight = h + 'px';
+  if (below >= Math.min(200, _supPkEl.scrollHeight) || below >= above) { _supPkEl.style.top = (r.bottom + 4) + 'px'; _supPkEl.style.bottom = ''; }
+  else { _supPkEl.style.top = ''; _supPkEl.style.bottom = (vh - r.top + 4) + 'px'; }
+}
+function _supPkRender() {
+  var el = _supPkEnsure(), q = _supKey(_supPkInput.value);
+  var list = supplierPickList();
+  if (q) {
+    var words = q.split(' ');
+    list = list.filter(function(e) { var k = e.key; return words.every(function(w) { return k.indexOf(w) !== -1; }); })
+      .sort(function(a, b) { return (b.key.indexOf(q) === 0) - (a.key.indexOf(q) === 0) || a.name.localeCompare(b.name); });
+    // An alias the person typed (e.g. "atsac") brings up the company it belongs to
+    if (!list.length && supplierDirectory[q]) list = [Object.assign({ key: q }, supplierDirectory[q])];
+  } else list.sort(function(a, b) { return a.name.localeCompare(b.name); });
+  _supPkRows = list;
+  if (_supPkIdx >= list.length) _supPkIdx = list.length - 1;
+  if (!list.length) {
+    el.innerHTML = '<div style="padding:9px 12px;font-size:12px;color:var(--muted)">' + (q ? 'New supplier — it will be saved with this PO.' : 'No saved suppliers yet.') + '</div>';
+  } else {
+    el.innerHTML = list.map(function(e, i) {
+      return '<div role="option" data-i="' + i + '" aria-selected="' + (i === _supPkIdx) + '" style="padding:8px 10px;border-radius:7px;cursor:pointer;' + (i === _supPkIdx ? 'background:var(--surface2);' : '') + '">'
+        + '<div style="font-size:13px;font-weight:600;color:var(--text)">' + esc(e.name) + '</div>'
+        + (e.address || e.tin ? '<div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc([e.tin ? 'TIN ' + e.tin : '', e.address || ''].filter(Boolean).join(' · ')) + '</div>' : '')
+        + '</div>';
+    }).join('');
+    el.querySelectorAll('[data-i]').forEach(function(row) {
+      row.addEventListener('mouseenter', function() { _supPkIdx = +row.dataset.i; _supPkHighlight(); });
+      row.addEventListener('click', function() { _supPkPick(+row.dataset.i); });
+    });
+  }
+  el.style.display = 'block';
+  _supPkPlace();
+}
+function _supPkHighlight() {
+  if (!_supPkEl) return;
+  _supPkEl.querySelectorAll('[data-i]').forEach(function(r) { var on = +r.dataset.i === _supPkIdx; r.style.background = on ? 'var(--surface2)' : ''; r.setAttribute('aria-selected', on); if (on) r.scrollIntoView({ block: 'nearest' }); });
+}
+function _supPkPick(i) {
+  var e = _supPkRows[i]; if (!e || !_supPkInput) return;
+  var inp = _supPkInput, prefix = inp.dataset.suppick;
+  inp.value = e.name;
+  applySupplierDirectoryFor(prefix);
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  inp.dispatchEvent(new Event('change', { bubbles: true }));
+  _supPkClose(); // after the events, which would otherwise re-open the list
+}
+function _supPkClose() { if (_supPkEl) _supPkEl.style.display = 'none'; _supPkIdx = -1; }
+function _supPkOpen(inp) { _supPkInput = inp; _supPkIdx = -1; _supPkRender(); }
+document.addEventListener('focusin', function(e) { var t = e.target; if (t && t.dataset && t.dataset.suppick) _supPkOpen(t); });
+document.addEventListener('input', function(e) { var t = e.target; if (t && t.dataset && t.dataset.suppick && t === _supPkInput) { _supPkIdx = -1; _supPkRender(); } });
+document.addEventListener('focusout', function(e) { if (e.target === _supPkInput) setTimeout(function() { if (document.activeElement !== _supPkInput) _supPkClose(); }, 120); });
+document.addEventListener('keydown', function(e) {
+  if (!_supPkInput || e.target !== _supPkInput || !_supPkEl || _supPkEl.style.display === 'none') return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); _supPkIdx = Math.min(_supPkRows.length - 1, _supPkIdx + 1); _supPkHighlight(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _supPkIdx = Math.max(0, _supPkIdx - 1); _supPkHighlight(); }
+  else if (e.key === 'Enter' && _supPkIdx >= 0) { e.preventDefault(); e.stopPropagation(); _supPkPick(_supPkIdx); }
+  else if (e.key === 'Escape') { e.stopPropagation(); _supPkClose(); }
+  else if (e.key === 'Tab') _supPkClose();
+}, true);
+window.addEventListener('resize', _supPkPlace);
+document.addEventListener('scroll', function() { if (_supPkEl && _supPkEl.style.display !== 'none') _supPkPlace(); }, true);
 
 // ─── PURCHASE ORDER NUMBERING ─────────────────────────────────────────────────
 // Standardized format: PO-YYYYMM-### — e.g. PO-202609-001, PO-202609-002 …
@@ -7425,7 +7542,7 @@ async function loadGlobalSettings() {
     if (settingsMap[SUPPLIER_DIR_KEY] !== undefined) {
       try {
         var supDirParsed = JSON.parse(settingsMap[SUPPLIER_DIR_KEY]);
-        if (supDirParsed && typeof supDirParsed === 'object') supplierDirectory = supDirParsed;
+        if (supDirParsed && typeof supDirParsed === 'object') supplierDirectory = _normaliseSupplierDir(supDirParsed);
       } catch(e) {}
     }
     seedSupplierDirectory();
@@ -14860,6 +14977,9 @@ function applyAssetsAccess() {
   var ok = canOpenAssets();
   var ngAssets = document.getElementById('ng-assets');
   if (ngAssets) ngAssets.style.display = ok ? '' : 'none';
+  // Scan station issues/returns devices: superuser, or User/Requestor with Standard access
+  var stNav = document.getElementById('nav-asset-station');
+  if (stNav) stNav.style.display = (currentRole === 'superuser' || ((currentRole === 'user' || currentRole === 'requestor') && assetsAccess[currentRole] === 'standard')) ? '' : 'none';
   var tab = document.getElementById('tab-assets');
   if (!ok && tab && tab.classList.contains('active')) {
     if (typeof _resetAssetsFrame === 'function') _resetAssetsFrame();
@@ -15652,7 +15772,7 @@ function _initialTab() {
 // it shares the signed-in session; it reports which page it's on and its
 // counts back so the sidebar stays in step.
 var _assetsView = 'dashboard';
-var ASSET_VIEW_TITLES = { dashboard: 'Dashboard', register: 'Register', checkout: 'Check-out / in', maintenance: 'Maintenance', issues: 'Issues', audits: 'Audits' };
+var ASSET_VIEW_TITLES = { dashboard: 'Dashboard', register: 'Register', checkout: 'Check-out / in', station: 'Scan station', maintenance: 'Maintenance', issues: 'Issues', audits: 'Audits' };
 var _assetsFrameLoaded = false;
 function _ensureAssetsFrame() {
   var f = document.getElementById('assets-frame');
